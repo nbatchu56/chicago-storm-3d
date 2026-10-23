@@ -1,0 +1,213 @@
+"""
+SWAN wave-transformation library for the lakefront route and Montrose.
+
+For each offshore wave condition (direction x peak period x height class), SWAN (TU Delft, stationary, 2-D)
+propagates a JONSWAP spectrum from the lake boundaries over the real bottom (app.bathymetry), with
+refraction, shoaling, depth-induced breaking, bottom friction, triads, diffraction (phase-decoupled) and
+obstacles: breakwaters/groynes/long piers from OpenStreetMap (opaque, partly reflecting) and the
+seawall-type lakefront revetments (reflecting walls where deep water meets the shore).
+
+    python -m app.swan_cases prepare --bathy bathy.json --lakefront lakefront.json --domain route --dirs 30,45 --out runs/
+    (run swan in each case folder)
+    python -m app.swan_cases collect --runs runs/ --out swan_route.json
+
+Output per domain: Hs ratio (Hs / Hs_offshore, x100, uint8) and mean wave direction (nautical "from",
+uint8 = deg * 256/360) for every case, on the SWAN grid, plus the case table.
+"""
+
+import argparse
+import base64
+import glob
+import gzip
+import json
+import math
+import os
+
+import numpy as np
+
+from . import bathymetry as bm
+
+DIRS = list(range(0, 180, 15))                 # N .. SSE: everything that can reach the Chicago shore from the lake
+PERIODS = [2.5, 4.0, 6.0]                      # chop, moderate sea, storm sea (s)
+HEIGHTS = [0.6, 1.8]                           # small and big day (m): breaking makes the response height-dependent
+SWAN_DX = 10.0                                 # computational grid spacing (m)
+
+
+def case_id(d, tp, hs):
+    return f"d{d:03d}_t{tp:.1f}_h{hs:.1f}".replace(".", "p")
+
+
+def load_grid(bathy, domain):
+    gr = bathy["models"][domain] if domain in bathy.get("models", {}) else bathy["world"]
+    z, src = bm.unpack(gr)                     # bed elevation m IGLD85, rows south->north
+    return gr, z, src
+
+
+def resample(gr, z, dx):
+    k = max(1, int(round(dx / gr["dx"])))
+    zz = z[: (z.shape[0] // k) * k, : (z.shape[1] // k) * k]
+    zz = zz.reshape(zz.shape[0] // k, k, zz.shape[1] // k, k).mean(axis=(1, 3))
+    return {"x0": gr["x0"], "y0": gr["y0"], "dx": gr["dx"] * k, "nx": zz.shape[1], "ny": zz.shape[0]}, zz
+
+
+def obstacles(lakefront, g, depth):
+    """Polylines (local metres) for SWAN OBSTACLE: structures and wall-like shoreline."""
+    x0, y0, x1, y1 = g["x0"], g["y0"], g["x0"] + (g["nx"] - 1) * g["dx"], g["y0"] + (g["ny"] - 1) * g["dx"]
+    inside = lambda p: x0 < p[0] < x1 and y0 < p[1] < y1
+    out = []
+    for f in (lakefront or {}).get("osm", []):
+        kind = f.get("kind")
+        if kind not in ("breakwater", "groyne", "pier"):
+            continue
+        pts = [p for p in f["pts"] if inside(p)]
+        if len(pts) < 2:
+            continue
+        length = sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+        if kind == "pier" and length < 80:     # docks and slips inside harbours: ignore
+            continue
+        if f.get("closed"):                    # outline polygon: use its long axis as a wall
+            pts = pts + [pts[0]]
+        refl = 0.35 if kind in ("breakwater", "groyne") else 0.5
+        out.append({"kind": kind, "refl": refl, "trans": 0.0, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in pts]})
+    # wall-like shore: coastline segments where the water is already > 2 m deep 15 m offshore
+    def depth_at(px, py):
+        i, j = int((px - x0) / g["dx"]), int((py - y0) / g["dx"])
+        if 0 <= j < depth.shape[0] and 0 <= i < depth.shape[1]:
+            return depth[j, i]
+        return np.nan
+    for f in (lakefront or {}).get("osm", []):
+        if f.get("kind") != "coastline":
+            continue
+        run = []
+        pts = f["pts"]
+        for a, b in zip(pts, pts[1:]):
+            if not (inside(a) and inside(b)):
+                continue
+            mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+            L = math.dist(a, b) or 1
+            nx, ny = (b[1] - a[1]) / L, -(b[0] - a[0]) / L            # one side's normal; test both
+            d = np.nanmax([depth_at(mx + nx * 15, my + ny * 15), depth_at(mx - nx * 15, my - ny * 15)])
+            if np.isfinite(d) and d > 2.0:
+                run = run + [b] if run else [a, b]
+            else:
+                if len(run) >= 2:
+                    out.append({"kind": "seawall", "refl": 0.45, "trans": 0.0, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in run]})
+                run = []
+        if len(run) >= 2:
+            out.append({"kind": "seawall", "refl": 0.45, "trans": 0.0, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in run]})
+    return out
+
+
+def swn(g, level_above_lwd, d, tp, hs, obst):
+    xl, yl = (g["nx"] - 1) * g["dx"], (g["ny"] - 1) * g["dx"]
+    lines = [
+        f"PROJECT 'chicago' '{case_id(d, tp, hs)[:16]}'",
+        f"SET LEVEL={level_above_lwd:.3f} NAUTICAL",
+        "MODE STATIONARY TWODIMENSIONAL",
+        "COORDINATES CARTESIAN",
+        f"CGRID REGULAR 0. 0. 0. {xl:.1f} {yl:.1f} {g['nx'] - 1} {g['ny'] - 1} CIRCLE 36 0.1 1.2 26",
+        f"INPGRID BOTTOM REGULAR 0. 0. 0. {g['nx'] - 1} {g['ny'] - 1} {g['dx']:.1f} {g['dx']:.1f} EXCEPTION -99.",
+        "READINP BOTTOM 1. '../bottom.txt' 3 0 FREE",
+        "BOUND SHAPESPEC JONSWAP 3.3 PEAK DSPR DEGREES",
+    ]
+    for side in ("E", "N", "S"):
+        lines.append(f"BOUNDSPEC SIDE {side} CCW CONSTANT PAR {hs:.2f} {tp:.2f} {d:.1f} 25.")
+    for o in obst:                             # long commands continue on the next line with "&"
+        pairs = [f"{p[0]:.1f} {p[1]:.1f}" for p in o["pts"]]
+        chunks = [" ".join(pairs[i:i + 5]) for i in range(0, len(pairs), 5)]
+        lines.append(f"OBSTACLE TRANSM {o['trans']:.2f} REFL {o['refl']:.2f} LINE " + " &\n    ".join(chunks))
+    lines += [
+        "OFF QUADRUPL",
+        "BREAKING CONSTANT 1.0 0.73",
+        "FRICTION JONSWAP CONSTANT 0.038",
+        "TRIAD",
+        "DIFFRACTION 0.2",
+        "NUMERIC STOPC 0.005 0.01 0.005 99.5 STAT 40",
+        "BLOCK 'COMPGRID' NOHEAD 'out.mat' LAY 3 XP YP HSIGN DIR TM01 DEPTH",
+        "COMPUTE",
+        "STOP",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=PERIODS, heights=HEIGHTS):
+    bathy = json.load(open(bathy_path))
+    lakefront = json.load(open(lakefront_path)) if lakefront_path and os.path.exists(lakefront_path) else None
+    gr, z, _ = load_grid(bathy, domain)
+    g, zz = resample(gr, z, SWAN_DX)
+    level = bathy["level"]["m_igld85"]
+    depth_lwd = bm.LWD - zz                    # depth below LWD (SWAN adds LEVEL)
+    obst = obstacles(lakefront, g, level - zz)
+    meta = {"domain": domain, "grid": g, "level_m_igld85": level, "obstacles": [{"kind": o["kind"], "n": len(o["pts"])} for o in obst]}
+    os.makedirs(out_dir, exist_ok=True)
+    bottom = "\n".join(" ".join(f"{v:.2f}" for v in row) for row in depth_lwd) + "\n"
+    cases = []
+    os.makedirs(os.path.join(out_dir, domain), exist_ok=True)
+    with open(os.path.join(out_dir, domain, "bottom.txt"), "w") as fh:
+        fh.write(bottom)
+    for d in dirs:
+        for tp in periods:
+            for hs in heights:
+                cid = case_id(d, tp, hs)
+                cdir = os.path.join(out_dir, domain, cid)
+                os.makedirs(cdir, exist_ok=True)
+                with open(os.path.join(cdir, "INPUT"), "w") as fh:
+                    fh.write(swn(g, level - bm.LWD, d, tp, hs, obst))
+                cases.append({"id": cid, "dir": d, "tp": tp, "hs": hs})
+    meta["cases"] = cases
+    with open(os.path.join(out_dir, domain, "meta.json"), "w") as fh:
+        json.dump(meta, fh)
+    with open(os.path.join(out_dir, domain, "obstacles.json"), "w") as fh:
+        json.dump(obst, fh)
+    return meta
+
+
+def read_case(cdir):
+    from scipy.io import loadmat
+    m = loadmat(os.path.join(cdir, "out.mat"))
+    hs = m["Hsig"].astype(np.float32); di = m["Dir"].astype(np.float32); yp = m["Yp"]
+    if yp[0, 0] > yp[-1, 0]:                    # make rows south -> north
+        hs, di = hs[::-1], di[::-1]
+    hs[(hs < 0) | ~np.isfinite(hs)] = 0
+    di[~np.isfinite(di)] = 0
+    return hs, di
+
+
+def collect(runs_dir, out_path):
+    out = {"version": 1, "model": "SWAN 41.51 stationary", "domains": {}}
+    for meta_path in glob.glob(os.path.join(runs_dir, "*", "meta.json")):
+        meta = json.load(open(meta_path)); dom = meta["domain"]; base = os.path.dirname(meta_path)
+        got, ratio, dirs = [], [], []
+        for c in meta["cases"]:
+            cdir = os.path.join(base, c["id"])
+            if not os.path.exists(os.path.join(cdir, "out.mat")):
+                continue
+            hs, di = read_case(cdir)
+            ratio.append(np.clip(np.round(hs / c["hs"] * 100), 0, 255).astype(np.uint8))
+            dirs.append((np.mod(di, 360) * 256 / 360).astype(np.uint8))
+            got.append(c)
+        if not got:
+            continue
+        enc = lambda arrs: base64.b64encode(gzip.compress(np.stack(arrs).tobytes(), 6)).decode()
+        out["domains"][dom] = {"grid": meta["grid"], "level_m_igld85": meta["level_m_igld85"], "cases": got,
+                               "obstacles": json.load(open(os.path.join(base, "obstacles.json"))),
+                               "ratio": enc(ratio), "dir": enc(dirs),
+                               "layout": "cases x rows(south->north) x cols(west->east); ratio = Hs/Hs0*100; dir = deg*256/360 (from)"}
+    with open(out_path, "w") as fh:
+        json.dump(out, fh, separators=(",", ":"))
+    return out
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("prepare"); p.add_argument("--bathy", required=True); p.add_argument("--lakefront"); p.add_argument("--domain", default="route")
+    p.add_argument("--dirs", default=",".join(map(str, DIRS))); p.add_argument("--out", default="runs")
+    c = sub.add_parser("collect"); c.add_argument("--runs", default="runs"); c.add_argument("--out", default="swan.json")
+    a = ap.parse_args()
+    if a.cmd == "prepare":
+        m = prepare(a.bathy, a.lakefront, a.domain, [int(x) for x in a.dirs.split(",")], a.out)
+        print(f"{a.domain}: grid {m['grid']['nx']}x{m['grid']['ny']} at {m['grid']['dx']} m, {len(m['cases'])} cases, {len(m['obstacles'])} obstacles")
+    else:
+        o = collect(a.runs, a.out)
+        print({k: len(v["cases"]) for k, v in o["domains"].items()})

@@ -1,0 +1,114 @@
+name: SWAN wave library
+on:
+  workflow_dispatch:
+    inputs:
+      dirs:
+        description: "Offshore directions (deg from), comma list"
+        default: "0,15,30,45,60,75,90,105,120,135,150,165"
+permissions:
+  contents: write
+concurrency:
+  group: swan
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      dirs: ${{ steps.m.outputs.dirs }}
+    steps:
+      - id: m
+        run: echo "dirs=$(python3 -c "import json,sys; print(json.dumps([int(x) for x in sys.argv[1].split(',')]))" '${{ inputs.dirs }}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: ~/swan
+          key: swan-41.51-gnu-1
+      - name: Build SWAN
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q gfortran cmake ninja-build perl
+          (git clone -q --depth 1 https://gitlab.tudelft.nl/citg/wavemodels/swan.git src) || \
+            (curl -fsSL -o swan.tgz https://swanmodel.sourceforge.io/download/zip/swan4151.tar.gz && mkdir src && tar xzf swan.tgz -C src --strip-components 1)
+          cd src && mkdir -p build && cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build . && cmake --install . --prefix ~/swan
+      - name: Check
+        run: find ~/swan -type f | head -20
+  run:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        dir: ${{ fromJson(needs.build.outputs.dirs) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install numpy scipy && sudo apt-get install -y -q gfortran >/dev/null
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/swan
+          key: swan-41.51-gnu-1
+          fail-on-cache-miss: true
+      - name: Inputs
+        run: |
+          git fetch -q --depth 1 origin bathy snapshot
+          git show origin/bathy:bathy.json > bathy.json
+          git show origin/snapshot:lakefront.json > lakefront.json
+          for d in route montrose; do python -m app.swan_cases prepare --bathy bathy.json --lakefront lakefront.json --domain $d --dirs ${{ matrix.dir }} --out runs; done
+      - name: Run SWAN cases
+        run: |
+          EXE=$(find ~/swan -type f -perm -u+x -name 'swan*.exe' | head -1); [ -n "$EXE" ] || EXE=$(find ~/swan -type f -perm -u+x -name 'swan*' | grep -v run | head -1)
+          echo "SWAN: $EXE"
+          ls -d runs/*/d* | xargs -P 2 -I{} sh -c "cd {} && timeout 3000 $EXE > swan.log 2>&1; tail -3 PRINT 2>/dev/null | tr '\n' ' '; ls out.mat >/dev/null 2>&1 && echo ' ok {}' || echo ' FAILED {}'"
+          for f in runs/*/d*/PRINT; do grep -i -m3 "error\|severe" $f && echo "^ in $f"; done | head -40 || true
+          find runs -name 'bottom.txt' -delete
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swan-${{ matrix.dir }}
+          path: |
+            runs/*/meta.json
+            runs/*/obstacles.json
+            runs/*/d*/out.mat
+            runs/*/d*/PRINT
+          retention-days: 3
+  collect:
+    needs: run
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install numpy scipy
+      - uses: actions/download-artifact@v4
+        with:
+          path: parts
+      - name: Merge
+        run: |
+          mkdir -p runs
+          for p in parts/*/; do cp -r "$p"* runs/ ; done
+          python - <<'PY'
+          import json, glob, os
+          # meta.json from each job lists only that job's direction: merge the case tables
+          for dom in os.listdir("runs"):
+              cases = []
+              for p in glob.glob(f"parts/*/{dom}/meta.json"):
+                  m = json.load(open(p)); cases += m["cases"]
+              m["cases"] = sorted({c["id"]: c for c in cases}.values(), key=lambda c: c["id"])
+              json.dump(m, open(f"runs/{dom}/meta.json", "w"))
+          PY
+          mkdir -p out && python -m app.swan_cases collect --runs runs --out out/swan.json
+          ls -la out; for f in runs/*/d*/PRINT; do tail -1 "$f"; done | sort | uniq -c | head
+      - name: Publish to the swan branch
+        run: |
+          cd out
+          git init -q -b swan
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -q -m "SWAN library $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" swan
