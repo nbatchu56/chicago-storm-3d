@@ -34,6 +34,24 @@ Conditions come from one of four sources on a single timeline:
 
 Historical periods: `GET /api/history?start=2026-10-23T12:20Z&end=2026-10-23T12:51Z` builds a period (202 while building, then cached under `DATA_DIR/history`), or run the **History snapshot** workflow, or `python -m app.history --start ... --end ... --out file.json` and load the file in the page.
 
+## Wave models and the lake bottom
+
+The lakefront waves are built in layers, each checked against data:
+
+| Layer | What | Source / model | Workflow |
+|---|---|---|---|
+| Lake bottom | 10 m grid over the map, 4 m grids for the route (North Ave–Diversey) and Montrose | 2020 USACE NCMP topobathy lidar (1 m, IGLD85), NOAA NCEI mosaic offshore (aligned to the lidar), ISGS/Chicago Park District beach surveys where reachable; lake level from NOAA CO-OPS Calumet Harbor | **Bathymetry** → `bathy` branch |
+| Open-lake waves | Hour-by-hour growth with memory (decay 6 h, swell after wind shifts) | USACE CEM II-2 growth over the real fetch, wind adjusted to 10 m height and for air–sea stability | (in `app.sup_waves`) |
+| Validation | Hindcast at buoys 45198 (Chicago) and 45174 (Wilmette) from wind only | Last 30 days: RMSE ≈ 0.21 m, r ≈ 0.87–0.89; Oct 16 peak within 5 cm at 45198, ~7 h late | **Validate waves vs buoy** → `validate` branch |
+| Nearshore | Refraction, shoaling, breaking, friction, triads, diffraction, partial reflection off breakwaters, groynes, long piers and seawall-type revetments | SWAN 41.51 (TU Delft), stationary, 10 m grids; 12 directions × 3 periods × 2 heights per domain | **SWAN wave library** → `swan` branch |
+| Harbour entrance | Individual waves: diffraction around the heads, reflection off the walls, crossing chop, breaking | FUNWAVE-TVD (fully nonlinear Boussinesq), 1.5 m grid, 750 × 600 m | **FUNWAVE harbour entrance** → `funwave` branch |
+
+The paddling forecast (`/sup`) uses the surveyed cross-shore profiles for North Ave and Oak St (others keep the idealized profile). The world page blends the SWAN library for the current offshore condition, uses the real depth for breaking, and can show the FUNWAVE wave field over the Diversey Harbor entrance.
+
+To serve these from the deployed service, copy `bathy.json`, `swan.json` and `funwave.json` from those branches into `DATA_DIR` (they are served at `/api/bathy.json`, `/api/swan.json`, `/api/funwave.json`), and set `BATHY_PATH` for the forecast.
+
+Assumptions to know: inside Diversey Harbor the lidar has no returns, so unsurveyed harbour water is treated as 2 m deep; the NOAA chart's interpolated nearshore cells are floored at 1.5 m; SWAN treats obstacles as fully opaque with 35–50% reflection.
+
 ## Stand-up paddling forecast (`/sup`)
 
 `/sup` is a paddling forecast for eight lakefront launches (Montrose, North Avenue, Oak Street, Ohio Street, 31st Street, 63rd Street, Rainbow, Calumet), rebuilt every 30 minutes (`SUP_INTERVAL_MIN`):
