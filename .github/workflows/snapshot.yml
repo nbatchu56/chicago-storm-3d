@@ -5,7 +5,7 @@ name: Radar snapshot
 on:
   workflow_dispatch:
   schedule:
-    - cron: "3,33 * * * *"        # every 30 minutes; the Lakefront Local page is rebuilt from it
+    - cron: "3 * * * *"           # hourly; the Lakefront Local page is republished from it at :20 (Chicago time)
 
 permissions:
   contents: write
