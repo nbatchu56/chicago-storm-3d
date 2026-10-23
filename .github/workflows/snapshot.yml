@@ -1,7 +1,7 @@
 name: Radar snapshot
 
 # Builds one live scene from the newest KLOT scans and publishes it to the `snapshot` branch
-# (scene.json + status.json + sup.json), so it can be loaded into the viewer from anywhere.
+# (scene.json + status.json + sup.json + lakefront.json), so it can be loaded into the viewer from anywhere.
 on:
   workflow_dispatch:
 
@@ -31,6 +31,11 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/storm"
           python -m app.sup_waves --out "$RUNNER_TEMP/storm/sup.json"
+      - name: Lakefront map, lake temperature and stations
+        continue-on-error: true
+        env:
+          NWS_USER_AGENT: "chicago-storm-3d (github.com/${{ github.repository }})"
+        run: python -m app.lakefront --out "$RUNNER_TEMP/storm/lakefront.json" --probe "$RUNNER_TEMP/storm/probe.json"
       - name: Build scene from the newest KLOT scans
         continue-on-error: true
         env:
@@ -44,7 +49,7 @@ jobs:
           OUT: ${{ runner.temp }}/storm
         run: |
           mkdir -p "$RUNNER_TEMP/pub" && cd "$RUNNER_TEMP/pub"
-          for f in scene.json status.json sup.json; do [ -f "$OUT/$f" ] && cp "$OUT/$f" .; done
+          for f in scene.json status.json sup.json lakefront.json probe.json; do [ -f "$OUT/$f" ] && cp "$OUT/$f" .; done
           ls -la
           git init -q -b snapshot
           git config user.name "github-actions[bot]"
