@@ -18,7 +18,7 @@ import numpy as np
 from . import sup_waves as sw
 
 UTC = dt.timezone.utc
-BUOY = ("45198", 41.892, -87.563)
+BUOYS = [("45198", 41.892, -87.563), ("45174", 42.135, -87.655)]   # Chicago, Wilmette
 WIND = ["45198", "CHII2", "45174", "45007"]       # first with data wins, hour by hour
 
 
@@ -44,11 +44,20 @@ def hourly_dir(rows, field="wdir"):
     return {h: (math.degrees(math.atan2(np.mean(np.sin(a)), np.mean(np.cos(a)))) + 360) % 360 for h, a in out.items()}
 
 
-def run(days=21, get=sw.http_get):
-    rows = {st: sw.fetch_ndbc_rows(st, get) for st in dict.fromkeys([BUOY[0]] + WIND)}
+def rows_for(st, t0, t1, get):
+    from .history import _ndbc_rows_for
+    return _ndbc_rows_for(st, t0, t1, lambda url, timeout=30: get(url, "text/plain", timeout))
+
+
+def run_buoy(BUOY, days, get, cache):
+    now = dt.datetime.now(UTC)
+    for st in [BUOY[0]] + WIND:
+        if st not in cache:
+            cache[st] = rows_for(st, now - dt.timedelta(days=days + 1), now, get)
+    rows = cache
     obs_hs = hourly(rows[BUOY[0]], "wvht")
     if not obs_hs:
-        raise SystemExit("no buoy wave data")
+        return {"buoy": BUOY[0], "error": "no wave data in the realtime file or the monthly archive"}
     t1 = max(obs_hs); t0 = max(min(obs_hs), t1 - dt.timedelta(days=days))
     winds = {st: (hourly(rows[st], "wspd"), hourly_dir(rows[st])) for st in WIND}
     table = sw.fetch_table(BUOY[1], BUOY[2], 90)
@@ -80,8 +89,13 @@ def run(days=21, get=sw.http_get):
              "pred_peak": {"m": float(p.max()), "t": next(r["t"] for r in out if r["pred"] == p.max())},
              "big_waves_hours": int(big.sum()), "big_waves_bias_m": round(float(np.mean(p[big] - o[big])), 3) if big.any() else None,
              "wind_hours_by_station": used}
-    return {"version": 1, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds"), "buoy": BUOY[0],
-            "window": {"start": t0.isoformat(), "end": t1.isoformat()}, "stats": stats, "series": out,
+    return {"buoy": BUOY[0], "window": {"start": t0.isoformat(), "end": t1.isoformat()}, "stats": stats, "series": out}
+
+
+def run(days=21, get=sw.http_get):
+    cache = {}
+    res = [run_buoy(b, days, get, cache) for b in BUOYS]
+    return {"version": 2, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds"), "buoys": res,
             "model": "sup_waves.SeaState (CEM growth, decay %.1f h, swell on shifts) driven by observed wind" % sw.DECAY_H}
 
 
@@ -92,4 +106,5 @@ if __name__ == "__main__":
     a = ap.parse_args()
     d = run(a.days)
     json.dump(d, open(a.out, "w"), separators=(",", ":"))
-    print(json.dumps(d["stats"], indent=1))
+    for b in d["buoys"]:
+        print(b["buoy"], json.dumps(b.get("stats") or b.get("error")))
