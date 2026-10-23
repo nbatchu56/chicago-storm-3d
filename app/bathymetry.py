@@ -325,6 +325,10 @@ def blend(lidar, ncei, level, lake_mask=None):
         # feather NCEI into the lidar edge over ~150 m so there is no step at laser extinction
         gap = ~np.isfinite(z) & np.isfinite(nz)
         z[gap] = nz[gap]; src[gap] = 2
+        # NCEI's nearshore cells are interpolated from 200-600 m track lines; in lidar gaps (harbours, turbid
+        # water) its very shallow values are artefacts, so floor them at 1.5 m of water
+        shallow = gap & (z > level - 1.5) & (z < level)
+        z[shallow] = level - 1.5; info["ncei_shallow_floored"] = int(shallow.sum())
     water = (z < level) if lake_mask is None else lake_mask
     still = ~np.isfinite(z)
     if still.any():

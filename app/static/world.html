@@ -161,6 +161,15 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
       <p class="note" id="track-note"></p>
     </section>
     <section>
+      <h2>Models &amp; accuracy</h2>
+      <div id="fw-box" hidden>
+        <div class="row"><label for="fw-pick">FUNWAVE at Diversey Harbor</label></div>
+        <select id="fw-pick" aria-label="FUNWAVE run"><option value="">Off: use current conditions</option></select>
+      </div>
+      <dl class="readouts" id="models"></dl>
+      <p class="note" id="valnote"></p>
+    </section>
+    <section>
       <h2>Quality</h2>
       <div class="seg" role="group" aria-label="Render quality"><button data-q="0">Fast</button><button data-q="1" aria-pressed="true">Balanced</button><button data-q="2">Sharp</button></div>
       <p class="note" id="about"></p>
@@ -186,6 +195,8 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 <script id="track-data" type="application/json"></script>
 <script id="bathy-data" type="application/json"></script>
 <script id="swan-data" type="application/json"></script>
+<script id="funwave-data" type="application/json"></script>
+<script id="validate-data" type="application/json"></script>
 <script>
 "use strict";
 (() => {
@@ -241,7 +252,7 @@ function solar(date, lat = 41.88, lon = -87.63) {
 }
 
 // ---------------------------------------------------------------- data
-const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data") };
+const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data") };
 { const h = parseJSON("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
 const S = { mode: "live", t: 0, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, view: "overview", histIdx: 0,
   x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, hour: 14, seed: 7 } };
@@ -317,6 +328,7 @@ const U = {
   uBathy: { value: blank2D }, uBathyMin: { value: new THREE.Vector2() }, uBathySize: { value: new THREE.Vector2(1, 1) }, uHasBathy: { value: 0 },
   uSwan: { value: blank2D }, uSwanMin: { value: new THREE.Vector2() }, uSwanSize: { value: new THREE.Vector2(1, 1) }, uSwanOn: { value: 0 }, uSwanRef: { value: 1 }, uHsOff: { value: 0 },
   uDepthOn: { value: 0 }, uHsOn: { value: 0 },
+  uFw: { value: null }, uFwHs: { value: blank2D }, uFwMin: { value: new THREE.Vector2() }, uFwSize: { value: new THREE.Vector2(1, 1) }, uFwOn: { value: 0 }, uFwT: { value: 0 },
   uTempOn: { value: 0 }, uTRamp: { value: tRamp }, uWaterC: { value: 15 }, uIceExp: { value: 0 }, uSnowCover: { value: 0 },
 };
 
@@ -444,7 +456,7 @@ void main(){
     vec3 body = bodyTint * (sunL + amb * 2.0) + vec3(0.0, 0.01, 0.012) * uCity;
     vec3 H = normalize(uSunDir + V); float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
     col = mix(body, refl, uTempOn > 0.5 ? F * 0.45 : F) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice);
-    float hsHere = kr >= 0.0 ? uHsOff * kr : uHs, brk = inBathy(p) ? smoothstep(0.5, 0.9, hsHere / max(dep, 0.05)) * step(0.05, hsHere) : 0.0;
+    float hsHere = (kr >= 0.0 ? uHsOff * kr : uHs) * calm, brk = inBathy(p) && cls < 1.5 ? smoothstep(0.5, 0.9, hsHere / max(dep, 0.05)) * step(0.05, hsHere) : 0.0;
     float wc = vnoise(p * 900.0 + uTime * 0.6) * vnoise(p * 310.0 - uTime * 0.3), cover = max(clamp(uWhitecap, 0.0, 0.3) * calm, brk * 0.6 * (0.5 + 0.5 * vnoise(p * 400.0 - uTime * 0.4)));
     float foam = mix(smoothstep(1.0 - cover * 4.0, 1.0 - cover * 3.0, wc), cover, clamp(foot * 60.0, 0.0, 1.0));
     col = mix(col, (sunL + amb * 2.2) * 0.75, foam * 0.85);
@@ -506,7 +518,29 @@ function buildMap(LF) {
   c.fillStyle = "#5f5d59"; feats.filter((f) => f.kind === "building" && f.closed).forEach((f) => { path(c, f.pts, true); c.fill(); });
   // piers/breakwaters are land in the mask too (so waves stop at them)
   const pc = document.createElement("canvas"); pc.width = WPX; pc.height = HPX; const pcx = pc.getContext("2d", { willReadFrequently: true }); pcx.fillStyle = pcx.strokeStyle = "#fff"; pcx.lineWidth = 3;
-  ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => { if (f.closed) { path(pcx, f.pts, true); pcx.fill(); } else { path(pcx, f.pts, false); pcx.stroke(); } }));
+  // solid structures only: breakwaters and groynes, big piers (Navy Pier); marina docks float over open water
+  const area = (pts) => { let a = 0; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]); return Math.abs(a / 2); };
+  const len = (pts) => { let l = 0; for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; };
+  ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => {
+    if (kind === "pier" && (f.closed ? area(f.pts) < 4000 : len(f.pts) < 150)) return;
+    if (f.closed) { path(pcx, f.pts, true); pcx.fill(); } else { pcx.lineWidth = kind === "pier" ? 2 : 3; path(pcx, f.pts, false); pcx.stroke(); } }));
+  // the 1 m lidar knows where the water is better than the map: surveyed water that the map calls land
+  // (Diversey Harbor's basins, lagoons) becomes sheltered water; surveyed dry land stays land
+  if (BATHY.ok && BATHY.src) { const G = BATHY.g; let fixed = 0;
+    for (let py = 0; py < HPX; py++) {
+      const yk = y1 - (py + 0.5) / HPX * (y1 - y0), j = Math.round((yk * 1000 - G.y0) / G.dx); if (j < 0 || j >= G.ny) continue;
+      for (let px = 0; px < WPX; px++) {
+        const i0 = py * WPX + px; if (mask[i0] !== 0) continue;
+        const xk = x0 + (px + 0.5) / WPX * (x1 - x0), i = Math.round((xk * 1000 - G.x0) / G.dx); if (i < 0 || i >= G.nx) continue;
+        const k = j * G.nx + i, sk = BATHY.src[k];
+        if ((sk === 1 && BATHY.dep[k] > 0.4) || (sk === 2 && BATHY.dep[k] > 0.05)) {
+          mask[i0] = 2; fixed++;
+          if (sk === 2 && BATHY.dep[k] < 2.0) { BATHY.dep[k] = 2.0; BATHY.assumed = (BATHY.assumed || 0) + 1; }   // unsurveyed boat harbour: ~2 m assumed
+        }
+      }
+    }
+    if (BATHY.assumed) { const half = U.uBathy.value.image.data; for (let q = 0; q < half.length; q++) half[q] = THREE.DataUtils.toHalfFloat(BATHY.dep[q]); U.uBathy.value.needsUpdate = true; }
+    MAP.lidarWater = fixed; }
   const pd = pcx.getImageData(0, 0, WPX, HPX).data; for (let i = 0; i < mask.length; i++) if (pd[i * 4] > 128) mask[i] = 0;
   const mdata = new Uint8Array(WPX * HPX * 4); for (let i = 0; i < mask.length; i++) { mdata[i * 4] = mask[i] * 85; mdata[i * 4 + 3] = 255; }
   // DataTexture rows run south->north; canvas rows run north->south
@@ -579,11 +613,15 @@ async function unpackI16(b64) { const u8 = await gunzipB64(b64); return new Int1
 async function setBathy(b) {
   if (!b || !b.world) return; const g = b.world, z = await unpackI16(g.z_cm), level = b.level.m_igld85, n = g.nx * g.ny;
   const dep = new Float32Array(n); for (let i = 0; i < n; i++) dep[i] = level - (LWD + z[i] / 100);
+  const srcU8 = g.src ? await gunzipB64(g.src) : null;
+  // the NOAA chart's nearshore cells are interpolated (lidar covers the real shallows): don't trust its
+  // very shallow values -- they'd make waves "break" in the middle of Diversey Harbor
+  if (srcU8) for (let i = 0; i < n; i++) if (srcU8[i] === 2 && dep[i] > 0 && dep[i] < 1.5) dep[i] = 1.5;
   const half = new Uint16Array(n); for (let i = 0; i < n; i++) half[i] = THREE.DataUtils.toHalfFloat(dep[i]);
   const t = new THREE.DataTexture(half, g.nx, g.ny, THREE.RedFormat, THREE.HalfFloatType); t.minFilter = t.magFilter = THREE.LinearFilter; t.needsUpdate = true;
   const x0 = g.x0 / 1000, y0 = g.y0 / 1000, w = (g.nx - 1) * g.dx / 1000, h = (g.ny - 1) * g.dx / 1000;
   U.uBathy.value = t; U.uBathyMin.value.set(x0, y0); U.uBathySize.value.set(w, h); U.uHasBathy.value = 1;
-  Object.assign(BATHY, { ok: true, g, dep, level, x0, y0, w, h, src: b.sources, probe: b.probe, cov: b.probe && b.probe.world && b.probe.world.coverage });
+  Object.assign(BATHY, { ok: true, g, dep, src: srcU8, level, x0, y0, w, h, sources: b.sources, probe: b.probe, cov: b.probe && b.probe.world && b.probe.world.coverage });
 }
 function depthAtKm(xk, yk) {   // metres of water (negative on land), or null outside the grid
   if (!BATHY.ok) return null; const g = BATHY.g, fx = (xk - BATHY.x0) / BATHY.w * (g.nx - 1), fy = (yk - BATHY.y0) / BATHY.h * (g.ny - 1);
@@ -634,6 +672,32 @@ function swanUpdate(xk, yk, off) {   // off: {hs, tp, dir} offshore; returns loc
 function swanRatioKm(xk, yk) { const C = SWAN.cur; if (!C || C.none || U.uSwanOn.value < 0.5) return null; const D = C.D, g = D.g;
   const fx = (xk - D.x0) / D.w * (g.nx - 1), fy = (yk - D.y0) / D.h * (g.ny - 1); if (fx < 0 || fy < 0 || fx > g.nx - 1 || fy > g.ny - 1) return null; return C.ratio[Math.round(fy) * g.nx + Math.round(fx)]; }
 
+// ---------------------------------------------------------------- FUNWAVE runs (phase-resolved, harbour entrance)
+const FW = { runs: [], cur: null };
+U.uFw.value = (() => { const t = new THREE.Data3DTexture(new Uint16Array(8), 2, 2, 2); t.format = THREE.RedFormat; t.type = THREE.HalfFloatType; t.needsUpdate = true; return t; })();
+async function setFunwave(list) {
+  for (const r of [].concat(list || [])) { if (!r || !r.eta || !r.eta.frames) continue; FW.runs.push(r);
+    const o = document.createElement("option"); o.value = String(FW.runs.length - 1); o.textContent = `${r.label} (${ft(r.hs)} ft, ${r.tp} s, from ${compass(r.dir)})`; $("#fw-pick").appendChild(o); }
+  $("#fw-box").hidden = !FW.runs.length;
+}
+async function selectFunwave(i) {
+  const r = FW.runs[i]; if (!r) { FW.cur = null; U.uFwOn.value = 0; WAVES.key = null; return; }
+  if (!r.tex) { const e = r.eta, raw = await gunzipB64(e.data), h = new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
+    r.tex = new THREE.Data3DTexture(h, e.nx, e.ny, e.frames); r.tex.format = THREE.RedFormat; r.tex.type = THREE.HalfFloatType; r.tex.minFilter = r.tex.magFilter = THREE.LinearFilter;
+    r.tex.wrapR = THREE.RepeatWrapping; r.tex.needsUpdate = true;
+    const hr = await gunzipB64(r.hsig), hu = new Uint16Array(hr.buffer, hr.byteOffset, hr.byteLength / 2), g = r.grid, hh = new Uint16Array(g.nx * g.ny);
+    for (let k = 0; k < hh.length; k++) hh[k] = THREE.DataUtils.toHalfFloat(hu[k] / 100);
+    r.hsTex = new THREE.DataTexture(hh, g.nx, g.ny, THREE.RedFormat, THREE.HalfFloatType); r.hsTex.minFilter = r.hsTex.magFilter = THREE.LinearFilter; r.hsTex.needsUpdate = true;
+    r.hsArr = hu; }
+  const g = r.grid; U.uFw.value = r.tex; U.uFwHs.value = r.hsTex; U.uFwMin.value.set(g.x0 / 1000, g.y0 / 1000); U.uFwSize.value.set((g.nx - 1) * g.dx / 1000, (g.ny - 1) * g.dx / 1000);
+  U.uFwOn.value = 1; FW.cur = r; WAVES.key = null;
+  // fly to a view over the entrance
+  const cx = (g.x0 + g.nx * g.dx / 2) / 1000, cy = (g.y0 + g.ny * g.dx / 2) / 1000;
+  camTween = { p0: camera.position.clone(), t0: controls.target.clone(), p1: new THREE.Vector3(cx + 0.35, 0.16, -(cy - 0.32)), t1: new THREE.Vector3(cx - 0.05, 0, -cy), s: performance.now(), d: 1500 }; S.view = "fw";
+}
+function funwaveHsKm(xk, yk) { const r = FW.cur; if (!r || !r.hsArr) return null; const g = r.grid, i = Math.round((xk * 1000 - g.x0) / g.dx), j = Math.round((yk * 1000 - g.y0) / g.dx);
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) return null; return r.hsArr[j * g.nx + i] / 100; }
+
 // ---------------------------------------------------------------- near-camera wave patch (metres inside): refraction + shoaling per wave
 const NW = 28, TABW = 256, DMAX = 1500;
 const tabData = new Float32Array(TABW * NW * 4), tabTex = new THREE.DataTexture(tabData, TABW, NW, THREE.RGBAFormat, THREE.FloatType);
@@ -652,10 +716,18 @@ float depthAt(vec2 p) { return 0.1 * pow(max(distOff(p), 0.0), 0.6667); }
 float limAt(vec2 p) { return clamp(0.62 * depthAt(p) / max(uHsB, 0.02), 0.0, 1.0); }
 vec3 tab(int i, float d) { float x = clamp(d, 0.0, DMAX) / DMAX * float(TABW - 1); int i0 = int(floor(x)); int i1 = min(i0 + 1, TABW - 1); float f = x - float(i0);
   vec4 a = texelFetch(uTab, ivec2(i0, i), 0), b = texelFetch(uTab, ivec2(i1, i), 0); vec3 v = mix(a.xyz, b.xyz, f); if (d > DMAX) v.x += b.z * (d - DMAX); return v; }`;
+const FW_GLSL = `
+precision highp sampler3D;
+uniform sampler3D uFw; uniform sampler2D uFwHs; uniform vec2 uFwMin, uFwSize; uniform float uFwOn, uFwT;
+// FUNWAVE: phase-resolved surface over the harbour entrance (looped), faded in from the domain edge
+float fwWeight(vec2 pk) { if (uFwOn < 0.5) return 0.0; vec2 f = (pk - uFwMin) / uFwSize; if (f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0) return 0.0;
+  vec2 e = min(f, 1.0 - f); return smoothstep(0.02, 0.12, min(e.x, e.y)); }
+float fwEta(vec2 pk) { vec2 f = clamp((pk - uFwMin) / uFwSize, 0.0, 1.0); return texture(uFw, vec3(f, uFwT)).r; }
+`;
 const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, extensions: { derivatives: true },
-  vertexShader: `${LOGV[0]} ${WAVE} ${TEMP_GLSL}
+  vertexShader: `${LOGV[0]} ${WAVE} ${TEMP_GLSL} ${FW_GLSL}
     uniform sampler2D uMapMask; uniform vec2 uMapMin, uMapSize; uniform float uHasMap; uniform float uPatchR;
-    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep;
+    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw;
     void main() {
       vec2 loc = position.xz; vec2 p = loc + uPatchRel;
       vec4 wk = modelMatrix * vec4(position, 1.0); vec2 pk = vec2(wk.x, -wk.z);
@@ -672,13 +744,15 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       for (int i = 0; i < N; i++) { vec3 T = tab(i, dO); vec2 K = uKy[i] * tn + T.z * uShoreN2; float kk = max(length(K), 1e-4);
         float a = uA[i] * (sw > 0.5 ? 1.0 : T.y) * lim * smoothstep(5.0, 10.0, 6.2832 / kk); vec2 dir = K / kk; float th = uKy[i] * sAl - T.x - uW[i] * uTime + uP[i];
         float q = min(uQ, 1.0 / max(kk * a * float(N), 1e-4)); disp += vec3(q * a * dir.x * cos(th), a * sin(th), q * a * dir.y * cos(th)); }
+      float fw = fwWeight(pk); vFw = fw;
+      if (fw > 0.0) disp = mix(disp, vec3(0.0, fwEta(pk), 0.0), fw);
       vec3 local = vec3(loc.x + disp.x, disp.y, loc.y + disp.z);
       vec4 w = modelMatrix * vec4(local, 1.0); vW = w.xyz; vGain = lim; vSw = sw; vDep = dep; vLim = clamp(0.62 * max(dep, 0.0) / max(uHsB * (sw > 0.5 ? G : 1.0), 0.02), 0.0, 1.0); vP = p; vEdge = 1.0 - smoothstep(uPatchR * 0.75, uPatchR, max(abs(loc.x), abs(loc.y)));
       gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
-  fragmentShader: `${LOGF[0]} ${WAVE} ${SKY_FN} ${TEMP_GLSL}
+  fragmentShader: `${LOGF[0]} ${WAVE} ${SKY_FN} ${TEMP_GLSL} ${FW_GLSL}
     uniform vec3 uCamPos, uAmbTop, uAmbBot; uniform float uWindSpd, uCity, uGust, uTempOn; uniform vec2 uWindDir2;
     uniform sampler2D uMapMask; uniform vec2 uMapMin, uMapSize; uniform float uHasMap;
-    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep;
+    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
     void main() {
@@ -691,6 +765,9 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       vec2 grad = vec2(0.0); float steep = 0.0, unres = 0.0; vec2 tn = vec2(-uShoreN2.y, uShoreN2.x); float sAl = dot(p, tn), dO = distOff(p);
       for (int i = 0; i < N; i++) { vec3 T = tab(i, dO); vec2 K = uKy[i] * tn + T.z * uShoreN2; float kk = max(length(K), 1e-4); float wf = clamp(1.0 - foot * 3.0 * kk / 6.2832, 0.0, 1.0);
         float a = uA[i] * (vSw > 0.5 ? 1.0 : T.y) * vGain; float th = uKy[i] * sAl - T.x - uW[i] * uTime + uP[i]; grad += K * a * cos(th) * wf; steep += max(sin(th), 0.0) * a * kk * wf; unres += (a * kk) * (a * kk) * (1.0 - wf); }
+      float fwSteep = 0.0;
+      if (vFw > 0.0) { float ek = 0.0015, e0 = fwEta(pk), ex = fwEta(pk + vec2(ek, 0.0)), en = fwEta(pk + vec2(0.0, ek));
+        vec2 gfw = vec2(ex - e0, -(en - e0)) / 1.5; grad = mix(grad, gfw, vFw); fwSteep = length(gfw); steep = mix(steep, fwSteep * 1.6, vFw); }
       vec2 gq = p / 45.0 - uWindDir2 * uTime * max(uWindSpd, 1.0) * 1.2 / 45.0; float gust = smoothstep(0.45, 0.85, noise(gq) * 0.65 + noise(gq * 2.3 + 7.1) * 0.35) * uGust;
       vec2 o = uWindDir2 * uTime * 0.6; float e = 0.03, rs = (0.01 + 0.006 * uWindSpd) * (1.0 + 1.6 * gust) * clamp(1.0 - foot * 6.0, 0.0, 1.0) * max(vLim, 0.2);
       float n0 = noise(p * 4.0 - o * 4.0), nx = noise((p + vec2(e, 0.0)) * 4.0 - o * 4.0), nz = noise((p + vec2(0.0, e)) * 4.0 - o * 4.0); grad += vec2(nx - n0, nz - n0) / e * rs;
@@ -702,7 +779,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       vec3 tint = mix(vec3(0.10, 0.16, 0.12), vec3(0.012, 0.045, 0.05), smoothstep(0.3, 7.0, depth));
       if (uTempOn > 0.5) tint = tempColor(waterTempC(pk)) * 0.35;
       if (uDepthOn > 0.5) tint = depthColor(depth) * 0.5 * (1.0 - 0.55 * smoothstep(0.43, 0.48, abs(fract(depth) - 0.5)));
-      if (uHsOn > 0.5) tint = hsColor(uHsB * (vSw > 0.5 ? vGain : vGain)) * 0.5;
+      if (uHsOn > 0.5) tint = hsColor(vFw > 0.0 ? mix(uHsB * vGain, texture2D(uFwHs, clamp((pk - uFwMin) / uFwSize, 0.0, 1.0)).r, vFw) : uHsB * vGain) * 0.5;
       vec3 body = tint * (sunL + amb * 2.0) + vec3(0.0, 0.01, 0.012) * uCity;
       vec3 c = mix(body, skyColor(R, false), uTempOn > 0.5 ? F * 0.45 : F);
       vec3 Hv = normalize(uSunDir + V); float rough = 0.05 + 0.008 * uWindSpd + sqrt(unres);
@@ -710,6 +787,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       float W = clamp(3.84e-6 * pow(uWindSpd * (1.0 + 0.5 * gust), 3.41), 0.0, 0.25);
       float wc = smoothstep(1.0 - 3.0 * W, 1.0 - 1.5 * W, smoothstep(0.08, 0.3, steep) * noise(p * 1.3 + uTime * 0.3)) * step(0.002, W);
       float surf = (1.0 - vLim) * step(0.05, vLim) * smoothstep(0.03, 0.15, uHsB) * (0.5 + 0.5 * noise(p * 0.8 - uTime * 0.5));
+      surf = mix(surf, smoothstep(0.18, 0.32, fwSteep) * (0.6 + 0.4 * noise(p * 1.1 - uTime * 0.7)), vFw);
       c = mix(c, (sunL + amb * 2.2) * 0.75, clamp(max(wc, surf), 0.0, 1.0) * 0.85);
       gl_FragColor = vec4(c, vEdge);
     }` });
@@ -1028,11 +1106,13 @@ function conditions(tMs, xk, yk) {
       withChop(c.systems, h.wind, h.dir); c.spot = sp; c.hour = h; c.src.push(`forecast model · ${sp.name}`); }
     if (S.mode === "live" && DATA.lake && DATA.lake.stations) { const wd = stationAt(DATA.lake.stations, "wspd", tMs, xk, yk); if (wd) { c.wind = wd.h.wspd; c.dir = wd.h.wdir ?? c.dir; c.gust = wd.h.gst ?? c.gust; c.src.unshift(`wind ${wd.st.id}`); } }
   }
+  if (FW.cur) { c.off = { hs: FW.cur.hs, tp: FW.cur.tp, dir: FW.cur.dir, src: "FUNWAVE case" }; c.src.unshift(`FUNWAVE: ${FW.cur.label}`); }
   // SWAN: inside a modelled domain, the local sea comes from the library for this offshore condition
   const sw = swanUpdate(xk, yk, c.off);
   if (sw) { const chop = c.systems.filter((q) => q.spread >= 50); c.systems = (c.off.hs * sw.ratio > 0.01 ? [{ hs: c.off.hs * sw.ratio, tp: c.off.tp, dir: sw.dir, spread: 22 }] : []).concat(chop);
     c.swan = sw; c.dRef = Math.max(20, shore.d * 1000); c.src.push(`SWAN ${sw.domain}`); U.uSwanRef.value = Math.max(sw.ratio, 0.02); }
   const dHere = depthAtKm(xk, yk); if (dHere != null) c.depth = dHere;
+  const fwh = funwaveHsKm(xk, yk); if (fwh != null) { c.fwHs = fwh; c.systems = c.systems.length ? c.systems : [{ hs: fwh, tp: FW.cur.tp, dir: FW.cur.dir, spread: 20 }]; }
   if (c.waterC == null && GRIDS.temp) c.waterC = gridValue(GRIDS.temp, xk, yk);
   c.snow = c.airC != null && c.airC < 1 || (S.mode === "exp" && S.x.type === "lakeeffect");
   c.shore = shore; return c;
@@ -1128,6 +1208,7 @@ matchMedia("(max-width: 760px)").addEventListener("change", applyPanel); applyPa
 $("#gpx-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { setTrack(parseGPX(await f.text(), f.name.replace(/\.gpx$/i, ""))); } catch (err) { $("#track-note").textContent = `Couldn't read that file: ${err.message}`; } };
 $("#hist-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { await addHistory(JSON.parse(await f.text())); S.histIdx = SRC.hist.length - 1; $("#hist-pick").value = String(S.histIdx); setMode("history"); } catch (err) { $("#hist-note").textContent = `Couldn't load that file: ${err.message}`; } };
 $("#hist-pick").onchange = (e) => { S.histIdx = +e.target.value; setMode("history"); };
+$("#fw-pick").onchange = (e) => { selectFunwave(e.target.value === "" ? -1 : +e.target.value); };
 let SERVED = false;
 const localInput = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60e3).toISOString().slice(0, 16);
 $("#hist-dur").oninput = (e) => { const v = +e.target.value; $("#hist-dur-o").textContent = v < 60 ? `${v} min` : `${(v / 60).toFixed(v % 60 ? 1 : 0)} h`; };
@@ -1170,14 +1251,19 @@ function tick() {
   requestAnimationFrame(tick);
   const dt = Math.min(clock.getDelta(), 0.1), now = performance.now();
   if (!RM) U.uTime.value += dt;
+  if (FW.cur) { const n = FW.cur.eta.frames, L = n * FW.cur.eta.dt; U.uFwT.value = ((U.uTime.value % L) / L) * (n - 1) / n + 0.5 / n; }
   const [t0, t1] = range();
   if (S.playing) { const rate = S.mode === "forecast" ? 1800 : S.mode === "exp" ? 60 : 60; S.t += dt * 1000 * rate * S.speed; if (S.t > t1) S.t = t0; }
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   // board: on the track at this time (history or replay), else under the camera target
   const tp = trackAt(S.t); const tgt = controls.target;
-  const bx = tp && (S.view === "ride" || S.view === "rider" || S.mode === "history") ? tp.x : tgt.x, by = tp && (S.view === "ride" || S.view === "rider" || S.mode === "history") ? tp.y : -tgt.z;
+  let bx = tp && (S.view === "ride" || S.view === "rider" || S.mode === "history") ? tp.x : tgt.x, by = tp && (S.view === "ride" || S.view === "rider" || S.mode === "history") ? tp.y : -tgt.z;
   const hd = tp ? tp.hd : 0;
+  // GPS drifts 5-15 m: if the track point is on land (narrow harbour arms), use the nearest water within 30 m
+  if (tp && MAP.ok && maskAt(bx, by) === 0) { let best = null;
+    for (const r of [0.006, 0.012, 0.02, 0.03]) { for (let a = 0; a < 16; a++) { const x = bx + r * Math.cos(a * Math.PI / 8), y = by + r * Math.sin(a * Math.PI / 8); if (maskAt(x, y) !== 0) { best = [x, y]; break; } } if (best) break; }
+    if (best) { bx = best[0]; by = best[1]; } }
   if (S.view === "ride" || S.view === "rider") {
     const h0 = WAVES.ready ? heightAtM((bx - WAVES.origin[0]) * 1000, -(by - WAVES.origin[1]) * 1000) / 1000 : 0, r = hd * Math.PI / 180;
     if (S.view === "rider") { camera.position.set(bx, h0 + 0.00175, -by); controls.target.set(bx + Math.sin(r) * 0.03, h0 + 0.0008, -(by + Math.cos(r) * 0.03)); }
@@ -1264,6 +1350,7 @@ function updateHud(rr, tp) {
   const wx = rr > 0.2 ? `${C.snow ? "snow" : "rain"} ${rr.toFixed(1)} mm/h` : U.uOvercast.value > 0.6 ? "overcast" : U.uOvercast.value > 0.25 ? "partly cloudy" : C.sun && C.sun.el < -6 ? "clear night" : "clear";
   const rows = [["Weather here", wx], ["Wind", `${mph(C.wind)} mph ${compass(C.dir)}${C.gust ? ` · gusts ${mph(C.gust)}` : ""}`], ["Waves", tot > 0.01 ? `${ft(tot)} ft · ${tpk.toFixed(1)} s` : "calm"],
     ...(C.depth != null ? [["Depth here", C.depth > 0 ? `${(C.depth * FT).toFixed(C.depth * FT < 10 ? 1 : 0)} ft` : "dry"]] : []),
+    ...(C.fwHs != null ? [["FUNWAVE Hs here", `${ft(C.fwHs)} ft`]] : []),
     ...(C.swan && C.off ? [["Offshore", `${ft(C.off.hs)} ft · ${C.off.tp.toFixed(1)} s from ${compass(C.off.dir)}`]] : []),
     ["Water", C.waterC != null ? `${Math.round(cToF(C.waterC))}°F` : "–"], ["Air", C.airC != null ? `${Math.round(cToF(C.airC))}°F` : "–"]];
   if (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) rows.push(["Ice", S.mode === "exp" ? `${Math.round(S.x.ice * 100)}% setting` : "from NOAA analysis"]);
@@ -1271,6 +1358,21 @@ function updateHud(rr, tp) {
   if (tp && tp.inside && C.wind > 0.5) { const rel = Math.abs(angd(tp.hd, C.dir)); rows.push(["Into wind?", rel < 60 ? "into the wind" : rel > 120 ? "with the wind" : "cross-wind"]); }
   $("#readouts").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   $("#source").textContent = [RS ? RS.label + lead : S.mode === "forecast" ? "Clouds from forecast sky cover" : "No radar for this time", ...C.src].join(" · ");
+}
+
+function renderModels() {
+  const rows = [];
+  rows.push(["Lake bottom", BATHY.ok ? `USACE 2020 lidar (1 m)${BATHY.cov ? ` ${Math.round(BATHY.cov.lidar * 100)}%` : ""}, NOAA chart beyond` : "idealized slope"]);
+  rows.push(["Lake level", BATHY.ok ? `${(BATHY.level - LWD).toFixed(2)} m above low-water datum` : "–"]);
+  rows.push(["Open-lake waves", "CEM growth with memory, 10 m wind + stability"]);
+  rows.push(["Nearshore", SWAN.domains.length ? `SWAN 41.51: ${SWAN.domains.map((d) => `${d.name} (${d.cases.length} cases, ${d.obstacles} walls)`).join(", ")}` : "1-D refraction/shoaling on the real profile"]);
+  rows.push(["Harbour entrance", FW.runs.length ? `FUNWAVE-TVD, ${FW.runs.length} run${FW.runs.length > 1 ? "s" : ""}` : "not run"]);
+  $("#models").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd style="text-align:left">${v}</dd>`).join("");
+  const V = DATA.validate;
+  if (V && V.buoys) { const b = V.buoys.filter((x) => x.stats);
+    $("#valnote").textContent = `Checked against buoys ${b.map((x) => x.buoy).join(" and ")} over ${Math.round((new Date(b[0].window.end) - new Date(b[0].window.start)) / 864e5)} days, driven by wind only: ` +
+      b.map((x) => `${x.buoy} RMSE ${ft(x.stats.rmse_m)} ft, r ${x.stats.r}`).join("; ") + `. Peak of Oct 16: ${V.peak_note || ""}`; }
+  else $("#valnote").textContent = "";
 }
 
 // ---------------------------------------------------------------- boot
@@ -1284,8 +1386,8 @@ setLight(new Date()); resize(); goCam("overview", true); buildLabels(); requestA
       SERVED = true; $("#hist-build").hidden = false; $("#hist-start").value = localInput(new Date(Date.now() - 86400e3));
     }
     if (live) { const get2 = async (u) => { try { const r = await fetch(u, { cache: "no-store" }); return r.ok ? await r.json() : null; } catch (e) { return null; } };
-      [DATA.bathy, DATA.swan] = await Promise.all([DATA.bathy || get2("api/bathy.json"), DATA.swan || get2("api/swan.json")]); }
-    await setBathy(DATA.bathy); await setSwan(DATA.swan);
+      [DATA.bathy, DATA.swan, DATA.funwave] = await Promise.all([DATA.bathy || get2("api/bathy.json"), DATA.swan || get2("api/swan.json"), DATA.funwave || get2("api/funwave.json")]); }
+    await setBathy(DATA.bathy); await setSwan(DATA.swan); await setFunwave(DATA.funwave); renderModels();
     if (DATA.lake) { buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
     SRC.live = await decodeScene(DATA.scene);
     for (const h of DATA.hist) await addHistory(h);
@@ -1296,6 +1398,6 @@ setLight(new Date()); resize(); goCam("overview", true); buildLabels(); requestA
     if (DATA.track && SRC.hist.length) { S.histIdx = 0; $("#hist-pick").value = "0"; }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { BATHY, SWAN, depthAtKm, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
+window.__world = { BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
 })();
 </script>
