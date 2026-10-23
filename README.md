@@ -19,6 +19,21 @@ tests/test_service.py        offline tests (stand-in archive serving a real Leve
 Dockerfile, docker-compose.yml, fly.toml, render.yaml
 ```
 
+## Chicago Lake World (`/world`)
+
+One 3-D world for the lakefront: the radar volume (clouds, rain and snow shafts, lightning) over the real OpenStreetMap shoreline, harbours, piers and buildings, with satellite lake temperature and ice, and paddler-scale waves (refraction and shoaling toward the nearest beach) under a board you can ride along a GPX track. The camera goes from a 100 km overview down to standing on the board.
+
+Conditions come from one of four sources on a single timeline:
+
+| Source | Weather | Wind and waves | Water |
+|---|---|---|---|
+| Live | latest KLOT volumes | nearest NDBC/GLOS station; SUP model's waves for the hour | NOAA GLSEA (ACSPO) |
+| Forecast | radar extrapolation for 2 h, then NWS sky cover | NWS wind, SUP wave model (48 h) | GLSEA |
+| Historical | NEXRAD archive volumes for the window | NDBC observations (realtime or stdmet archive) | GLSEA for that day, ice analysis in season |
+| Experimental | generated storms: fair-weather cumulus, showers, thunderstorms, squall line, steady rain, lake-effect snow | your wind, duration and the real fetch (CEM growth) | your water temperature and ice cover |
+
+Historical periods: `GET /api/history?start=2026-10-23T12:20Z&end=2026-10-23T12:51Z` builds a period (202 while building, then cached under `DATA_DIR/history`), or run the **History snapshot** workflow, or `python -m app.history --start ... --end ... --out file.json` and load the file in the page.
+
 ## Stand-up paddling forecast (`/sup`)
 
 `/sup` is a paddling forecast for eight lakefront launches (Montrose, North Avenue, Oak Street, Ohio Street, 31st Street, 63rd Street, Rainbow, Calumet), rebuilt every 30 minutes (`SUP_INTERVAL_MIN`):

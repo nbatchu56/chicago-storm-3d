@@ -160,3 +160,34 @@ def test_http(env, monkeypatch):
         assert c.get("/api/lakefront.json").json()["osm"][0]["kind"] == "coastline"
         assert main.lakefront.run_once()                       # second run reuses the map
         assert c.get("/api/lakefront.json").json()["osm"][0]["kind"] == "coastline"
+
+
+def test_world_and_history(env, monkeypatch):
+    monkeypatch.setenv("SOURCE", "demo")
+    monkeypatch.setenv("SCHEDULER", "external")
+    monkeypatch.setenv("SUP", "off")
+    fresh_modules()
+    from fastapi.testclient import TestClient
+    import app.main as main
+    calls = []
+
+    def fake_build(start, end, site, cache):
+        calls.append((start, end))
+        return {"version": 1, "window": {"start": start.isoformat(), "end": end.isoformat()}, "stations": [], "lake": {}, "notes": []}
+    monkeypatch.setattr(main.history_mod, "build", fake_build)
+    with TestClient(main.app) as c:
+        r = c.get("/world")
+        assert r.status_code == 200 and "Chicago Lake World" in r.text and r.text.startswith("<!doctype html>")
+        assert c.get("/api/history", params={"start": "2026-10-23T12:20Z", "end": "2026-10-24T12:20Z"}).status_code == 400   # too long
+        assert c.get("/api/history", params={"start": "nonsense"}).status_code == 400
+        q = {"start": "2026-10-23T12:20:00Z", "end": "2026-10-23T12:51:00Z"}
+        r = c.get("/api/history", params=q)
+        for _ in range(50):
+            if r.status_code == 200:
+                break
+            assert r.status_code == 202
+            time.sleep(0.05)
+            r = c.get("/api/history", params=q)
+        assert r.status_code == 200 and r.json()["window"]["start"].startswith("2026-10-23T12:20")
+        c.get("/api/history", params=q)                     # cached: no second build
+        assert len(calls) == 1

@@ -6,6 +6,8 @@ Chicago Storm 3D live service.
     GET  /api/sup.json     SUP forecast: 8 spots x 48 h (refreshed every SUP_INTERVAL_MIN, default 30)
     GET  /api/lakefront.json  lakefront map (OSM), lake temperature/ice (NOAA GLSEA), station history (every 6 h)
     GET  /api/scene.json   latest scene (gzip when the client accepts it)
+    GET  /world            Chicago Lake World: radar volume over the real lakefront, waves, GPX ride-along
+    GET  /api/history?start=..&end=..   conditions for a past window (UTC ISO); 202 while it is built, then cached
     GET  /api/status       freshness, latest scan time, errors, next run
     GET  /healthz          liveness probe (always 200 while the process is up)
     GET  /readyz           200 once a scene exists, 503 before
@@ -16,6 +18,9 @@ Use ONE worker process: the pipeline runs in a background thread inside it.
 """
 
 import contextlib
+import datetime as dt
+import hashlib
+import json
 import logging
 import os
 import threading
@@ -28,6 +33,7 @@ from .pipeline import Pipeline
 from . import sup_waves as sup_waves_mod
 from .sup_waves import SupForecaster
 from .lakefront import LakefrontUpdater
+from . import history as history_mod
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -115,6 +121,63 @@ def lakefront_json():
     if not os.path.exists(lakefront.path):
         raise HTTPException(503, lakefront.status.get("last_error") or "The lakefront map and lake temperatures are still loading.")
     return FileResponse(lakefront.path, media_type="application/json", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/world", include_in_schema=False)
+def world_page():
+    return page("world.html")
+
+
+HIST_DIR = os.path.join(pipeline.cfg.data_dir, "history")
+HIST_JOBS = {}            # key -> {"state": "building"|"error", "error": str}
+HIST_LOCK = threading.Lock()
+HIST_MAX_MIN = 6 * 60     # longest window one request may build
+
+
+def _hist_build(key, start, end, path):
+    try:
+        data = history_mod.build(start, end, pipeline.cfg.site, os.path.join(HIST_DIR, "radar_cache"))
+        tmp = path + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(data, fh, separators=(",", ":"))
+        os.replace(tmp, path)
+        with HIST_LOCK:
+            HIST_JOBS.pop(key, None)
+    except Exception as e:  # noqa: BLE001
+        log.exception("history %s", key)
+        with HIST_LOCK:
+            HIST_JOBS[key] = {"state": "error", "error": str(e)}
+
+
+@app.get("/api/history")
+def history(start: str, end: str = ""):
+    try:
+        t0 = history_mod._parse_time(start)
+        t1 = history_mod._parse_time(end) if end else t0 + dt.timedelta(minutes=30)
+    except ValueError:
+        raise HTTPException(400, "start and end must be ISO times, e.g. 2026-10-23T12:20Z")
+    now = dt.datetime.now(dt.timezone.utc)
+    if not (t0 < t1 <= now + dt.timedelta(minutes=5)) or (t1 - t0).total_seconds() > HIST_MAX_MIN * 60:
+        raise HTTPException(400, f"Pick a past window shorter than {HIST_MAX_MIN // 60} hours.")
+    if t0.year < 1995:
+        raise HTTPException(400, "The radar archive starts in the 1990s.")
+    t0, t1 = t0.replace(second=0, microsecond=0), t1.replace(second=0, microsecond=0)
+    key = hashlib.sha1(f"{t0.isoformat()}|{t1.isoformat()}".encode()).hexdigest()[:16]
+    os.makedirs(HIST_DIR, exist_ok=True)
+    path = os.path.join(HIST_DIR, f"{key}.json")
+    if os.path.exists(path):
+        return FileResponse(path, media_type="application/json", headers={"Cache-Control": "public, max-age=86400"})
+    with HIST_LOCK:
+        job = HIST_JOBS.get(key)
+        if job and job["state"] == "error":
+            HIST_JOBS.pop(key)
+            raise HTTPException(502, f"Couldn't build that period: {job['error']}")
+        if not job:
+            if sum(1 for j in HIST_JOBS.values() if j["state"] == "building") >= 2:
+                raise HTTPException(429, "Two historical periods are already being built. Try again in a minute.")
+            HIST_JOBS[key] = {"state": "building"}
+            threading.Thread(target=_hist_build, args=(key, t0, t1, path), daemon=True).start()
+    return JSONResponse({"state": "building", "retry_after_s": 15}, status_code=202, headers={"Retry-After": "15"})
 
 
 @app.get("/api/status")

@@ -51,7 +51,7 @@ jobs:
         env:
           LABEL: ${{ inputs.label }}
         run: |
-          cd "$RUNNER_TEMP/out"
+          mkdir -p "$RUNNER_TEMP/pub" && cd "$RUNNER_TEMP/pub"
           git init -q -b history
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -59,6 +59,7 @@ jobs:
             git checkout -q FETCH_HEAD -- . 2>/dev/null || true
             git reset -q --soft FETCH_HEAD
           fi
+          cp "$RUNNER_TEMP"/out/*.json .            # new build replaces an earlier one with the same label
           git add -A
-          git commit -q -m "history $LABEL"
+          git commit -q -m "history $LABEL" || echo "unchanged"
           git push -q "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:history
