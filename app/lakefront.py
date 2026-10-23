@@ -36,7 +36,9 @@ KY = 110570.0
 
 OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
 ERDDAP_HOSTS = ["https://apps.glerl.noaa.gov/erddap", "https://coastwatch.glerl.noaa.gov/erddap"]
-GLSEA_CANDIDATES = ["GLSEA_GCS", "GLSEA_ACSPO_GCS", "GLSEA3_GCS"]
+GLSEA_CANDIDATES = ["GLSEA_ACSPO_GCS", "GLSEA_GCS"]          # ACSPO GLSEA is current; the older GLSEA_GCS ends in 2023
+ICE_CANDIDATES = ["GL_Ice_Concentration_GCS"]
+MAX_AGE_DAYS = 5
 
 
 def xy(lat, lon):
@@ -181,15 +183,22 @@ def grid_from_points(points):
     return {"lat0": lats[0], "lat1": lats[-1], "lon0": lons[0], "lon1": lons[-1], "nlat": len(lats), "nlon": len(lons), "v": vals}
 
 
+def _fresh(t):
+    try:
+        return (dt.datetime.now(UTC) - dt.datetime.fromisoformat(str(t).replace("Z", "+00:00"))).days <= MAX_AGE_DAYS
+    except ValueError:
+        return False
+
+
 def fetch_glsea(probe, get=http_get):
     """Lake-surface temperature (deg C) and ice concentration (0-1) grids from GLERL's ERDDAP."""
     out = {}
     for host in ERDDAP_HOSTS:
-        cands = list(GLSEA_CANDIDATES)
+        cands = list(GLSEA_CANDIDATES) + list(ICE_CANDIDATES)
         try:
             found = _erddap_search(host, "GLSEA", get)
             probe.setdefault("erddap_search", {})[host] = found[:30]
-            cands += [d for d, t in found if d not in cands]
+            cands += [d for d, t in found if d not in cands and d.endswith("_GCS")]
         except Exception as e:  # noqa: BLE001
             probe.setdefault("erddap_errors", []).append(f"search {host}: {e}")
         for ds in cands:
@@ -204,11 +213,15 @@ def fetch_glsea(probe, get=http_get):
             try:
                 if tvar and "temp" not in out:
                     t, pts = _erddap_grid(host, ds, tvar, TEMP_BBOX, get)
-                    if pts:
+                    probe.setdefault("erddap_times", {})[f"{ds}.{tvar}"] = t
+                    if pts and _fresh(t):
                         out["temp"] = grid_from_points(pts) | {"time": t, "source": f"{ds} ({host})", "var": tvar}
                 if ivar and "ice" not in out:
                     t, pts = _erddap_grid(host, ds, ivar, TEMP_BBOX, get)
-                    if pts:
+                    probe.setdefault("erddap_times", {})[f"{ds}.{ivar}"] = t
+                    if pts and not _fresh(t):
+                        out["ice_status"] = f"no current ice analysis (latest {str(t)[:10]}; NOAA analyzes ice roughly December to May)"
+                    if pts and _fresh(t):
                         g = grid_from_points(pts)
                         mx = max([v for v in g["v"] if v is not None] or [0])
                         if mx > 1.5:      # percent -> fraction
@@ -253,11 +266,30 @@ def station_history(st, hours=48, get=http_get):
     return out[::-1]
 
 
+def probe_osm(probe, bbox=MAP_BBOX, get=http_get):
+    s_, w, n, e = bbox
+    qs = {
+        "coastline_ways": f'[out:json][timeout:60];way["natural"="coastline"]({s_},{w},{n},{e});out tags 5;',
+        "lake_relation": '[out:json][timeout:60];relation["name"="Lake Michigan"];out tags;',
+        "diversey": f'[out:json][timeout:60];nwr["name"~"Diversey"]({s_},{w},{n},{e});out tags center;',
+        "water_rel_in_bbox": f'[out:json][timeout:60];relation["natural"="water"]({s_},{w},{n},{e});out tags;',
+        "is_in_lake": '[out:json][timeout:60];is_in(41.93,-87.62);out tags;',
+    }
+    for k, q in qs.items():
+        try:
+            js = json.loads(get(OVERPASS[0], data=urllib.parse.urlencode({"data": q}).encode(), timeout=90))
+            probe.setdefault("osm_probe", {})[k] = [{"type": el["type"], "id": el["id"], "tags": el.get("tags"), "center": el.get("center")} for el in js.get("elements", [])][:12]
+        except Exception as ex:  # noqa: BLE001
+            probe.setdefault("osm_probe", {})[k] = f"error: {ex}"
+
+
 def build(get=http_get, probe=None):
     probe = probe if probe is not None else {}
     notes = []
     data = {"version": 1, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds"),
             "ref": {"lat": REF[0], "lon": REF[1], "units": "m east/north"}, "map_bbox": MAP_BBOX}
+    if os.environ.get("OSM_PROBE"):
+        probe_osm(probe, get=get)
     try:
         data["osm"] = fetch_osm(get=get)
         data["osm_attribution"] = "© OpenStreetMap contributors (ODbL)"

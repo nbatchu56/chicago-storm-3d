@@ -87,6 +87,27 @@ main > * { min-width: 0; }
 .radar-inset button[aria-pressed="true"] { background: #fff; color: #0b1a20; }
 .radar-inset .src { color: #b9cbd3; }
 .simfail { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 20px; color: #fff; background: rgba(10,30,40,.65); }
+/* route view */
+.route .stage { aspect-ratio: 16 / 10; background: #1d2b30; }
+#route3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.route-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.filebtn { position: relative; font: 500 13px/1 var(--font-ui); padding: 8px 11px; border: 1px dashed var(--line); border-radius: 5px; cursor: pointer; color: var(--fg); }
+.filebtn:hover { border-color: var(--accent); }
+.filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.route-legend { position: absolute; left: 12px; top: 12px; background: rgba(8, 20, 26, .8); color: #e8f1f5; border-radius: 6px; padding: 8px 10px; font: 11px/1.35 var(--font-data); display: grid; gap: 4px; max-width: min(46%, 250px); }
+.route-legend .bar { height: 9px; border-radius: 2px; }
+.route-legend .ticks { display: flex; justify-content: space-between; }
+.route-legend b { font: 600 11px/1.2 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; }
+.route-hud { position: absolute; right: 12px; top: 12px; background: rgba(8, 20, 26, .8); color: #fff; border-radius: 6px; padding: 8px 10px; font: 12px/1.45 var(--font-data); text-align: right; pointer-events: none; }
+.route-hud b { font-size: 14px; font-weight: 500; }
+.route-attr { position: absolute; right: 8px; bottom: 6px; font: 10px var(--font-ui); color: rgba(255,255,255,.8); text-shadow: 0 1px 2px #000; }
+.route-play { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.route-play input { flex: 1; accent-color: var(--accent); }
+.route-play output { font: 13px var(--font-data); min-width: 170px; text-align: right; font-variant-numeric: tabular-nums; }
+.route-play button { font: 600 13px/1 var(--font-ui); padding: 8px 14px; border-radius: 5px; border: 1px solid var(--accent); color: var(--accent); background: transparent; cursor: pointer; }
+.route-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 18px; padding: 14px 16px 16px; border-top: 1px solid var(--line); }
+.route-note { grid-column: 1 / -1; color: var(--muted); font-size: 13px; margin: 0; }
+@media (max-width: 900px) { .route .stage { aspect-ratio: 4 / 5; } .route-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* chart */
 .chart { padding: 14px 16px 10px; }
 .chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; align-items: baseline; }
@@ -161,6 +182,21 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
         </div>
       </section>
 
+      <section class="card sim route" aria-label="Route view">
+        <div class="sim-head">
+          <div><h3 id="route-title">Route view</h3><div class="sub" id="route-sub">North Avenue Beach to Diversey Harbor</div></div>
+          <div class="route-tools">
+            <div class="seg" role="group" aria-label="Map perspective"><button data-rview="top" aria-pressed="true">Bird's eye</button><button data-rview="tilt" aria-pressed="false">Tilted 3D</button></div>
+            <div class="seg" role="group" aria-label="Water overlay"><button data-ov="temp" aria-pressed="true">Water temp</button><button data-ov="plain" aria-pressed="false">Plain</button></div>
+            <label class="filebtn">Load a GPX<input type="file" id="gpx-file" accept=".gpx,application/gpx+xml"></label>
+          </div>
+        </div>
+        <div class="stage"><canvas id="route3d" aria-label="Bird's-eye map of the lakefront with your paddle track and water temperature"></canvas>
+          <div class="route-legend" id="route-legend"></div><div class="route-hud" id="route-hud"></div><div class="route-attr" id="route-attr"></div></div>
+        <div class="route-play"><button id="route-play">Play</button><input type="range" id="route-t" min="0" max="1000" value="0" aria-label="Session time"><output id="route-t-o"></output></div>
+        <div class="route-stats" id="route-stats"></div>
+      </section>
+
       <section class="card chart">
         <div class="chart-head">
           <h3>Next 48 hours</h3>
@@ -191,8 +227,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
 <script id="sup-data" type="application/json"></script>
 <script id="scene-data" type="application/json"></script>
+<script id="lakefront-data" type="application/json"></script>
+<script id="track-data" type="application/json"></script>
 <script>
 "use strict";
 (() => {
@@ -878,6 +917,288 @@ function simHud() {
 }
 document.querySelectorAll("[data-view]").forEach((b) => b.onclick = () => { SIM.view = b.dataset.view; document.querySelectorAll("[data-view]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); });
 
+
+// ------------------------------------------------------------ route view: bird's-eye lakefront, water temperature, your track
+const RT = { LF: null, track: null, ok: false, t: 0, playing: false, ov: "temp", view: "top" };
+const RREF = { lat: 41.8820, lon: -87.6278 }, RKX = 111320 * Math.cos(RREF.lat * Math.PI / 180), RKY = 110570;
+const toXY = (lat, lon) => [(lon - RREF.lon) * RKX, (lat - RREF.lat) * RKY];
+const toLL = (x, y) => [RREF.lat + y / RKY, RREF.lon + x / RKX];
+const cToF = (c) => c * 9 / 5 + 32;
+// water temperature colours (deg F) with cold-water bands
+const TSTOPS = [[32, [235, 245, 255]], [38, [120, 150, 235]], [45, [55, 95, 210]], [50, [40, 140, 210]], [55, [40, 175, 190]], [60, [70, 190, 140]], [65, [150, 200, 90]], [70, [230, 205, 70]], [75, [240, 150, 60]], [80, [225, 85, 60]]];
+function tColor(f) {
+  if (f <= TSTOPS[0][0]) return TSTOPS[0][1];
+  for (let i = 1; i < TSTOPS.length; i++) if (f <= TSTOPS[i][0]) { const [a, ca] = TSTOPS[i - 1], [b, cb] = TSTOPS[i], k = (f - a) / (b - a); return ca.map((v, j) => Math.round(v + (cb[j] - v) * k)); }
+  return TSTOPS[TSTOPS.length - 1][1];
+}
+const SPEED_MAX = 3.0;  // m/s for the colour ramp
+function sColor(v) { const k = Math.max(0, Math.min(1, (v || 0) / SPEED_MAX)); const c = [[60, 80, 220], [40, 190, 210], [120, 220, 90], [250, 210, 60], [245, 90, 60]];
+  const x = k * (c.length - 1), i = Math.min(Math.floor(x), c.length - 2), f = x - i; return c[i].map((v, j) => Math.round(v + (c[i + 1][j] - v) * f)); }
+
+// ---- GPX parsing (also used for files you load)
+function parseGPX(text, name) {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  const pts = [...doc.getElementsByTagName("trkpt")]; if (!pts.length) throw new Error("No track points in that file.");
+  const val = (el, tag) => { const n = el.getElementsByTagNameNS("*", tag)[0] || el.getElementsByTagName(tag)[0]; return n ? n.textContent : null; };
+  let t0 = null; const out = [];
+  for (const p of pts) {
+    const la = +p.getAttribute("lat"), lo = +p.getAttribute("lon"), ts = val(p, "time"); const t = ts ? new Date(ts.replace(/([+-]\d\d)(\d\d)$/, "$1:$2")) : null;
+    if (t0 == null && t) t0 = t; const [x, y] = toXY(la, lo); const sp = val(p, "speed"), hr = val(p, "hr");
+    out.push([t && t0 ? (t - t0) / 1000 : out.length, x, y, sp != null ? +sp : null, hr != null && +hr > 0 ? +hr : null]);
+  }
+  // fill speed from positions where the file has none
+  for (let i = 1; i < out.length; i++) if (out[i][3] == null) { const a = out[i - 1], b = out[i], dt = Math.max(b[0] - a[0], 1e-3); b[3] = Math.hypot(b[1] - a[1], b[2] - a[2]) / dt; }
+  return { name: name || "Your track", start: t0 ? t0.toISOString() : null, source: "GPX file", pts: out };
+}
+
+// ---- lake temperature grid (deg C) with gaps filled by nearest valid cell
+function prepGrid(g) {
+  if (!g || !g.v) return null;
+  const { nlat, nlon } = g, v = g.v.slice(), q = [];
+  for (let i = 0; i < v.length; i++) if (v[i] != null) q.push(i);
+  if (!q.length) return null;
+  for (let head = 0; head < q.length; head++) { const i = q[head], r = Math.floor(i / nlon), c = i % nlon;
+    for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const rr = r + dr, cc = c + dc; if (rr < 0 || cc < 0 || rr >= nlat || cc >= nlon) continue; const j = rr * nlon + cc; if (v[j] == null) { v[j] = v[i]; q.push(j); } } }
+  return { ...g, v };
+}
+function gridAt(G, lat, lon) {
+  if (!G) return null;
+  const fy = (lat - G.lat0) / (G.lat1 - G.lat0) * (G.nlat - 1), fx = (lon - G.lon0) / (G.lon1 - G.lon0) * (G.nlon - 1);
+  const x0 = Math.max(0, Math.min(G.nlon - 2, Math.floor(fx))), y0 = Math.max(0, Math.min(G.nlat - 2, Math.floor(fy))), tx = Math.max(0, Math.min(1, fx - x0)), ty = Math.max(0, Math.min(1, fy - y0));
+  const v = (yy, xx) => G.v[yy * G.nlon + xx];
+  return (v(y0, x0) * (1 - tx) + v(y0, x0 + 1) * tx) * (1 - ty) + (v(y0 + 1, x0) * (1 - tx) + v(y0 + 1, x0 + 1) * tx) * ty;
+}
+function stationTempsField(st) {   // fallback: inverse-distance weighting of station water temperatures
+  const pts = (st || []).filter((s) => s.wtmp_now && s.wtmp_now.c != null).map((s) => [s.x, s.y, s.wtmp_now.c]);
+  if (!pts.length) return null;
+  return (x, y) => { let n = 0, d = 0; for (const [sx, sy, c] of pts) { const w = 1 / Math.max(1e6, (sx - x) ** 2 + (sy - y) ** 2); n += w * c; d += w; } return n / d; };
+}
+
+// ---- map texture
+function buildMap(LF, track, ov) {
+  const [S, W, N, E] = LF.map_bbox, [x0, y0] = toXY(S, W), [x1, y1] = toXY(N, E);
+  const WPX = 1536, HPX = Math.round(WPX * (y1 - y0) / (x1 - x0));
+  const P = (x, y) => [(x - x0) / (x1 - x0) * WPX, (y1 - y) / (y1 - y0) * HPX];
+  const feats = LF.osm || [];
+  const path = (c, pts, close) => { c.beginPath(); pts.forEach(([x, y], i) => { const [px, py] = P(x, y); i ? c.lineTo(px, py) : c.moveTo(px, py); }); if (close) c.closePath(); };
+  // 1) water mask: coastline as a barrier, flood-fill the lake from the open-water edge
+  const mk = document.createElement("canvas"); mk.width = WPX; mk.height = HPX; const m = mk.getContext("2d");
+  m.fillStyle = "#000"; m.fillRect(0, 0, WPX, HPX); m.strokeStyle = "#fff"; m.lineWidth = 2.5;
+  feats.filter((f) => f.kind === "coastline").forEach((f) => { path(m, f.pts, false); m.stroke(); });
+  const md = m.getImageData(0, 0, WPX, HPX).data, mask = new Uint8Array(WPX * HPX);   // 0 land, 1 lake, 2 harbour/lagoon water, 3 inland pond
+  const barrier = (i) => md[i * 4] > 100;
+  const flood = (sx, sy, val) => { const st = [sy * WPX + sx]; while (st.length) { const i = st.pop(); if (mask[i] || barrier(i)) continue; mask[i] = val;
+    const x = i % WPX, y = (i / WPX) | 0; if (x > 0) st.push(i - 1); if (x < WPX - 1) st.push(i + 1); if (y > 0) st.push(i - WPX); if (y < HPX - 1) st.push(i + WPX); } };
+  const hasCoast = feats.some((f) => f.kind === "coastline");
+  if (hasCoast) for (let y = 0; y < HPX; y += 37) if (!barrier(y * WPX + WPX - 1) && !mask[y * WPX + WPX - 1]) flood(WPX - 1, y, 1);
+  let lakeFrac = 0; for (let i = 0; i < mask.length; i += 97) lakeFrac += mask[i] === 1; lakeFrac /= mask.length / 97;
+  if (!hasCoast || lakeFrac > 0.85 || lakeFrac < 0.1) {      // coastline missing or leaky: fall back to the simplified outline
+    mask.fill(0); m.fillStyle = "#000"; m.fillRect(0, 0, WPX, HPX); m.fillStyle = "#fff"; m.beginPath();
+    SHORE_LL.forEach(([la, lo], i) => { const [px, py] = P(...toXY(la, lo)); i ? m.lineTo(px, py) : m.moveTo(px, py); }); m.lineTo(WPX * 3, -HPX); m.lineTo(WPX * 3, HPX * 3); m.closePath(); m.fill();
+    const d2 = m.getImageData(0, 0, WPX, HPX).data; for (let i = 0; i < mask.length; i++) mask[i] = d2[i * 4] > 128 ? 1 : 0; RT.coarse = true;
+  }
+  // harbours/lagoons and ponds from water polygons
+  const wc = document.createElement("canvas"); wc.width = WPX; wc.height = HPX; const w = wc.getContext("2d");
+  feats.filter((f) => f.kind === "water" && f.closed).forEach((f) => { w.fillStyle = /harbou?r|marina|lagoon|channel/i.test(f.name || "") ? "#f00" : "#0f0"; path(w, f.pts, true); w.fill(); });
+  const wd = w.getImageData(0, 0, WPX, HPX).data;
+  for (let i = 0; i < mask.length; i++) if (!mask[i]) { if (wd[i * 4] > 128) mask[i] = 2; else if (wd[i * 4 + 1] > 128) mask[i] = 3; }
+  // 2) colour the map
+  const cv = document.createElement("canvas"); cv.width = WPX; cv.height = HPX; const c = cv.getContext("2d");
+  c.fillStyle = "#cfc9b8"; c.fillRect(0, 0, WPX, HPX);
+  const fillKind = (kind, col) => { c.fillStyle = col; feats.filter((f) => f.kind === kind && f.closed).forEach((f) => { path(c, f.pts, true); c.fill(); }); };
+  fillKind("park", "#9fbf86"); fillKind("beach", "#ead9a8");
+  c.strokeStyle = "#8d8778"; c.lineCap = "round"; feats.filter((f) => f.kind === "road").forEach((f) => { c.lineWidth = 5; path(c, f.pts, false); c.stroke(); });
+  c.strokeStyle = "#f4f1e8"; feats.filter((f) => f.kind === "road").forEach((f) => { c.lineWidth = 2.5; path(c, f.pts, false); c.stroke(); });
+  const img = c.getImageData(0, 0, WPX, HPX), id = img.data;
+  const G = prepGrid(LF.lake && LF.lake.temp), ICE = prepGrid(LF.lake && LF.lake.ice), idw = G ? null : stationTempsField(LF.stations);
+  RT.tempSource = G ? `NOAA GLSEA satellite, ${String(LF.lake.temp.time || "").slice(0, 10)}` : idw ? "interpolated from nearby stations" : null;
+  RT.tempAt = (x, y) => { const [la, lo] = toLL(x, y); return G ? gridAt(G, la, lo) : idw ? idw(x, y) : null; };
+  RT.iceAt = (x, y) => { if (!ICE) return 0; const [la, lo] = toLL(x, y); return Math.max(0, gridAt(ICE, la, lo) || 0); };
+  let tmin = 99, tmax = -99, iceMax = 0;
+  for (let py = 0; py < HPX; py += 2) for (let px = 0; px < WPX; px += 2) {
+    const i = py * WPX + px, k = mask[i]; if (!k) continue;
+    const x = x0 + (px + 1) / WPX * (x1 - x0), y = y1 - (py + 1) / HPX * (y1 - y0);
+    let col = k === 3 ? [110, 150, 160] : [40, 105, 140];
+    if (k !== 3 && ov === "temp") { const tc = RT.tempAt(x, y); if (tc != null) { const f = cToF(tc); tmin = Math.min(tmin, f); tmax = Math.max(tmax, f); col = tColor(f); } }
+    const ice = k !== 3 ? RT.iceAt(x, y) : 0; iceMax = Math.max(iceMax, ice);
+    if (ice > 0.05) { const hatch = ((px + py) >> 3) & 1 ? 1 : 0.85; col = col.map((v) => Math.round(v + (250 * hatch - v) * Math.min(1, ice))); }
+    for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) { const j = ((py + dy) * WPX + px + dx) * 4; if (mask[(py + dy) * WPX + px + dx]) { id[j] = col[0]; id[j + 1] = col[1]; id[j + 2] = col[2]; } }
+  }
+  c.putImageData(img, 0, 0);
+  // shoreline, piers and breakwaters, buildings
+  c.strokeStyle = "rgba(40,50,55,.55)"; c.lineWidth = 1.2; feats.filter((f) => f.kind === "coastline").forEach((f) => { path(c, f.pts, false); c.stroke(); });
+  ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => { c.fillStyle = c.strokeStyle = kind === "pier" ? "#d8d4ca" : "#b7b2a6";
+    if (f.closed) { path(c, f.pts, true); c.fill(); } else { c.lineWidth = 4; path(c, f.pts, false); c.stroke(); } }));
+  c.fillStyle = "#6c6a66"; feats.filter((f) => f.kind === "building" && f.closed).forEach((f) => { path(c, f.pts, true); c.fill(); });
+  // labels for harbours
+  c.font = "600 22px Archivo, Arial, sans-serif"; c.fillStyle = "rgba(255,255,255,.92)"; c.strokeStyle = "rgba(0,0,0,.45)"; c.lineWidth = 4; c.textAlign = "center";
+  const named = new Map(); feats.filter((f) => f.kind === "water" && f.name && /harbou?r/i.test(f.name)).forEach((f) => { const xs = f.pts.map((p) => p[0]), ys = f.pts.map((p) => p[1]);
+    if (!named.has(f.name)) named.set(f.name, [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]); });
+  named.forEach(([x, y], name) => { const [px, py] = P(x, y); c.strokeText(name, px, py); c.fillText(name, px, py); });
+  RT.mapInfo = { x0, y0, x1, y1, WPX, HPX, tmin, tmax, iceMax };
+  return cv;
+}
+
+// ---- 3-D scene
+function initRoute() {
+  const canvas = $("#route3d");
+  if (!window.THREE || !THREE.OrbitControls) return;
+  let r; try { r = new THREE.WebGLRenderer({ canvas, antialias: true }); } catch (e) { return; }
+  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xa9c3cf);
+  const cam = new THREE.PerspectiveCamera(45, 1.6, 5, 60000);
+  const ctl = new THREE.OrbitControls(cam, canvas); ctl.enableDamping = true; ctl.maxPolarAngle = Math.PI * 0.47; ctl.screenSpacePanning = false; ctl.minDistance = 150; ctl.maxDistance = 20000;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x667766, 0.9)); const sun = new THREE.DirectionalLight(0xffffff, 0.6); sun.position.set(-1, 2, 1); scene.add(sun);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff })); ground.rotation.x = -Math.PI / 2; scene.add(ground);
+  const bmat = new THREE.MeshLambertMaterial({ color: 0x8b8f93 }), blds = new THREE.Group(); scene.add(blds);
+  const trackGroup = new THREE.Group(); scene.add(trackGroup);
+  const marker = new THREE.Mesh(new THREE.ConeGeometry(18, 50, 16), new THREE.MeshBasicMaterial({ color: 0xffffff })); marker.rotation.x = Math.PI; scene.add(marker);
+  const windArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 400, 0xffffff, 140, 80); scene.add(windArrow);
+  const waveArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 300, 0x7fd6ff, 120, 70); scene.add(waveArrow);
+  Object.assign(RT, { r, scene, cam, ctl, ground, blds, bmat, trackGroup, marker, windArrow, waveArrow, ok: true });
+  const resize = () => { const w = canvas.clientWidth, h = canvas.clientHeight; r.setSize(w, h, false); cam.aspect = w / Math.max(h, 1); cam.updateProjectionMatrix(); };
+  new ResizeObserver(resize).observe(canvas); resize();
+  let last = performance.now();
+  const loop = () => { requestAnimationFrame(loop); if (document.hidden) return; const now = performance.now(), dt = Math.min((now - last) / 1000, 0.1); last = now;
+    if (RT.playing && RT.track) { const T = RT.track.pts[RT.track.pts.length - 1][0]; RT.t = (RT.t + dt * T / 40); if (RT.t > T) RT.t = 0; $("#route-t").value = Math.round(RT.t / T * 1000); routeTime(); }
+    ctl.update(); r.render(scene, cam); };
+  requestAnimationFrame(loop);
+}
+function routeData() {
+  const txt = (id) => { const el = document.getElementById(id); return el ? el.textContent.trim() : ""; };
+  try { const l = txt("lakefront-data"); if (l) RT.LF = JSON.parse(l); } catch (e) {}
+  try { const t = txt("track-data"); if (t) RT.track = JSON.parse(t); } catch (e) {}
+}
+async function routeLive() {
+  if (!D || !D.live || RT.LF) return;
+  try { const r = await fetch("api/lakefront.json", { cache: "no-store" }); if (r.ok) RT.LF = await r.json(); } catch (e) {}
+}
+function setRouteMap() {
+  if (!RT.ok || !RT.LF) return;
+  const cv = buildMap(RT.LF, RT.track, RT.ov), M = RT.mapInfo;
+  const tex = new THREE.CanvasTexture(cv); tex.anisotropy = RT.r.capabilities.getMaxAnisotropy(); tex.encoding = THREE.sRGBEncoding;
+  if (RT.ground.material.map) RT.ground.material.map.dispose();
+  RT.ground.material = new THREE.MeshBasicMaterial({ map: tex }); RT.r.outputEncoding = THREE.sRGBEncoding;
+  RT.ground.scale.set(M.x1 - M.x0, M.y1 - M.y0, 1); RT.ground.position.set((M.x0 + M.x1) / 2, 0, -(M.y0 + M.y1) / 2);
+  // buildings with heights, extruded
+  RT.blds.clear();
+  (RT.LF.osm || []).filter((f) => f.kind === "building" && f.closed && f.h).forEach((f) => {
+    const sh = new THREE.Shape(f.pts.map(([x, y]) => new THREE.Vector2(x, y)));
+    const g = new THREE.ExtrudeGeometry(sh, { depth: f.h, bevelEnabled: false }); g.rotateX(-Math.PI / 2);
+    RT.blds.add(new THREE.Mesh(g, RT.bmat)); });
+  renderLegend();
+  $("#route-attr").textContent = RT.LF.osm_attribution ? `Map ${RT.LF.osm_attribution}` : "";
+}
+function setTrack(track) {
+  RT.track = track; RT.t = 0; RT.trackGroup.clear();
+  if (!track || !track.pts.length) return;
+  const pos = [], col = [];
+  track.pts.forEach(([t, x, y, v]) => { pos.push(x, 6, -y); const c = sColor(v); col.push(c[0] / 255, c[1] / 255, c[2] / 255); });
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  RT.trackGroup.add(new THREE.Line(g, new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 3 })));
+  // a wider halo so the line reads from above
+  const halo = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x0b1a20, transparent: true, opacity: 0.35 })); halo.position.y = -2; RT.trackGroup.add(halo);
+  sessionStats(); routeView(RT.view, true); routeTime();
+}
+function trackBounds() {
+  const P = RT.track ? RT.track.pts : [[0, 232, 3737], [0, -411, 5100]];
+  const xs = P.map((p) => p[1]), ys = P.map((p) => p[2]);
+  return { cx: (Math.min(...xs) + Math.max(...xs)) / 2, cy: (Math.min(...ys) + Math.max(...ys)) / 2, span: Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1200) };
+}
+function routeView(v, instant) {
+  RT.view = v; document.querySelectorAll("[data-rview]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.rview === v)));
+  if (!RT.ok) return; const b = trackBounds(), cx = b.cx + 300, cz = -b.cy;
+  if (v === "top") { RT.cam.position.set(cx, b.span * 1.9, cz + 1); RT.ctl.target.set(cx, 0, cz); }
+  else { RT.cam.position.set(cx + b.span * 1.1, b.span * 0.55, cz + b.span * 0.9); RT.ctl.target.set(cx - 150, 0, cz); }
+  RT.ctl.update();
+}
+// conditions from the nearest station that has the field at a given time
+function stationAt(field, tMs, nearXY) {
+  const st = (RT.LF && RT.LF.stations || []).filter((s) => s.history && s.history.some((h) => h[field] != null));
+  if (!st.length) return null;
+  st.sort((a, b) => Math.hypot(a.x - nearXY[0], a.y - nearXY[1]) - Math.hypot(b.x - nearXY[0], b.y - nearXY[1]));
+  for (const s of st.slice(0, 4)) {
+    let best = null; for (const h of s.history) { if (h[field] == null) continue; const d = Math.abs(new Date(h.t) - tMs); if (!best || d < best.d) best = { d, h }; }
+    if (best && best.d < 3 * 3600e3) return { station: s, obs: best.h, dist: Math.hypot(s.x - nearXY[0], s.y - nearXY[1]) };
+  }
+  return null;
+}
+const angd = (a, b) => ((a - b + 540) % 360) - 180;
+function sessionStats() {
+  const T = RT.track, el = $("#route-stats"); if (!T) { el.innerHTML = `<p class="route-note">Load a GPX file from your paddle app to see it on the map.</p>`; return; }
+  const P = T.pts, t0 = T.start ? new Date(T.start).getTime() : null;
+  let dist = 0, moving = 0, hrs = [], into = [0, 0], down = [0, 0], cross = [0, 0];
+  const b = trackBounds(), mid = t0 != null ? t0 + P[P.length - 1][0] * 500 : null;
+  const wind = mid != null ? stationAt("wspd", mid, [b.cx, b.cy]) : null, wave = mid != null ? stationAt("wvht", mid, [b.cx, b.cy]) : null;
+  for (let i = 1; i < P.length; i++) { const a = P[i - 1], c = P[i], d = Math.hypot(c[1] - a[1], c[2] - a[2]), dt = c[0] - a[0]; dist += d; if (d / Math.max(dt, 1e-3) > 0.4) moving += dt; if (c[4]) hrs.push(c[4]);
+    if (wind && i >= 6 && i % 3 === 0) { const p = P[i - 6], dd = Math.hypot(c[1] - p[1], c[2] - p[2]); if (dd > 4) { const hd = (Math.atan2(c[1] - p[1], c[2] - p[2]) * 180 / Math.PI + 360) % 360, rel = Math.abs(angd(hd, wind.obs.wdir)), v = dd / Math.max(c[0] - p[0], 1e-3);
+      const bin = rel < 60 ? into : rel > 120 ? down : cross; bin[0] += v; bin[1]++; } } }
+  const dur = P[P.length - 1][0], avg = dist / Math.max(moving, 1), mx = Math.max(...P.map((p) => p[3] || 0));
+  const mi = dist / 1609.34, hrAvg = hrs.length ? Math.round(hrs.reduce((a, c) => a + c, 0) / hrs.length) : null, hrMax = hrs.length ? Math.max(...hrs) : null;
+  const water = RT.tempAt ? RT.tempAt(b.cx, b.cy) : null, wst = mid != null ? stationAt("wtmp", mid, [b.cx, b.cy]) : null;
+  const wtF = water != null ? cToF(water) : wst ? cToF(wst.obs.wtmp) : null;
+  const vstr = (bin) => bin[1] ? `${(bin[0] / bin[1] * MPH).toFixed(1)} mph` : "–";
+  const card = (k, v, s2) => `<div class="num"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s2}</div></div>`;
+  el.innerHTML = card("Distance", `${mi.toFixed(2)} mi`, `${(dist / 1000).toFixed(2)} km`) +
+    card("Time", `${Math.floor(dur / 60)}:${String(Math.round(dur % 60)).padStart(2, "0")}`, `${Math.round(moving / 60)} min moving${t0 ? ` · started ${fmtHM.format(new Date(t0))}` : ""}`) +
+    card("Speed", `${(avg * MPH).toFixed(1)} mph`, `top ${(mx * MPH).toFixed(1)} mph · ${(avg * 3.6).toFixed(1)} km/h avg`) +
+    card("Heart rate", hrAvg ? `${hrAvg} bpm` : "–", hrMax ? `max ${hrMax} bpm` : "not in this file") +
+    card("Wind then", wind ? `${mph(wind.obs.wspd)} mph ${compass(wind.obs.wdir)}` : "–", wind ? `${wind.station.id}, ${(wind.dist / 1000).toFixed(0)} km away${wind.obs.gst ? ` · gusts ${mph(wind.obs.gst)}` : ""}` : "no station history for this time") +
+    card("Into wind / downwind", `${vstr(into)} / ${vstr(down)}`, wind ? `cross-wind ${vstr(cross)}` : "needs wind history") +
+    card("Waves then", wave ? `${ft(wave.obs.wvht)} ft` : "–", wave ? `${wave.station.id}${wave.obs.dpd ? ` · ${wave.obs.dpd} s` : ""} (open lake)` : "no wave buoy history") +
+    card("Water", wtF != null ? `${Math.round(wtF)}°F` : "–", wtF != null ? coldAdvice(wtF) : "no temperature data") +
+    `<p class="route-note">Your track is stored in this page. Anyone you share the page with will see the route${hrAvg ? " and heart rate" : ""}.</p>`;
+  RT.session = { wind, wave, t0 };
+}
+function coldAdvice(f) {
+  return f < 40 ? "ice-cold: drysuit, stay near shore" : f < 50 ? "cold shock likely: drysuit" : f < 60 ? "cold: wetsuit or drysuit" : f < 70 ? "cool: wetsuit or layers" : "comfortable";
+}
+function renderLegend() {
+  const M = RT.mapInfo || {}, el = $("#route-legend"); let html = "";
+  if (RT.ov === "temp" && RT.tempSource) {
+    const lo = 32, hi = 80, grad = TSTOPS.map(([f, c]) => `rgb(${c}) ${((f - lo) / (hi - lo) * 100).toFixed(0)}%`).join(",");
+    html += `<b>Water temperature</b><div class="bar" style="background:linear-gradient(90deg,${grad})"></div><div class="ticks"><span>32°F</span><span>50</span><span>60</span><span>70</span><span>80</span></div>`;
+    html += `<span>Here: ${Math.round(M.tmin)}–${Math.round(M.tmax)}°F · ${coldAdvice((M.tmin + M.tmax) / 2)}</span><span>${RT.tempSource}</span>`;
+  } else if (RT.ov === "temp") html += `<b>Water temperature</b><span>No temperature data in this file</span>`;
+  html += M.iceMax > 0.05 ? `<span><b>Ice</b> up to ${Math.round(M.iceMax * 100)}% cover (hatched)</span>` : `<span>No lake ice in the satellite analysis</span>`;
+  if (RT.track) html += `<b>Track speed</b><div class="bar" style="background:linear-gradient(90deg,${[0, .25, .5, .75, 1].map((k) => `rgb(${sColor(k * SPEED_MAX)})`).join(",")})"></div><div class="ticks"><span>0</span><span>${(SPEED_MAX * MPH / 2).toFixed(1)}</span><span>${(SPEED_MAX * MPH).toFixed(1)} mph</span></div>`;
+  if (RT.coarse) html += `<span>Map detail unavailable; simplified shoreline shown</span>`;
+  el.innerHTML = html;
+}
+function routeTime() {
+  if (!RT.track || !RT.ok) return;
+  const P = RT.track.pts, T = P[P.length - 1][0]; let i = 0; while (i < P.length - 2 && P[i + 1][0] < RT.t) i++;
+  const a = P[i], b = P[i + 1] || a, f = b[0] > a[0] ? Math.min(1, Math.max(0, (RT.t - a[0]) / (b[0] - a[0]))) : 0;
+  const x = a[1] + (b[1] - a[1]) * f, y = a[2] + (b[2] - a[2]) * f; RT.marker.position.set(x, 30, -y);
+  const j = Math.max(0, i - 4), hd = (Math.atan2(b[1] - P[j][1], b[2] - P[j][2]) * 180 / Math.PI + 360) % 360;
+  const t0 = RT.track.start ? new Date(RT.track.start).getTime() : null, tMs = t0 != null ? t0 + RT.t * 1000 : null;
+  const wind = tMs != null ? stationAt("wspd", tMs, [x, y]) : null, wave = tMs != null ? stationAt("wvht", tMs, [x, y]) : null;
+  if (wind) { const db = (wind.obs.wdir + 180) * Math.PI / 180; RT.windArrow.visible = true; RT.windArrow.position.set(x + 700, 40, -y);
+    RT.windArrow.setDirection(new THREE.Vector3(Math.sin(db), 0, -Math.cos(db))); RT.windArrow.setLength(150 + wind.obs.wspd * 60, 120, 70); } else RT.windArrow.visible = false;
+  if (wave && wave.obs.mwd != null) { const db = (wave.obs.mwd + 180) * Math.PI / 180; RT.waveArrow.visible = true; RT.waveArrow.position.set(x + 1300, 30, -y);
+    RT.waveArrow.setDirection(new THREE.Vector3(Math.sin(db), 0, -Math.cos(db))); RT.waveArrow.setLength(150 + wave.obs.wvht * 500, 110, 65); } else RT.waveArrow.visible = false;
+  const rel = wind ? Math.abs(angd(hd, wind.obs.wdir)) : null, relTxt = rel == null ? "" : rel < 60 ? "into the wind" : rel > 120 ? "with the wind" : "cross-wind";
+  const wt = RT.tempAt ? RT.tempAt(x, y) : null;
+  $("#route-hud").innerHTML = `<b>${(a[3] != null ? a[3] * MPH : 0).toFixed(1)} mph</b> heading ${compass(hd)}${a[4] ? ` · ${a[4]} bpm` : ""}<br>` +
+    (wind ? `Wind ${mph(wind.obs.wspd)} mph ${compass(wind.obs.wdir)} · ${relTxt}<br>` : "") + (wave ? `Waves ${ft(wave.obs.wvht)} ft (buoy ${wave.station.id})<br>` : "") +
+    (wt != null ? `Water ${Math.round(cToF(wt))}°F here` : "");
+  $("#route-t-o").textContent = tMs != null ? `${fmtHM.format(new Date(tMs))} · ${Math.floor(RT.t / 60)}:${String(Math.floor(RT.t % 60)).padStart(2, "0")} in` : `${Math.round(RT.t)} s`;
+}
+function startRoute() {
+  routeData();
+  initRoute();
+  if (!RT.ok) { $(".route").hidden = true; return; }
+  setRouteMap(); setTrack(RT.track);
+  if (RT.track && RT.track.start) $("#route-sub").textContent = `${RT.track.name || "Your paddle"} · ${fmtFull.format(new Date(RT.track.start))}`;
+}
+document.querySelectorAll("[data-rview]").forEach((b) => b.onclick = () => routeView(b.dataset.rview));
+document.querySelectorAll("[data-ov]").forEach((b) => b.onclick = () => { RT.ov = b.dataset.ov; document.querySelectorAll("[data-ov]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); setRouteMap(); });
+$("#route-t").oninput = (e) => { if (!RT.track) return; RT.playing = false; $("#route-play").textContent = "Play"; RT.t = +e.target.value / 1000 * RT.track.pts[RT.track.pts.length - 1][0]; routeTime(); };
+$("#route-play").onclick = () => { if (!RT.track) return; RT.playing = !RT.playing; $("#route-play").textContent = RT.playing ? "Pause" : "Play"; };
+$("#gpx-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return;
+  try { const tr = parseGPX(await f.text(), f.name.replace(/\.gpx$/i, "")); setTrack(tr); setRouteMap(); $("#route-sub").textContent = `${tr.name}${tr.start ? " · " + fmtFull.format(new Date(tr.start)) : ""}`; }
+  catch (err) { $("#route-stats").innerHTML = `<p class="route-note">Couldn't read that file: ${err.message}</p>`; } };
+
 // ------------------------------------------------------------ wiring
 function setHour(i) { hourIdx = Math.max(0, Math.min(i, hourly().length - 1)); $("#hour").value = hourIdx; renderHour(); }
 function renderHour() {
@@ -899,11 +1220,12 @@ async function boot() {
     if (!D.spots || !D.spots.length || !D.spots[0].hourly.length) throw new Error("The forecast file has no hours in it.");
     renderAll();
     loadRadarSource();
+    await routeLive(); startRoute();
   } catch (e) {
     $("#verdict").innerHTML = `<div class="empty" style="grid-column:1/-1"><strong>No forecast loaded.</strong><br>${e.message}</div>`;
   }
 }
 boot();
-window.__sup = { get D() { return D; }, setHour, SIM };
+window.__sup = { get D() { return D; }, setHour, SIM, RT, routeView };
 })();
 </script>
