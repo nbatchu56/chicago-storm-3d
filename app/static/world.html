@@ -211,7 +211,7 @@ const SHORE_LL = [[45.0,-87.42],[44.40,-87.50],[43.75,-87.70],[43.04,-87.88],[42
 const SHORE = SHORE_LL.map(([a, b]) => ll(a, b));
 const LAKE = SHORE.concat([ll(46.2, -85.4), ll(46.2, -87.3)]);
 const PLACES = [["Chicago Loop", 41.8820, -87.6278, 0.3], ["Navy Pier", 41.8917, -87.6043, 0.03], ["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Diversey Harbor", 41.9310, -87.6345, 0.02],
-  ["Montrose Harbor", 41.9620, -87.6345, 0.02], ["O'Hare", 41.9786, -87.9048, 0.02], ["Midway", 41.7868, -87.7522, 0.02], ["Evanston", 42.0451, -87.6877, 0.02], ["Gary", 41.6020, -87.3372, 0.02]];
+  ["Montrose Harbor", 41.9620, -87.6345, 0.02], ["O'Hare", 41.9786, -87.9048, 0.12], ["Midway", 41.7868, -87.7522, 0.12], ["Evanston", 42.0451, -87.6877, 0.12], ["Gary", 41.6020, -87.3372, 0.12]];
 function inLakeCoarse(x, y) { let c = false; for (let i = 0, j = LAKE.length - 1; i < LAKE.length; j = i++) { const [ax, ay] = LAKE[i], [bx, by] = LAKE[j]; if ((ay > y) !== (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax) c = !c; } return c; }
 function rayFetchKm(x, y, fromDeg) { const b = fromDeg * Math.PI / 180, dx = Math.sin(b), dy = Math.cos(b); let d = 0; while (d < 500 && inLakeCoarse(x + dx * d, y + dy * d)) d += d < 5 ? 0.25 : 1; return d; }
 
@@ -965,12 +965,12 @@ function setExag(v) { S.exag = v; U.uExag.value = v; $("#exag").value = v; $("#e
 // ---------------------------------------------------------------- labels
 const labelsEl = $("#labels"); let labelItems = [];
 function buildLabels() { labelsEl.innerHTML = ""; labelItems = [];
-  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"); d.className = "lbl" + (cls ? " " + cls : ""); d.textContent = txt; labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y) }); };
+  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"); d.className = "lbl" + (cls ? " " + cls : ""); d.textContent = txt; labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y), far: cls === "lake" || h > 0.1 ? 220 : 30 }); };
   for (const [name, la, lo, h] of PLACES) { const [x, y] = ll(la, lo); add(name, x, y, h); } add("Lake Michigan", 30, 25, 0, "lake"); }
 const tmpV = new THREE.Vector3();
 function updateLabels() { const w = canvas.clientWidth, h = canvas.clientHeight;
   for (const it of labelItems) { tmpV.copy(it.p).project(camera); const dist = camera.position.distanceTo(it.p);
-    const vis = tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1 && dist < 220 && dist > 0.25; it.d.style.display = vis ? "" : "none";
+    const vis = tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1 && dist < it.far && dist > 0.25; it.d.style.display = vis ? "" : "none";
     if (vis) { it.d.style.left = `${(tmpV.x * 0.5 + 0.5) * w}px`; it.d.style.top = `${(-tmpV.y * 0.5 + 0.5) * h}px`; } } }
 
 // ---------------------------------------------------------------- resize / quality
