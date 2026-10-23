@@ -19,7 +19,7 @@ jobs:
       - run: pip install numpy scipy
       - name: Hindcast at buoy 45198
         run: |
-          mkdir -p out && (python -m app.validate --days ${{ inputs.days }} --out out/validate.json > out/stats.txt 2>&1; echo "exit $?" >> out/stats.txt)
+          mkdir -p out && { python -m app.validate --days ${{ inputs.days }} --out out/validate.json > out/stats.txt 2>&1 || echo "failed" >> out/stats.txt; }
           echo "::notice title=validation::$(tail -c 3000 out/stats.txt | tr '\n' '|' | sed 's/%/%25/g')"
       - name: Publish to the validate branch
         run: |
