@@ -180,10 +180,14 @@ def isgs_rasters(probe):
         if url in seen:
             continue
         seen.add(url)
-        try:
-            html = get(url, timeout=60).decode("utf-8", "replace")
-        except Exception as e:  # noqa: BLE001
-            log_.append(f"{url}: {e}"); continue
+        html = None
+        for attempt in range(3):                   # the clearinghouse is slow to answer
+            try:
+                html = get(url, timeout=240).decode("utf-8", "replace"); break
+            except Exception as e:  # noqa: BLE001
+                log_.append(f"{url} (try {attempt + 1}): {e}"); time.sleep(10)
+        if html is None:
+            continue
         for h in _links(html, url):
             low = h.lower()
             if re.search(r"\.(zip|tif|tiff)(\?|$)", low) and ("dem" in low or "topobath" in low or "tbm" in low or low.endswith((".tif", ".tiff"))):
