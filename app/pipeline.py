@@ -53,7 +53,8 @@ class Config:
         self.lead_min = env("LEAD_MIN", 120, int)
         self.step_min = env("STEP_MIN", 10, int)
         self.cloud_base_km = env("CLOUD_BASE_KM", 1.2, float)
-        self.ndbc = [s.strip() for s in env("NDBC_STATIONS", "45007,45174,CHII2").split(",") if s.strip()]
+        # NDBC_STATIONS="" (set but empty) turns the buoy lookup off; unset uses the defaults
+        self.ndbc = [s.strip() for s in os.environ.get("NDBC_STATIONS", "45007,45174,CHII2").split(",") if s.strip()]
         self.wind_speed = env("WIND_SPEED", 10.0, float)    # fallback scenario wind
         self.wind_dir = env("WIND_DIR", 20.0, float)
         self.wind_duration_h = env("WIND_DURATION_H", 8.0, float)

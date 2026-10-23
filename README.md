@@ -84,7 +84,7 @@ gcloud scheduler jobs create http storm-refresh --schedule "*/5 * * * *" \
 | `LOOKBACK_MIN` | `75` | how far back to look for those volumes |
 | `LEAD_MIN` / `STEP_MIN` | `120` / `10` | forecast length and frame step |
 | `CLOUD_BASE_KM` | `1.2` | cloud base for the inferred cloud field |
-| `NDBC_STATIONS` | `45007,45174,CHII2` | buoys/stations tried in order for lake wind |
+| `NDBC_STATIONS` | `45007,45174,CHII2` | buoys/stations tried in order for lake wind; set it empty to turn the lookup off |
 | `WIND_SPEED` / `WIND_DIR` / `WIND_DURATION_H` | `10` / `20` / `8` | fallback lake wind when no station reports |
 | `STALE_MIN` | `30` | status reports `stale` when the newest scan is older |
 | `DATA_DIR` | `/data` (Docker) | scene, status and grid cache |
