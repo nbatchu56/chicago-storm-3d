@@ -138,6 +138,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
     <div class="src" id="source">Loading…</div>
     <div class="timebox"><span id="clock">--:--</span><span class="chip live" id="status">Live</span><button id="nowbtn" hidden style="padding:4px 8px;font-size:11px">Back to now</button></div>
     <div class="age" id="age"></div>
+    <div id="refreshbox" hidden style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button id="refreshbtn" style="padding:6px 10px;font-size:12px">Refresh now</button><span class="age" id="refreshmsg"></span></div>
     <dl class="readouts" id="readouts"></dl>
   </div>
   <button id="toggle" aria-expanded="true" aria-controls="controls">Settings</button>
@@ -1610,6 +1611,37 @@ function renderModels() {
   else $("#valnote").textContent = "";
 }
 
+// ---------------------------------------------------------------- on-demand refresh (owner): fires the refresh scheduled task via the
+// Claude Code Remote connector; that run fetches new radar/buoy/forecast data and republishes this page
+const REFRESH = { server: "Claude Code Remote", tool: "fire_trigger", trigger: "trig_01KBvKhvxewPmdJebiiaNm6k", coolMs: 20 * 60e3 };
+function refreshUi() {
+  let last = 0; try { last = +(localStorage.getItem("lakelocal-refresh") || 0); } catch (e) {}
+  const btn = $("#refreshbtn"), wait = last + REFRESH.coolMs - Date.now();
+  if (wait > 0 && (!DATA.generated || new Date(DATA.generated).getTime() < last)) { btn.disabled = true; $("#refreshmsg").textContent = `Refresh started ${fmtHM.format(new Date(last))}: new data usually lands in 10–15 min and the page reloads itself.`; }
+  else { btn.disabled = false; }
+}
+async function initRefresh() {
+  if (!window.claude || typeof window.claude.use !== "function") return;           // not inside Claude (e.g. the service): nothing to fire
+  const mcp = await window.claude.use("mcp").catch(() => null); if (!mcp) return;
+  $("#refreshbox").hidden = false; refreshUi();
+  $("#refreshbtn").onclick = async () => {
+    const btn = $("#refreshbtn"), msg = $("#refreshmsg"); btn.disabled = true; msg.textContent = "Starting a refresh…";
+    try {
+      await mcp.callTool(REFRESH.server, REFRESH.tool, { trigger_id: REFRESH.trigger, text: `On-demand refresh from the page at ${new Date().toISOString()}. Fetch new data if the snapshot is over 20 minutes old.` });
+      try { localStorage.setItem("lakelocal-refresh", String(Date.now())); } catch (e) {}
+      refreshUi();
+    } catch (err) {
+      const c = err && err.code; btn.disabled = false;
+      msg.textContent = c === "server_not_connected" ? "Add the Claude Code Remote connector in claude.ai Settings → Connectors, then try again."
+        : c === "needs_reauth" ? "Reconnect Claude Code Remote in claude.ai Settings → Connectors, then try again."
+        : c === "not_in_manifest" || c === "approval_required" || c === "consent_required" ? "Refreshing needs your OK for this page to use Claude Code Remote; click again and allow it."
+        : c === "tool_error" ? `The refresh task said no: ${(err.message || "").slice(0, 160)}`
+        : c === "server_unavailable" || c === "upstream_error" ? "No answer from Claude Code Remote; the refresh may still have started. Check back in 15 minutes before trying again."
+        : "This view can't start a refresh (only the page's owner can). It also refreshes hourly on its own.";
+    }
+  };
+}
+
 // ---------------------------------------------------------------- boot
 U.uLocalC.value.set(LB.cx, LB.cy); S.showTrack = false;
 setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnimationFrame(tick);
@@ -1625,7 +1657,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
       [DATA.bathy, DATA.swan, DATA.funwave] = await Promise.all([DATA.bathy || get2("api/bathy.json"), DATA.swan || get2("api/swan.json"), DATA.funwave || get2("api/funwave.json")]); }
     await setBathy(DATA.bathy); await setSwan(DATA.swan); await setFunwave(DATA.funwave); renderModels();
     if (DATA.lake) { buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
-    buildMinimap(); showHintOnce();
+    buildMinimap(); showHintOnce(); initRefresh();
     SRC.live = await decodeScene(DATA.scene);
     for (const h of DATA.hist) await addHistory(h);
     if (!SRC.hist.length) { const o = document.createElement("option"); o.textContent = "No historical periods in this page"; $("#hist-pick").appendChild(o); }
