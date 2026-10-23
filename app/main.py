@@ -4,6 +4,7 @@ Chicago Storm 3D live service.
     GET  /                 the 3-D viewer (live mode: loads api/scene.json, refreshes itself)
     GET  /sup              stand-up paddling wave forecast for the lakefront (loads api/sup.json)
     GET  /api/sup.json     SUP forecast: 8 spots x 48 h (refreshed every SUP_INTERVAL_MIN, default 30)
+    GET  /api/lakefront.json  lakefront map (OSM), lake temperature/ice (NOAA GLSEA), station history (every 6 h)
     GET  /api/scene.json   latest scene (gzip when the client accepts it)
     GET  /api/status       freshness, latest scan time, errors, next run
     GET  /healthz          liveness probe (always 200 while the process is up)
@@ -26,6 +27,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from .pipeline import Pipeline
 from . import sup_waves as sup_waves_mod
 from .sup_waves import SupForecaster
+from .lakefront import LakefrontUpdater
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -34,6 +36,7 @@ log = logging.getLogger("klot.web")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 pipeline = Pipeline()
 sup = SupForecaster(pipeline.cfg.data_dir)
+lakefront = LakefrontUpdater(pipeline.cfg.data_dir)
 SCHEDULER = os.environ.get("SCHEDULER", "internal")  # internal | external (cron calls /api/refresh)
 
 
@@ -44,6 +47,7 @@ async def lifespan(_app):
         pipeline.start()
         if os.environ.get("SUP", "on") != "off":
             sup.start()
+            lakefront.start()
     else:
         log.info("External scheduler: POST /api/refresh to update")
         if not pipeline.status["ready"]:
@@ -51,6 +55,7 @@ async def lifespan(_app):
     yield
     pipeline.stop()
     sup.stop()
+    lakefront.stop()
 
 
 app = FastAPI(title="Chicago Storm 3D", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -105,9 +110,16 @@ def sup_json():
     return FileResponse(sup.path, media_type="application/json", headers={"Cache-Control": "no-cache"})
 
 
+@app.get("/api/lakefront.json")
+def lakefront_json():
+    if not os.path.exists(lakefront.path):
+        raise HTTPException(503, lakefront.status.get("last_error") or "The lakefront map and lake temperatures are still loading.")
+    return FileResponse(lakefront.path, media_type="application/json", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/api/status")
 def status():
-    return JSONResponse(pipeline.public_status() | {"sup": sup.status}, headers={"Cache-Control": "no-store"})
+    return JSONResponse(pipeline.public_status() | {"sup": sup.status, "lakefront": lakefront.status}, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/healthz", include_in_schema=False)

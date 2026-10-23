@@ -151,3 +151,12 @@ def test_http(env, monkeypatch):
         assert main.sup.run_once()
         assert c.get("/api/sup.json").json()["generated"].startswith("2026-10-23")
         assert c.get("/api/status").json()["sup"]["updated"].startswith("2026-10-23")
+        # lakefront layers (stubbed)
+        assert c.get("/api/lakefront.json").status_code == 503
+        import app.lakefront as lfm
+        monkeypatch.setattr(lfm, "build_fn", lambda skip_osm=False: {"generated": "2026-10-23T18:00:00+00:00", "osm": [] if skip_osm else [{"kind": "coastline", "pts": [[0, 0], [1, 1]]}],
+                                                                      "osm_time": "2026-10-23T18:00:00+00:00", "stations": [], "notes": []})
+        assert main.lakefront.run_once()
+        assert c.get("/api/lakefront.json").json()["osm"][0]["kind"] == "coastline"
+        assert main.lakefront.run_once()                       # second run reuses the map
+        assert c.get("/api/lakefront.json").json()["osm"][0]["kind"] == "coastline"

@@ -270,6 +270,10 @@ def station_history(st, hours=48, get=http_get):
     return out[::-1]
 
 
+class _SkipOSM(Exception):
+    pass
+
+
 def probe_osm(probe, bbox=MAP_BBOX, get=http_get):
     s_, w, n, e = bbox
     qs = {
@@ -297,7 +301,7 @@ def probe_osm(probe, bbox=MAP_BBOX, get=http_get):
         time.sleep(4)
 
 
-def build(get=http_get, probe=None):
+def build(get=http_get, probe=None, skip_osm=False):
     probe = probe if probe is not None else {}
     notes = []
     data = {"version": 1, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds"),
@@ -305,10 +309,15 @@ def build(get=http_get, probe=None):
     if os.environ.get("OSM_PROBE"):
         probe_osm(probe, get=get)
     try:
+        if skip_osm:
+            raise _SkipOSM()
         data["osm"], errs = fetch_osm(get=get, probe=probe)
+        data["osm_time"] = data["generated"]
         notes += [f"map: {e}" for e in errs]
         data["osm_attribution"] = "© OpenStreetMap contributors (ODbL)"
         probe["osm_counts"] = {k: sum(1 for f in data["osm"] if f["kind"] == k) for k in sorted({f["kind"] for f in data["osm"]})}
+    except _SkipOSM:
+        pass
     except Exception as e:  # noqa: BLE001
         notes.append(f"map geometry unavailable: {e}")
     try:
@@ -336,6 +345,64 @@ def build(get=http_get, probe=None):
     data["stations"] = stations
     data["notes"] = notes
     return data
+
+
+class LakefrontUpdater:
+    """Keeps lakefront.json fresh inside the web service: temperatures and stations every
+    LAKEFRONT_INTERVAL_H (default 6 h), map geometry reused for up to 7 days."""
+
+    def __init__(self, data_dir):
+        import threading
+        self.path = os.path.join(data_dir, "lakefront.json")
+        self.interval_h = float(os.environ.get("LAKEFRONT_INTERVAL_H", 6))
+        self.status = {"updated": None, "last_error": None, "runs": 0}
+        self._stop = threading.Event()
+        self._lock = threading.Lock()
+        os.makedirs(data_dir, exist_ok=True)
+
+    def run_once(self):
+        if not self._lock.acquire(blocking=False):
+            return False
+        try:
+            old = None
+            if os.path.exists(self.path):
+                with open(self.path) as fh:
+                    old = json.load(fh)
+            reuse_map = bool(old and old.get("osm") and old.get("osm_time") and
+                             (dt.datetime.now(UTC) - dt.datetime.fromisoformat(old["osm_time"])).days < 7)
+            data = build_fn(skip_osm=reuse_map)
+            if reuse_map:
+                data["osm"], data["osm_time"] = old["osm"], old["osm_time"]
+                data["osm_attribution"] = old.get("osm_attribution")
+            tmp = self.path + ".tmp"
+            with open(tmp, "w") as fh:
+                json.dump(data, fh, separators=(",", ":"))
+            os.replace(tmp, self.path)
+            self.status.update(updated=data["generated"], last_error=None, notes=data.get("notes"))
+            return True
+        except Exception as e:  # noqa: BLE001
+            self.status["last_error"] = f"{type(e).__name__}: {e}"
+            log.error("Lakefront update failed: %s", e)
+            return False
+        finally:
+            self.status["runs"] += 1
+            self._lock.release()
+
+    def loop(self):
+        while not self._stop.is_set():
+            self.run_once()
+            self._stop.wait(max(1800.0, self.interval_h * 3600))
+
+    def start(self):
+        import threading
+        threading.Thread(target=self.loop, name="lakefront", daemon=True).start()
+
+    def stop(self):
+        self._stop.set()
+
+
+def build_fn(skip_osm=False):
+    return build(skip_osm=skip_osm)
 
 
 if __name__ == "__main__":
