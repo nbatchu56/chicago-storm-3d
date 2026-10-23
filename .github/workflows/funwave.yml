@@ -1,0 +1,85 @@
+name: FUNWAVE harbour entrance
+on:
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: "Cases (comma list): rough, storm"
+        default: "rough,storm"
+permissions:
+  contents: write
+concurrency:
+  group: funwave
+  cancel-in-progress: false
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      cases: ${{ steps.m.outputs.cases }}
+    steps:
+      - id: m
+        run: echo "cases=$(python3 -c "import json,sys; print(json.dumps([c.strip() for c in sys.argv[1].split(',') if c.strip()]))" '${{ inputs.cases }}')" >> "$GITHUB_OUTPUT"
+  run:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        case: ${{ fromJson(needs.setup.outputs.cases) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: |
+          sudo apt-get update -q && sudo apt-get install -y -q gfortran openmpi-bin libopenmpi-dev >/dev/null
+          pip install numpy scipy
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: ~/funwave
+          key: funwave-gnu-${{ runner.os }}-1
+      - name: Build FUNWAVE-TVD
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git clone -q --depth 1 https://github.com/fengyanshi/FUNWAVE-TVD.git fwsrc
+          cd fwsrc
+          sed -i 's/^COMPILER *=.*/COMPILER    = gnu/; s/^DEF_FC *=.*/DEF_FC      = mpif90/' Makefile
+          make -j2 > "$RUNNER_TEMP/build.log" 2>&1 || { echo "::error title=FUNWAVE build::$(tail -c 2500 "$RUNNER_TEMP/build.log" | tr '\n' '|')"; exit 1; }
+          mkdir -p ~/funwave && cp $(find funwave-work -maxdepth 1 -type f -perm -u+x -name 'funwave*' | head -1) ~/funwave/funwave
+          ls -la ~/funwave
+      - name: Prepare
+        run: |
+          git fetch -q --depth 1 origin bathy && git show origin/bathy:bathy.json > bathy.json
+          python -m app.funwave_case prepare --bathy bathy.json --case ${{ matrix.case }} --out fw
+      - name: Run
+        run: |
+          cd fw && (time timeout 18000 mpirun --oversubscribe -np 2 ~/funwave/funwave input.txt > run.log 2>&1) 2>&1 | tail -3
+          tail -15 run.log; ls output | head; ls output | wc -l
+          echo "::notice title=FUNWAVE ${{ matrix.case }}::$(tail -c 1500 run.log | tr '\n' '|') files=$(ls output | wc -l)"
+      - name: Collect
+        run: python -m app.funwave_case collect --run fw --out funwave_${{ matrix.case }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: funwave-${{ matrix.case }}
+          path: |
+            funwave_${{ matrix.case }}.json
+            fw/run.log
+          retention-days: 3
+  publish:
+    needs: run
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: parts
+      - name: Publish to the funwave branch
+        run: |
+          mkdir -p out && find parts -name 'funwave_*.json' -exec cp {} out/ \; && find parts -name run.log | head -2 | while read f; do cp "$f" "out/$(basename $(dirname $(dirname $f)))-run.log"; done
+          ls -la out; cd out
+          git init -q -b funwave
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -q -m "FUNWAVE $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" funwave

@@ -27,10 +27,15 @@ jobs:
       - name: Build SWAN
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q gfortran cmake ninja-build perl
-          (git clone -q --depth 1 https://gitlab.tudelft.nl/citg/wavemodels/swan.git src) || \
-            (curl -fsSL -o swan.tgz https://swanmodel.sourceforge.io/download/zip/swan4151.tar.gz && mkdir src && tar xzf swan.tgz -C src --strip-components 1)
-          cd src && mkdir -p build && cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build . && cmake --install . --prefix ~/swan
+          set -o pipefail
+          {
+            sudo apt-get update -q && sudo apt-get install -y -q gfortran cmake ninja-build perl
+            if git clone -q --depth 1 https://gitlab.tudelft.nl/citg/wavemodels/swan.git src; then echo "source: gitlab"; else
+              curl -fsSL -o swan.tgz https://swanmodel.sourceforge.io/download/zip/swan4151.tar.gz && mkdir -p src && tar xzf swan.tgz -C src --strip-components 1 && echo "source: sourceforge"; fi
+            ls src | head -30
+            cd src && mkdir -p build && cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build . && cmake --install . --prefix ~/swan
+          } > "$RUNNER_TEMP/build.log" 2>&1 || { echo "::error title=SWAN build::$(tail -c 2500 "$RUNNER_TEMP/build.log" | tr '\n' '|')"; exit 1; }
+          tail -5 "$RUNNER_TEMP/build.log"
       - name: Check
         run: find ~/swan -type f | head -20
   run:
