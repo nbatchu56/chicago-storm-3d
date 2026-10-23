@@ -274,13 +274,23 @@ def probe_osm(probe, bbox=MAP_BBOX, get=http_get):
         "diversey": f'[out:json][timeout:60];nwr["name"~"Diversey"]({s_},{w},{n},{e});out tags center;',
         "water_rel_in_bbox": f'[out:json][timeout:60];relation["natural"="water"]({s_},{w},{n},{e});out tags;',
         "is_in_lake": '[out:json][timeout:60];is_in(41.93,-87.62);out tags;',
+        "water_ways_big": f'[out:json][timeout:60];way["natural"="water"]({s_},{w},{n},{e});out tags 40;',
+        "any_coast_nearby": '[out:json][timeout:60];way["natural"="coastline"](41.80,-87.70,42.05,-87.50);out tags 3;',
     }
+    import time
     for k, q in qs.items():
-        try:
-            js = json.loads(get(OVERPASS[0], data=urllib.parse.urlencode({"data": q}).encode(), timeout=90))
-            probe.setdefault("osm_probe", {})[k] = [{"type": el["type"], "id": el["id"], "tags": el.get("tags"), "center": el.get("center")} for el in js.get("elements", [])][:12]
-        except Exception as ex:  # noqa: BLE001
-            probe.setdefault("osm_probe", {})[k] = f"error: {ex}"
+        res = None
+        for attempt in range(4):
+            url = OVERPASS[attempt % len(OVERPASS)]
+            try:
+                js = json.loads(get(url, data=urllib.parse.urlencode({"data": q}).encode(), timeout=90))
+                res = [{"type": el["type"], "id": el["id"], "tags": el.get("tags"), "center": el.get("center")} for el in js.get("elements", [])][:12]
+                break
+            except Exception as ex:  # noqa: BLE001
+                res = f"error: {ex} ({url})"
+                time.sleep(8)
+        probe.setdefault("osm_probe", {})[k] = res
+        time.sleep(4)
 
 
 def build(get=http_get, probe=None):

@@ -1092,12 +1092,19 @@ function setRouteMap() {
 function setTrack(track) {
   RT.track = track; RT.t = 0; RT.trackGroup.clear();
   if (!track || !track.pts.length) return;
-  const pos = [], col = [];
-  track.pts.forEach(([t, x, y, v]) => { pos.push(x, 6, -y); const c = sColor(v); col.push(c[0] / 255, c[1] / 255, c[2] / 255); });
-  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-  RT.trackGroup.add(new THREE.Line(g, new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 3 })));
-  // a wider halo so the line reads from above
-  const halo = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x0b1a20, transparent: true, opacity: 0.35 })); halo.position.y = -2; RT.trackGroup.add(halo);
+  // ribbon (lines are 1 px in WebGL): coloured by speed, with a dark outline so it reads on any water colour
+  const ribbon = (half, colour, yy) => {
+    const P = track.pts, pos = [], col = [], idx = [];
+    for (let i = 0; i < P.length; i++) {
+      const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)]; let dx = b[1] - a[1], dy = b[2] - a[2]; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+      const [, x, y, v] = P[i], c = colour || sColor(v);
+      pos.push(x - dy * half, yy, -(y + dx * half), x + dy * half, yy, -(y - dx * half)); col.push(...c.map((q) => q / 255), ...c.map((q) => q / 255));
+      if (i) { const k = 2 * i; idx.push(k - 2, k - 1, k, k - 1, k + 1, k); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx);
+    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+  };
+  RT.trackGroup.add(ribbon(11, [12, 26, 32], 5)); RT.trackGroup.add(ribbon(7, null, 6));
   sessionStats(); routeView(RT.view, true); routeTime();
 }
 function trackBounds() {
@@ -1108,7 +1115,7 @@ function trackBounds() {
 function routeView(v, instant) {
   RT.view = v; document.querySelectorAll("[data-rview]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.rview === v)));
   if (!RT.ok) return; const b = trackBounds(), cx = b.cx + 300, cz = -b.cy;
-  if (v === "top") { RT.cam.position.set(cx, b.span * 1.9, cz + 1); RT.ctl.target.set(cx, 0, cz); }
+  if (v === "top") { RT.cam.position.set(cx, b.span * 1.45, cz + 1); RT.ctl.target.set(cx, 0, cz); }
   else { RT.cam.position.set(cx + b.span * 1.1, b.span * 0.55, cz + b.span * 0.9); RT.ctl.target.set(cx - 150, 0, cz); }
   RT.ctl.update();
 }
