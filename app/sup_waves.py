@@ -178,15 +178,49 @@ def fetch_nws(lat=41.90, lon=-87.60, get=http_get):
     return {"grid": grid.rsplit("/gridpoints/", 1)[-1], "series": series}
 
 
-def fetch_marine_text(zone, get=http_get):
-    try:
-        js = json.loads(get(f"https://api.weather.gov/zones/forecast/{zone}/forecast", "application/geo+json"))
-        p = js["properties"]
-        return {"zone": zone, "updated": p.get("updated"),
-                "periods": [{"name": q["name"], "text": q["detailedForecast"]} for q in p.get("periods", [])[:4]]}
-    except Exception as e:  # noqa: BLE001
-        log.info("Marine zone %s unavailable: %s", zone, e)
+def parse_nsh(text, zone):
+    """Pull one zone's periods out of an NWS Nearshore Marine Forecast (NSH) product."""
+    lines = text.replace("\r", "").split("\n")
+    start = next((i for i, l in enumerate(lines) if l.startswith(zone)), None)
+    if start is None:
         return None
+    block = []
+    for l in lines[start + 1:]:
+        if l.strip() == "$$":
+            break
+        block.append(l)
+    body = "\n".join(block)
+    periods = []
+    for m in re.finditer(r"^\.([A-Z][A-Z0-9 ]+?)\.\.\.(.*?)(?=^\.[A-Z][A-Z0-9 ]+?\.\.\.|\Z)", body, re.S | re.M):
+        txt = " ".join(m.group(2).split())
+        txt = re.sub(r"(^|\.\s+)([a-z])", lambda g: g.group(1) + g.group(2).upper(), txt.lower())   # sentence case
+        periods.append({"name": m.group(1).title(), "text": txt})
+    title = next((l.strip() for l in block if l.strip() and not l.startswith(".")), "")
+    return {"zone": zone, "title": title, "periods": periods[:4]} if periods else None
+
+
+def fetch_marine_text(zone, get=http_get):
+    for kind in ("marine", "forecast"):
+        try:
+            js = json.loads(get(f"https://api.weather.gov/zones/{kind}/{zone}/forecast", "application/geo+json"))
+            p = js["properties"]
+            periods = [{"name": q["name"], "text": q["detailedForecast"]} for q in p.get("periods", [])[:4]]
+            if periods:
+                return {"zone": zone, "updated": p.get("updated"), "periods": periods}
+        except Exception as e:  # noqa: BLE001
+            log.info("Marine zone %s (%s) unavailable: %s", zone, kind, e)
+    try:  # latest Nearshore Marine Forecast from NWS Chicago
+        lst = json.loads(get("https://api.weather.gov/products/types/NSH/locations/LOT", "application/ld+json"))
+        items = lst.get("@graph") or lst.get("products") or []
+        if items:
+            prod = json.loads(get(f"https://api.weather.gov/products/{items[0]['id']}", "application/ld+json"))
+            out = parse_nsh(prod.get("productText", ""), zone)
+            if out:
+                out["updated"] = prod.get("issuanceTime")
+                return out
+    except Exception as e:  # noqa: BLE001
+        log.info("NSH product unavailable: %s", e)
+    return None
 
 
 # ---------------------------------------------------------------------------- physics
@@ -290,8 +324,8 @@ def rate(hs, wind, gust, offshore, onshore_angle):
         reasons.append(f"gusts {gust * 2.237:.0f} mph")
     if offshore and wind > 3.5:
         # offshore wind flattens the water near shore but pushes you out into the lake
-        order = ["glassy", "good", "choppy", "rough", "no-go"]
-        worst = "rough" if wind <= 6.5 else "no-go"
+        order = ["glassy", "good", "choppy", "offshore", "rough", "no-go"]
+        worst = "offshore" if wind <= 6.5 else "no-go"
         if order.index(level) < order.index(worst):
             level = worst
         reasons.insert(0, f"offshore wind {wind * 2.237:.0f} mph pushes boards away from shore")
@@ -413,6 +447,51 @@ def build(now=None, hours=48, get=http_get):
         "water_temp": wtmp, "cold_water_c": COLD_WATER_C, "thresholds": SUP, "paddle_depth_m": PADDLE_DEPTH_M,
         "marine": marine, "spots": spots_out,
     }
+
+
+class SupForecaster:
+    """Rebuilds sup.json on a schedule inside the web service."""
+
+    def __init__(self, data_dir, interval_min=None):
+        import threading
+        self.path = os.path.join(data_dir, "sup.json")
+        self.interval = float(interval_min or os.environ.get("SUP_INTERVAL_MIN", 30))
+        self.status = {"updated": None, "last_error": None, "runs": 0}
+        self._stop = threading.Event()
+        self._lock = threading.Lock()
+        os.makedirs(data_dir, exist_ok=True)
+
+    def run_once(self):
+        if not self._lock.acquire(blocking=False):
+            return False
+        try:
+            data = build()
+            tmp = self.path + ".tmp"
+            with open(tmp, "w") as fh:
+                json.dump(data, fh, separators=(",", ":"))
+            os.replace(tmp, self.path)
+            self.status.update(updated=data["generated"], last_error=None, errors=data["sources"]["errors"])
+            log.info("SUP forecast updated (%d spots)", len(data["spots"]))
+            return True
+        except Exception as e:  # noqa: BLE001 - keep serving the last forecast
+            self.status["last_error"] = f"{type(e).__name__}: {e}"
+            log.error("SUP forecast failed: %s", e)
+            return False
+        finally:
+            self.status["runs"] += 1
+            self._lock.release()
+
+    def loop(self):
+        while not self._stop.is_set():
+            self.run_once()
+            self._stop.wait(max(300.0, self.interval * 60))
+
+    def start(self):
+        import threading
+        threading.Thread(target=self.loop, name="sup-forecast", daemon=True).start()
+
+    def stop(self):
+        self._stop.set()
 
 
 if __name__ == "__main__":

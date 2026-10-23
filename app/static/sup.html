@@ -1,0 +1,586 @@
+<title>Chicago SUP Waves</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: forecast tool. Spot rail on the left, selected spot on the right: verdict, wave simulation, 48 h chart, windows, marine text. */
+:root {
+  --bg: #eef3f5;
+  --surface: #ffffff;
+  --sunk: #e3ebef;
+  --line: #cfdbe1;
+  --fg: #11252f;
+  --muted: #5a6f7a;
+  --accent: #0e6e8c;          /* lake blue */
+  --glassy: #138a7e; --good: #3d8f4f; --choppy: #b87d12; --rough: #c8572a; --nogo: #b3263f; --offshore: #7a4bb3;
+  --night: rgba(17, 37, 47, 0.07);
+  --font-ui: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0c171d; --surface: #12212a; --sunk: #0f1c23; --line: #22363f; --fg: #dce8ee; --muted: #8aa1ad; --accent: #4fb6d6;
+  --glassy: #3cc2b2; --good: #6cc27f; --choppy: #e2b24c; --rough: #ef8457; --nogo: #ee5f78; --offshore: #a982e0; --night: rgba(0,0,0,0.25); color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0c171d; --surface: #12212a; --sunk: #0f1c23; --line: #22363f; --fg: #dce8ee; --muted: #8aa1ad; --accent: #4fb6d6;
+  --glassy: #3cc2b2; --good: #6cc27f; --choppy: #e2b24c; --rough: #ef8457; --nogo: #ee5f78; --offshore: #a982e0; --night: rgba(0,0,0,0.25); color-scheme: dark; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--font-ui); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 40px; display: grid; gap: 18px; }
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px 24px; }
+header.top h1 { margin: 0; font-size: clamp(24px, 3.2vw, 34px); font-weight: 800; letter-spacing: -0.01em; text-wrap: balance; }
+header.top p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag { font: 500 12px/1 var(--font-data); padding: 7px 9px; border-radius: 4px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); font-variant-numeric: tabular-nums; }
+.tag b { color: var(--fg); font-weight: 500; }
+.tag.cold { border-color: var(--accent); color: var(--accent); }
+.layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 18px; align-items: start; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+/* spot rail */
+.spots { padding: 6px; display: grid; gap: 2px; position: sticky; top: max(12px, env(safe-area-inset-top, 0px)); }
+.spots h2 { margin: 8px 10px 6px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.spot { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; width: 100%; text-align: left; padding: 9px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; cursor: pointer; }
+.spot:hover { background: var(--sunk); }
+.spot[aria-current="true"] { background: var(--sunk); box-shadow: inset 3px 0 0 var(--accent); }
+.spot .n { font-weight: 600; font-size: 14.5px; }
+.spot .v { font: 12px var(--font-data); color: var(--muted); font-variant-numeric: tabular-nums; grid-column: 1; }
+.pill { font: 700 11px/1 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; padding: 5px 7px; border-radius: 3px; color: #fff; grid-row: 1 / span 2; grid-column: 2; }
+.r-glassy { background: var(--glassy); } .r-good { background: var(--good); } .r-choppy { background: var(--choppy); }
+.r-rough { background: var(--rough); } .r-no-go { background: var(--nogo); } .r-offshore { background: var(--offshore); }
+.best { margin: 8px 10px 6px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.best strong { color: var(--fg); }
+/* main */
+main { display: grid; gap: 18px; min-width: 0; }
+main > * { min-width: 0; }
+.verdict { padding: 18px 20px; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px 28px; }
+.verdict h2 { margin: 0; font-size: 22px; font-weight: 700; }
+.verdict .when { color: var(--muted); font-size: 13.5px; }
+.big { display: flex; align-items: center; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
+.big .word { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; }
+.reasons { margin: 10px 0 0; padding-left: 18px; color: var(--fg); font-size: 14px; }
+.reasons li + li { margin-top: 2px; }
+.note { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+.nums { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; align-content: start; }
+.num .k { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.num .v { font: 500 24px/1.15 var(--font-data); font-variant-numeric: tabular-nums; }
+.num { min-width: 0; }
+.num .s { font: 12px var(--font-data); color: var(--muted); overflow-wrap: anywhere; }
+.arrow { display: inline-block; width: 18px; height: 18px; vertical-align: -2px; margin-right: 4px; color: var(--accent); }
+/* simulation */
+.sim { overflow: hidden; }
+.sim-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.sim-head h3 { margin: 0; font-size: 16px; }
+.sim-head .sub { color: var(--muted); font-size: 13px; }
+.seg { display: inline-grid; grid-auto-flow: column; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.seg button { font: 500 13px/1 var(--font-ui); padding: 8px 11px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.stage { position: relative; aspect-ratio: 16 / 8; max-width: 100%; background: #9fb9c6; }
+#sim { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.overlay { position: absolute; left: 12px; bottom: 12px; display: grid; gap: 4px; font: 12px/1.35 var(--font-data); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); pointer-events: none; }
+.overlay b { font-weight: 500; font-size: 13px; }
+.compass { position: absolute; right: 12px; top: 12px; font: 11px var(--font-data); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); text-align: right; pointer-events: none; }
+.simfail { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 20px; color: #fff; background: rgba(10,30,40,.65); }
+/* chart */
+.chart { padding: 14px 16px 10px; }
+.chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; align-items: baseline; }
+.chart-head h3 { margin: 0; font-size: 16px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.legend .line { width: 14px; height: 2px; background: var(--fg); vertical-align: 3px; border-radius: 0; }
+.cwrap { overflow-x: auto; margin-top: 8px; }
+#chart { display: block; width: 100%; min-width: 640px; height: 230px; cursor: pointer; touch-action: pan-x; }
+.hourpick { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.hourpick input { flex: 1; accent-color: var(--accent); }
+.hourpick output { font: 13px var(--font-data); min-width: 150px; text-align: right; font-variant-numeric: tabular-nums; }
+/* lower */
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.block { padding: 16px 18px; min-width: 0; }
+.block h3 { margin: 0 0 8px; font-size: 16px; }
+.windows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.windows li { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; font-size: 14px; }
+.windows .t { font-family: var(--font-data); font-size: 13px; font-variant-numeric: tabular-nums; }
+.marine p { margin: 0 0 8px; font-size: 14px; }
+.marine b { display: block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.safety ul { margin: 0; padding-left: 18px; font-size: 14px; }
+.safety li + li { margin-top: 3px; }
+footer { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+footer p { margin: 0 0 6px; max-width: 80ch; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.empty { padding: 40px 20px; text-align: center; color: var(--muted); }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .spots { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .spots h2, .best { grid-column: 1 / -1; }
+  .verdict, .two { grid-template-columns: minmax(0, 1fr); }
+  .verdict > div { min-width: 0; }
+  .stage { aspect-ratio: 4 / 3; }
+}
+@media (max-width: 480px) { .spots { grid-template-columns: 1fr; } .num .v { font-size: 20px; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Chicago SUP Waves</h1>
+      <p>Paddle-zone waves and wind for the lakefront, hour by hour for the next two days.</p>
+    </div>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <div class="layout">
+    <nav class="card spots" id="spots" aria-label="Launch spots"><h2>Launch spots · now</h2></nav>
+
+    <main>
+      <section class="card verdict" id="verdict" aria-live="polite"></section>
+
+      <section class="card sim" aria-label="Wave simulation">
+        <div class="sim-head">
+          <div><h3 id="sim-title">Wave simulation</h3><div class="sub" id="sim-sub"></div></div>
+          <div class="seg" role="group" aria-label="Simulation view">
+            <button data-view="beside" aria-pressed="true">Beside the board</button>
+            <button data-view="rider" aria-pressed="false">Rider's view</button>
+            <button data-view="beach" aria-pressed="false">From the beach</button>
+          </div>
+        </div>
+        <div class="stage">
+          <canvas id="sim" aria-label="Animated water surface for the selected spot and hour"></canvas>
+          <div class="compass" id="compass"></div>
+          <div class="overlay" id="overlay"></div>
+        </div>
+      </section>
+
+      <section class="card chart">
+        <div class="chart-head">
+          <h3>Next 48 hours</h3>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div class="cwrap"><canvas id="chart" aria-label="Hourly wave height and wind chart; click an hour to simulate it"></canvas></div>
+        <div class="hourpick"><label for="hour">Hour</label><input type="range" id="hour" min="0" max="0" value="0"><output id="hour-o"></output></div>
+      </section>
+
+      <div class="two">
+        <section class="card block"><h3>Best times to paddle here</h3><ul class="windows" id="windows"></ul><p class="note" id="windows-note"></p></section>
+        <section class="card block marine"><h3>NWS nearshore forecast</h3><div id="marine"></div></section>
+      </div>
+
+      <section class="card block safety">
+        <h3>Before you launch</h3>
+        <ul id="safety">
+          <li><strong>Offshore wind is the main danger.</strong> A west wind makes the water look flat at the beach but pushes boards out into the lake. The forecast flags it.</li>
+          <li>Wear a PFD and a leash. The Coast Guard counts a SUP as a vessel outside swimming and surfing areas.</li>
+          <li>Seawalls and revetments at North Avenue, Oak Street and along the downtown shore bounce waves back. Expect confused chop there, more than the numbers suggest.</li>
+          <li>Check the official NWS nearshore forecast and beach status before you go. Conditions change fast on Lake Michigan.</li>
+        </ul>
+      </section>
+
+      <footer id="foot"></footer>
+    </main>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script id="sup-data" type="application/json"></script>
+<script>
+"use strict";
+(() => {
+const $ = (s) => document.querySelector(s);
+const RM = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const FT = 3.281, MPH = 2.237;
+const LABEL = { glassy: "Glassy", good: "Good", choppy: "Choppy", offshore: "Offshore wind", rough: "Rough", "no-go": "No-go" };
+const ORDER = ["glassy", "good", "choppy", "offshore", "rough", "no-go"];
+const TZ = "America/Chicago";
+const fmtH = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", hour: "numeric" });
+const fmtDay = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" });
+const fmtHr = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric" });
+const fmtHM = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
+const fmtFull = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+const hourOf = (d) => +new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", hourCycle: "h23" }).format(d);
+const COMPASS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+const compass = (d) => COMPASS[Math.round((((d % 360) + 360) % 360) / 22.5) % 16];
+const ft = (m) => (m * FT).toFixed(m * FT < 10 ? 1 : 0);
+const mph = (ms) => Math.round(ms * MPH);
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const ratingColor = (r) => cssVar("--" + (r === "no-go" ? "nogo" : r));
+
+let D = null, spotIdx = 0, hourIdx = 0;
+try { const s = localStorage.getItem("sup-spot"); if (s) spotIdx = +s || 0; } catch (e) {}
+
+// ------------------------------------------------------------ sun (NOAA approximation)
+function solar(date, lat = 41.88, lon = -87.63) {
+  const rad = Math.PI / 180, d = date.getTime() / 86400000 + 2440587.5 - 2451545.0;
+  const g = (357.529 + 0.98560028 * d) * rad, q = 280.459 + 0.98564736 * d;
+  const L = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * rad, e = (23.439 - 0.00000036 * d) * rad;
+  const dec = Math.asin(Math.sin(e) * Math.sin(L)), ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L));
+  const gmst = (18.697374558 + 24.06570982441908 * d) % 24, lst = (gmst * 15 + lon) * rad;
+  const ha = lst - ra, el = Math.asin(Math.sin(lat * rad) * Math.sin(dec) + Math.cos(lat * rad) * Math.cos(dec) * Math.cos(ha));
+  const az = Math.atan2(-Math.sin(ha), Math.tan(dec) * Math.cos(lat * rad) - Math.sin(lat * rad) * Math.cos(ha));
+  return { el: el / rad, az: ((az / rad) + 360) % 360 };
+}
+const isDay = (d) => solar(d).el > -0.8;
+
+// ------------------------------------------------------------ data
+const spot = () => D.spots[spotIdx];
+const hourly = () => spot().hourly;
+const H = () => hourly()[Math.min(hourIdx, hourly().length - 1)];
+function relWind(h, s) { // onshore / offshore / cross relative to the beach
+  const a = ((h.dir - s.normal + 540) % 360) - 180;
+  if (Math.abs(a) <= 45) return "onshore"; if (Math.abs(a) >= 100) return "offshore"; return Math.abs(a) <= 70 ? "side-onshore" : "cross-shore";
+}
+
+function renderMeta() {
+  const m = $("#meta"); m.innerHTML = "";
+  const add = (html, cls) => { const s = document.createElement("span"); s.className = "tag" + (cls ? " " + cls : ""); s.innerHTML = html; m.appendChild(s); };
+  add(`Updated <b>${fmtFull.format(new Date(D.generated))}</b>`);
+  const w = D.water_temp;
+  if (w) { const f = w.c * 9 / 5 + 32; add(`Water <b>${Math.round(f)}°F</b> · ${w.station}`, w.c < D.cold_water_c ? "cold" : ""); }
+  if (D.buoy_now) add(`Buoy ${D.buoy_now.station} <b>${ft(D.buoy_now.hs_m)} ft</b>${D.buoy_now.dpd_s ? ` @ ${D.buoy_now.dpd_s} s` : ""}`);
+  if (D.live) add(`<b>Live</b> · refreshes every 30 min`);
+}
+
+function renderSpots() {
+  const nav = $("#spots"); nav.querySelectorAll(".spot,.best").forEach((x) => x.remove());
+  D.spots.forEach((s, i) => {
+    const h = s.hourly[0], b = document.createElement("button");
+    b.className = "spot"; b.setAttribute("aria-current", String(i === spotIdx));
+    b.innerHTML = `<span class="n">${s.name}</span><span class="pill r-${h.rating}">${LABEL[h.rating]}</span><span class="v">${ft(h.hs_paddle)} ft · ${mph(h.wind)} mph ${compass(h.dir)}</span>`;
+    b.onclick = () => { spotIdx = i; try { localStorage.setItem("sup-spot", String(i)); } catch (e) {} renderAll(); };
+    nav.appendChild(b);
+  });
+  // best spot over the next 3 daylight hours
+  let best = null;
+  D.spots.forEach((s) => {
+    const day = s.hourly.slice(0, 4).filter((h) => isDay(new Date(h.t)));
+    if (!day.length) return;
+    const score = Math.max(...day.map((h) => ORDER.indexOf(h.rating))) * 10 + Math.max(...day.map((h) => h.hs_paddle));
+    if (!best || score < best.score) best = { s, score, r: day[0].rating };
+  });
+  const p = document.createElement("p"); p.className = "best";
+  p.innerHTML = best ? `Calmest spot for the next few daylight hours: <strong>${best.s.name}</strong> (${LABEL[best.r].toLowerCase()}).` : "It's dark now. Check the chart for tomorrow's first light.";
+  nav.appendChild(p);
+}
+
+const ARROW = (deg) => `<svg class="arrow" viewBox="0 0 20 20" aria-hidden="true" style="transform:rotate(${deg + 180}deg)"><path d="M10 2 L15 14 L10 11 L5 14 Z" fill="currentColor"/></svg>`;
+function renderVerdict() {
+  const s = spot(), h = H(), t = new Date(h.t);
+  const rel = relWind(h, s);
+  const air = h.air_c != null ? `${Math.round(h.air_c * 9 / 5 + 32)}°F air` : "";
+  $("#verdict").innerHTML = `
+    <div>
+      <h2>${s.name}</h2>
+      <div class="when">${hourIdx === 0 ? "Now" : "Forecast"} · ${fmtFull.format(t)}</div>
+      <div class="big"><span class="pill r-${h.rating}" style="font-size:13px;padding:7px 10px">${LABEL[h.rating]}</span><span class="word">${verdictWord(h)}</span></div>
+      <ul class="reasons">${h.reasons.map((r) => `<li>${r[0].toUpperCase() + r.slice(1)}</li>`).join("")}</ul>
+      <p class="note">${s.note}</p>
+    </div>
+    <div class="nums">
+      <div class="num"><div class="k">Waves where you paddle</div><div class="v">${ft(h.hs_paddle)} ft</div><div class="s">${h.hs_paddle.toFixed(2)} m · ${h.tp.toFixed(1)} s apart</div></div>
+      <div class="num"><div class="k">Wind</div><div class="v">${ARROW(h.dir)}${mph(h.wind)} mph</div><div class="s">${h.gust != null ? `gusts ${mph(h.gust)} · ` : ""}from ${compass(h.dir)} · ${rel}</div></div>
+      <div class="num"><div class="k">Open lake</div><div class="v">${ft(h.hs_offshore)} ft</div><div class="s">${h.fetch_km.toFixed(0)} km fetch · ${h.duration_h} h of wind${h.nws_wave_m != null ? ` · NWS ${ft(h.nws_wave_m)} ft` : ""}</div></div>
+      <div class="num"><div class="k">Breakers</div><div class="v">${h.break_dist_m != null ? `${h.break_dist_m} m out` : "none"}</div><div class="s">${h.break_dist_m != null ? `start in ${h.break_depth_m} m of water` : "no breaking waves expected"}</div></div>
+      <div class="num"><div class="k">Sky</div><div class="v">${h.sky != null ? h.sky + "%" : "–"}</div><div class="s">cloud cover${h.pop != null ? ` · ${h.pop}% rain` : ""}${air ? " · " + air : ""}</div></div>
+      <div class="num"><div class="k">Light</div><div class="v">${isDay(t) ? "Day" : "Dark"}</div><div class="s">sun ${solar(t).el.toFixed(0)}° above horizon</div></div>
+    </div>`;
+}
+function verdictWord(h) {
+  return { glassy: "Flat water", good: "Easy paddling", choppy: "Bumpy, stay close", offshore: "Calm-looking but risky", rough: "Experienced only", "no-go": "Stay on the beach" }[h.rating];
+}
+
+// ------------------------------------------------------------ chart
+const chart = $("#chart"), cx = chart.getContext("2d");
+function drawChart() {
+  const dpr = window.devicePixelRatio || 1, W = chart.clientWidth, Hh = chart.clientHeight;
+  chart.width = W * dpr; chart.height = Hh * dpr; cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cx.clearRect(0, 0, W, Hh);
+  const hs = hourly(), n = hs.length, padL = 52, padR = 42, padT = 16, padB = 34, pw = W - padL - padR, ph = Hh - padT - padB;
+  const maxFt = Math.max(2, ...hs.map((h) => h.hs_paddle * FT)) * 1.15, maxMph = Math.max(15, ...hs.map((h) => (h.gust ?? h.wind) * MPH)) * 1.1;
+  const X = (i) => padL + (i + 0.5) * pw / n, bw = Math.max(2, pw / n - 2);
+  const fg = cssVar("--fg"), muted = cssVar("--muted"), line = cssVar("--line"), night = cssVar("--night"), accent = cssVar("--accent");
+  cx.font = `11px ${cssVar("--font-data")}`;
+  // night shading + day labels
+  hs.forEach((h, i) => { if (!isDay(new Date(h.t))) { cx.fillStyle = night; cx.fillRect(padL + i * pw / n, padT, pw / n + 0.5, ph); } });
+  // grid
+  cx.strokeStyle = line; cx.lineWidth = 1; cx.fillStyle = muted; cx.textAlign = "right"; cx.textBaseline = "middle";
+  const step = maxFt > 6 ? 2 : maxFt > 3 ? 1 : 0.5;
+  for (let v = 0; v <= maxFt + 1e-9; v += step) { const y = padT + ph - v / maxFt * ph; cx.beginPath(); cx.moveTo(padL, y); cx.lineTo(W - padR, y); cx.stroke(); cx.fillText(`${+v.toFixed(1)} ft`, padL - 6, y); }
+  cx.textAlign = "left";
+  for (let v = 0; v <= maxMph; v += 10) { const y = padT + ph - v / maxMph * ph; cx.fillText(`${v}`, W - padR + 6, y); }
+  cx.textBaseline = "bottom"; cx.fillText("mph", W - padR + 6, padT - 2); cx.textBaseline = "middle";
+  // bars
+  hs.forEach((h, i) => { const y = padT + ph - h.hs_paddle * FT / maxFt * ph; cx.fillStyle = ratingColor(h.rating); cx.globalAlpha = i === hourIdx ? 1 : 0.82; cx.fillRect(X(i) - bw / 2, y, bw, padT + ph - y); });
+  cx.globalAlpha = 1;
+  // wind and gusts
+  cx.strokeStyle = fg; cx.lineWidth = 2; cx.beginPath();
+  hs.forEach((h, i) => { const y = padT + ph - h.wind * MPH / maxMph * ph; i ? cx.lineTo(X(i), y) : cx.moveTo(X(i), y); }); cx.stroke();
+  cx.fillStyle = fg; hs.forEach((h, i) => { if (h.gust == null) return; const y = padT + ph - h.gust * MPH / maxMph * ph; cx.beginPath(); cx.arc(X(i), y, 1.8, 0, 7); cx.fill(); });
+  // offshore wind markers
+  hs.forEach((h, i) => { if (h.offshore && h.wind > 3.5) { cx.fillStyle = ratingColor("offshore"); cx.beginPath(); cx.moveTo(X(i), padT + 2); cx.lineTo(X(i) - 4, padT - 5 + 2); cx.lineTo(X(i) + 4, padT - 5 + 2); cx.fill(); } });
+  // x labels every 6 h
+  cx.fillStyle = muted; cx.textAlign = "center"; cx.textBaseline = "top";
+  hs.forEach((h, i) => { const d = new Date(h.t), hr = hourOf(d); if (hr % 6 === 0) { cx.fillText(hr === 0 ? fmtDay.format(d) : fmtHr.format(d), X(i), padT + ph + 6); } });
+  // selected hour
+  cx.strokeStyle = accent; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(X(hourIdx), padT); cx.lineTo(X(hourIdx), padT + ph); cx.stroke();
+  chart._geom = { padL, pw, n };
+}
+chart.addEventListener("click", (e) => { const g = chart._geom; if (!g) return; const r = chart.getBoundingClientRect(); const i = Math.floor((e.clientX - r.left - g.padL) / g.pw * g.n); if (i >= 0 && i < g.n) setHour(i); });
+function legend() {
+  $("#legend").innerHTML = ORDER.map((r) => `<span><i style="background:${ratingColor(r)}"></i>${LABEL[r]}</span>`).join("") +
+    `<span><i class="line"></i>wind · dots gusts</span><span><i style="background:${ratingColor("offshore")};clip-path:polygon(50% 100%,0 0,100% 0)"></i>offshore wind</span>`;
+}
+
+// ------------------------------------------------------------ windows / marine
+function renderWindows() {
+  const hs = hourly(), out = []; let cur = null;
+  hs.forEach((h, i) => { const ok = (h.rating === "glassy" || h.rating === "good") && isDay(new Date(h.t));
+    if (ok) { if (!cur) cur = { a: i, b: i, r: h.rating, hs: h.hs_paddle, w: h.wind }; else { cur.b = i; if (ORDER.indexOf(h.rating) > ORDER.indexOf(cur.r)) cur.r = h.rating; cur.hs = Math.max(cur.hs, h.hs_paddle); cur.w = Math.max(cur.w, h.wind); } }
+    else if (cur) { out.push(cur); cur = null; } });
+  if (cur) out.push(cur);
+  const ul = $("#windows"); ul.innerHTML = "";
+  out.filter((w) => w.b - w.a >= 1).slice(0, 5).forEach((w) => {
+    const a = new Date(hs[w.a].t), b = new Date(new Date(hs[w.b].t).getTime() + 3600e3);
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="pill r-${w.r}">${LABEL[w.r]}</span><span><span class="t">${fmtH.format(a)} – ${fmtHM.format(b)}</span> · up to ${ft(w.hs)} ft, ${mph(w.w)} mph</span>`;
+    li.style.cursor = "pointer"; li.onclick = () => setHour(w.a); ul.appendChild(li);
+  });
+  $("#windows-note").textContent = ul.children.length ? "Daylight stretches of two hours or more rated glassy or good. Tap one to simulate it."
+    : "No daylight stretch rated glassy or good in the next two days. Check other spots: sheltered beaches can be calmer.";
+}
+function renderMarine() {
+  const m = D.marine && D.marine[spot().zone], el = $("#marine");
+  if (!m) { el.innerHTML = `<p class="note">The NWS nearshore forecast wasn't available when this was generated.</p>`; return; }
+  el.innerHTML = m.periods.map((p) => `<p><b>${p.name}</b>${p.text}</p>`).join("") + `<p class="note">Zone ${m.zone}${m.updated ? ` · issued ${fmtFull.format(new Date(m.updated))}` : ""}</p>`;
+}
+function renderFoot() {
+  const src = D.sources || {};
+  $("#foot").innerHTML = `<p>Wind: NWS gridpoint forecast ${src.nws_grid || "(unavailable)"}${src.wind ? `, recent hours from NDBC ${src.wind}` : ""}. Waves: USACE wind-wave growth over the fetch from each beach, ${D.buoy_now ? `matched to buoy ${D.buoy_now.station} now (×${D.calibration}) and fading back to the model over 6 hours, ` : "no wave buoy reporting, "}then shoaling, refraction and breaking over a sandy beach profile to the paddle zone (${D.paddle_depth_m} m deep, roughly 100–200 m out), plus local chop.</p>
+  <p>Ratings are rules of thumb for flat-water SUP: glassy under 0.5 ft and 7 mph; good under 1 ft and 11 mph; choppy under 2 ft and 16 mph; rough under 3.3 ft and 20 mph. Offshore wind over 8 mph is flagged on its own and becomes no-go above 15 mph. This is a model, not an official forecast. Breakwaters are approximated and seawall reflection isn't modeled.</p>`;
+  if ((src.errors || []).length) $("#foot").innerHTML += `<p>Data notes: ${src.errors.join("; ")}</p>`;
+}
+
+// ------------------------------------------------------------ wave simulation (three.js, metres)
+const SIM = { ok: false, view: RM ? "beside" : "beside", t: 0 };
+function initSim() {
+  const canvas = $("#sim");
+  if (!window.THREE) return simFail("The 3D library didn't load.");
+  let r; try { r = new THREE.WebGLRenderer({ canvas, antialias: true }); } catch (e) { return simFail("This browser can't show the 3D simulation (WebGL is off)."); }
+  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(55, 2, 0.1, 6000);
+  const N = 28;   // wave components
+  const U = { uTime: { value: 0 }, uA: { value: new Float32Array(N) }, uK: { value: new Float32Array(N) }, uW: { value: new Float32Array(N) },
+    uDx: { value: new Float32Array(N) }, uDz: { value: new Float32Array(N) }, uP: { value: new Float32Array(N) }, uQ: { value: 0.6 },
+    uShoreN: { value: new THREE.Vector2(1, 0) }, uShoreD: { value: 150 }, uHs: { value: 0.3 }, uSun: { value: new THREE.Vector3(0.3, 0.5, 0.2).normalize() },
+    uSunCol: { value: new THREE.Vector3(1, 0.95, 0.85) }, uSkyTop: { value: new THREE.Vector3(0.3, 0.5, 0.8) }, uSkyHor: { value: new THREE.Vector3(0.75, 0.82, 0.88) },
+    uWind: { value: 4 }, uWindDir: { value: new THREE.Vector2(1, 0) }, uCam: { value: new THREE.Vector3() }, uOvercast: { value: 0.3 }, uCity: { value: 0 } };
+  const WAVE = `
+    #define N ${N}
+    uniform float uTime, uQ, uA[N], uK[N], uW[N], uDx[N], uDz[N], uP[N], uShoreD, uHs; uniform vec2 uShoreN;
+    float depthAt(vec2 p) { float d = max(uShoreD - dot(p, uShoreN), 0.0); return 0.1 * pow(d, 0.6667); }   // Dean profile, metres
+    float limAt(vec2 p) { return clamp(0.62 * depthAt(p) / max(uHs, 0.02), 0.0, 1.0); }                   // depth-limited (breaking) height
+    `;
+  const waterMat = new THREE.ShaderMaterial({ uniforms: U, extensions: { derivatives: true },
+    vertexShader: `${WAVE}
+      varying vec3 vW; varying float vLim; varying vec2 vP;
+      void main() { vec2 p = (modelMatrix * vec4(position, 1.0)).xz; float lim = limAt(p);
+        vec3 disp = vec3(0.0);
+        for (int i = 0; i < N; i++) {
+          float L = 6.2832 / uK[i]; float wv = smoothstep(5.0, 10.0, L);    // only waves the mesh can resolve
+          float a = uA[i] * lim * wv; vec2 d = vec2(uDx[i], uDz[i]);
+          float th = uK[i] * dot(d, p) - uW[i] * uTime + uP[i];
+          float q = min(uQ, 1.0 / max(uK[i] * a * float(N), 1e-4));
+          disp += vec3(q * a * d.x * cos(th), a * sin(th), q * a * d.y * cos(th));
+        }
+        vec3 w = vec3(p.x, 0.0, p.y) + disp; vW = w; vLim = lim; vP = p;
+        gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0); }`,
+    fragmentShader: `${WAVE}
+      uniform vec3 uSun, uSunCol, uSkyTop, uSkyHor, uCam; uniform float uWind, uOvercast, uCity; uniform vec2 uWindDir;
+      varying vec3 vW; varying float vLim; varying vec2 vP;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
+      vec3 sky(vec3 d) { float h = clamp(d.y, 0.0, 1.0); vec3 c = mix(uSkyHor, uSkyTop, pow(h, 0.5)); return mix(c, vec3(dot(c, vec3(0.33))) * 0.9, uOvercast * 0.6); }
+      void main() {
+        vec2 p = vP; vec3 V = normalize(uCam - vW);
+        float foot = max(length(fwidth(p)), 1e-3);
+        // analytic slope of every component, faded where the pixel is too coarse to resolve it
+        vec2 grad = vec2(0.0); float steep = 0.0; float unres = 0.0;
+        for (int i = 0; i < N; i++) {
+          float L = 6.2832 / uK[i]; float wf = clamp(1.0 - foot * 3.0 / L, 0.0, 1.0);
+          float a = uA[i] * vLim; vec2 d = vec2(uDx[i], uDz[i]);
+          float th = uK[i] * dot(d, p) - uW[i] * uTime + uP[i];
+          float sl = a * uK[i] * cos(th);
+          grad += d * sl * wf; steep += max(sin(th), 0.0) * a * uK[i] * wf; unres += (a * uK[i]) * (a * uK[i]) * (1.0 - wf);
+        }
+        // capillary ripples from the wind, finer than any component
+        vec2 o = uWindDir * uTime * 0.6; float e = 0.03, rs = (0.01 + 0.006 * uWind) * clamp(1.0 - foot * 6.0, 0.0, 1.0);
+        float n0 = noise(p * 4.0 - o * 4.0), nx = noise((p + vec2(e, 0.0)) * 4.0 - o * 4.0), nz = noise((p + vec2(0.0, e)) * 4.0 - o * 4.0);
+        grad += vec2(nx - n0, nz - n0) / e * rs;
+        vec3 Nn = normalize(vec3(-grad.x, 1.0, -grad.y));
+        float F = 0.02 + 0.98 * pow(1.0 - max(dot(Nn, V), 0.0), 5.0);
+        vec3 R = reflect(-V, Nn); R.y = abs(R.y);
+        float sunUp = smoothstep(-0.05, 0.08, uSun.y);
+        float depth = depthAt(p);
+        vec3 deep = vec3(0.02, 0.07, 0.085), shallow = vec3(0.10, 0.22, 0.20);
+        vec3 body = mix(shallow, deep, smoothstep(0.5, 6.0, depth)) * (0.35 + 0.65 * sunUp + uCity * 0.4);
+        vec3 c = mix(body, sky(R), F);
+        vec3 Hv = normalize(uSun + V); float rough = 0.05 + 0.008 * uWind + sqrt(unres);
+        c += uSunCol * pow(max(dot(Nn, Hv), 0.0), 2.0 / (rough * rough)) / (1.0 + rough * 20.0) * sunUp * (1.0 - 0.8 * uOvercast) * 2.0;
+        // whitecaps on steep crests once the wind passes ~5 m/s, and surf where waves are depth-limited
+        float wc = smoothstep(5.0, 11.0, uWind) * smoothstep(0.18, 0.4, steep) * noise(p * 1.3 + uTime * 0.3);
+        float surf = (1.0 - vLim) * smoothstep(0.03, 0.15, uHs) * (0.5 + 0.5 * noise(p * 0.8 - uTime * 0.5));
+        float white = clamp(max(wc, surf), 0.0, 1.0);
+        c = mix(c, vec3(0.88, 0.92, 0.93) * (0.45 + 0.55 * sunUp), white * 0.85);
+        float dist = length(uCam - vW); c = mix(c, sky(normalize(vec3(-V.x, 0.03, -V.z))), 1.0 - exp(-dist / 2600.0));
+        gl_FragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+      }` });
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(700, 700, 300, 300).rotateX(-Math.PI / 2), waterMat);
+  water.frustumCulled = false; scene.add(water);
+  const farWater = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000, 1, 1).rotateX(-Math.PI / 2), waterMat);
+  farWater.position.y = -0.05; farWater.renderOrder = -1; scene.add(farWater);
+  // sky dome
+  const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: U,
+    vertexShader: `varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform vec3 uSun, uSunCol, uSkyTop, uSkyHor; uniform float uOvercast; varying vec3 vD;
+      void main(){ vec3 d = normalize(vD); float h = clamp(d.y, 0.0, 1.0); vec3 c = mix(uSkyHor, uSkyTop, pow(h, 0.5));
+        c = mix(c, vec3(dot(c, vec3(0.33))) * 0.9, uOvercast * 0.6);
+        float mu = max(dot(d, uSun), 0.0); c += uSunCol * (pow(mu, 900.0) * 6.0 * (1.0 - uOvercast) + pow(mu, 8.0) * 0.15);
+        gl_FragColor = vec4(pow(c, vec3(1.0/2.2)), 1.0); }` });
+  const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(5000, 32, 16), skyMat); scene.add(skyMesh);
+  // beach + shoreline buildings (generic)
+  const shore = new THREE.Group(); scene.add(shore);
+  const sand = new THREE.Mesh(new THREE.PlaneGeometry(4000, 120).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0xcdbb94 }));
+  sand.position.set(0, 0.35, 60); shore.add(sand);
+  const park = new THREE.Mesh(new THREE.PlaneGeometry(4000, 3000).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x5f7a4d }));
+  park.position.set(0, 0.6, 120 + 1500); shore.add(park);
+  const towers = new THREE.Group(); shore.add(towers);
+  const tGeo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+  const tMat = new THREE.MeshLambertMaterial({ color: 0x8a96a0 });
+  (function buildTowers() { let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 140; i++) { const m = new THREE.Mesh(tGeo, tMat); const x = (rnd() - 0.5) * 3600, z = 500 + rnd() * 1600;
+      const core = Math.exp(-(x * x) / (2 * 700 * 700)); const h = 15 + Math.pow(rnd(), 2.2) * 120 + core * rnd() * 300;
+      m.scale.set(25 + rnd() * 30, h, 25 + rnd() * 30); m.position.set(x, 0.6, z); towers.add(m); } })();
+  scene.add(new THREE.HemisphereLight(0xbfd6e6, 0x5a6248, 0.9));
+  const sunLight = new THREE.DirectionalLight(0xffffff, 0.9); scene.add(sunLight);
+  // the board
+  const board = new THREE.Group(); scene.add(board);
+  const bShape = new THREE.Shape(); const L = 3.35, Wb = 0.8;
+  bShape.moveTo(-L / 2, 0); bShape.bezierCurveTo(-L / 2, Wb * 0.45, -L * 0.2, Wb / 2, 0, Wb / 2); bShape.bezierCurveTo(L * 0.25, Wb / 2, L / 2, Wb * 0.3, L / 2, 0);
+  bShape.bezierCurveTo(L / 2, -Wb * 0.3, L * 0.25, -Wb / 2, 0, -Wb / 2); bShape.bezierCurveTo(-L * 0.2, -Wb / 2, -L / 2, -Wb * 0.45, -L / 2, 0);
+  const bGeo = new THREE.ExtrudeGeometry(bShape, { depth: 0.12, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.04, bevelSegments: 3 }).rotateX(Math.PI / 2).translate(0, 0.1, 0);
+  const bMesh = new THREE.Mesh(bGeo, new THREE.MeshLambertMaterial({ color: 0xf2a33a })); board.add(bMesh);
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.02, 0.6), new THREE.MeshLambertMaterial({ color: 0x2b3a40 })); pad.position.y = 0.14; board.add(pad);
+  const paddle = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 2.0, 8), new THREE.MeshLambertMaterial({ color: 0x1d2a30 })); paddle.position.set(0.1, 1.05, 0.35); paddle.rotation.z = 0.25; board.add(paddle);
+
+  SIM.ok = true; Object.assign(SIM, { r, scene, cam, U, board, shore, towers, sunLight, N });
+  const resize = () => { const w = canvas.clientWidth, h = canvas.clientHeight; r.setSize(w, h, false); cam.aspect = w / Math.max(h, 1); cam.updateProjectionMatrix(); };
+  new ResizeObserver(resize).observe(canvas); resize();
+  // CPU copy of the wave field for board motion
+  SIM.heightAt = (x, z) => {
+    let y = 0; const u = SIM.U; const hDepth = Math.max(u.uShoreD.value - (x * u.uShoreN.value.x + z * u.uShoreN.value.y), 0);
+    const lim = Math.min(1, Math.max(0, 0.62 * 0.1 * Math.pow(hDepth, 0.6667) / Math.max(u.uHs.value, 0.02)));
+    for (let i = 0; i < N; i++) y += u.uA.value[i] * lim * Math.sin(u.uK.value[i] * (u.uDx.value[i] * x + u.uDz.value[i] * z) - u.uW.value[i] * u.uTime.value + u.uP.value[i]);
+    return y;
+  };
+  let last = performance.now(), hist = [];
+  const loop = () => {
+    requestAnimationFrame(loop);
+    if (document.hidden) return;
+    const now = performance.now(), dt = Math.min((now - last) / 1000, 0.1); last = now;
+    if (!RM) SIM.U.uTime.value += dt;
+    // board: heave from the surface, pitch/roll from slope
+    const h0 = SIM.heightAt(0, 0), hx = SIM.heightAt(1.6, 0) - SIM.heightAt(-1.6, 0), hz = SIM.heightAt(0, 0.4) - SIM.heightAt(0, -0.4);
+    board.position.y = h0; board.rotation.z = Math.atan2(hx, 3.2); board.rotation.x = -Math.atan2(hz, 0.8);
+    hist.push([now, h0]); while (hist.length && now - hist[0][0] > 30000) hist.shift();
+    const range = hist.length ? Math.max(...hist.map((h) => h[1])) - Math.min(...hist.map((h) => h[1])) : 0;
+    SIM.range = range;
+    // cameras
+    const yaw = SIM.yaw || 0;   // board points along the shore
+    if (SIM.view === "rider") { cam.position.set(0, h0 + 1.75, 0); const look = new THREE.Vector3(Math.cos(yaw) * 20, h0 + 0.4, Math.sin(yaw) * 20); cam.lookAt(look); cam.rotation.z += board.rotation.z * 0.6; }
+    else if (SIM.view === "beach") { const sn = SIM.U.uShoreN.value, d = SIM.U.uShoreD.value; cam.position.set(sn.x * (d + 8), 2.2, sn.y * (d + 8)); cam.lookAt(0, 0.3, 0); }
+    else { const sn = SIM.U.uShoreN.value; const side = new THREE.Vector2(-sn.y, sn.x); cam.position.set(side.x * 7 + sn.x * 3, 2.4, side.y * 7 + sn.y * 3); cam.lookAt(-sn.x * 7, -0.6, -sn.y * 7); }
+    paddle.visible = SIM.view !== "rider";
+    SIM.U.uCam.value.copy(cam.position);
+    skyMesh.position.copy(cam.position);
+    r.render(scene, cam);
+    if (now - (SIM.lastHud || 0) > 500) { SIM.lastHud = now; simHud(); }
+  };
+  requestAnimationFrame(loop);
+}
+function simFail(msg) { const d = document.createElement("div"); d.className = "simfail"; d.textContent = msg; $(".stage").appendChild(d); }
+
+// JONSWAP-sampled components for the selected hour
+function setSimHour() {
+  if (!SIM.ok) return;
+  const s = spot(), h = H(), U = SIM.U, N = SIM.N;
+  let seed = 12345; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // world: x east, z south; waves travel toward (dir + 180)
+  const prop = (deg) => { const a = (deg + 180) * Math.PI / 180; return [Math.sin(a), -Math.cos(a)]; };
+  const swellHs = Math.sqrt(Math.max(h.hs_paddle ** 2 - h.chop ** 2, 0)), chopHs = h.chop;
+  const comps = [];
+  const addSpectrum = (Hs, Tp, dirFrom, spread, n) => {
+    if (Hs < 0.005 || Tp < 0.5) return;
+    const fp = 1 / Tp, fs = [], S = [];
+    for (let i = 0; i < n; i++) { const f = fp * (0.75 + 1.6 * i / (n - 1)); const sg = f <= fp ? 0.07 : 0.09;
+      const r = Math.exp(-((f - fp) ** 2) / (2 * sg * sg * fp * fp)); S.push(Math.pow(f, -5) * Math.exp(-1.25 * Math.pow(fp / f, 4)) * Math.pow(3.3, r)); fs.push(f); }
+    const tot = S.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < n; i++) { const a = (Hs / 2.83) * Math.sqrt(2 * S[i] / tot) ; // amplitude so 4*sqrt(m0) ~ Hs
+      const w = 2 * Math.PI * fs[i], k = w * w / 9.81, th = dirFrom + (rnd() - 0.5) * 2 * spread * (0.4 + 0.6 * i / n);
+      const [dx, dz] = prop(th); comps.push([a, k, w, dx, dz, rnd() * 6.283]); }
+  };
+  addSpectrum(swellHs, h.tp, h.wave_dir, 30, Math.round(N * 0.6));
+  addSpectrum(Math.max(chopHs, 0.02 + 0.006 * h.wind), Math.max(0.9, 0.5 + 0.12 * h.wind), h.dir, 50, N - Math.round(N * 0.6));
+  while (comps.length < N) comps.push([0, 1, 1, 1, 0, 0]);
+  comps.slice(0, N).forEach(([a, k, w, dx, dz, p], i) => { U.uA.value[i] = a; U.uK.value[i] = k; U.uW.value[i] = w; U.uDx.value[i] = dx; U.uDz.value[i] = dz; U.uP.value[i] = p; });
+  U.uHs.value = h.hs_paddle; U.uQ.value = Math.min(0.8, 0.3 + h.hs_paddle * 0.6);
+  // shoreline: lake lies toward s.normal; shore is behind the board at paddle distance (Dean: h = 2.5 m at ~165 m)
+  const nrm = s.normal * Math.PI / 180, toShore = new THREE.Vector2(-Math.sin(nrm), Math.cos(nrm)); // unit vector toward land (x east, z south)
+  U.uShoreN.value.copy(toShore); U.uShoreD.value = Math.pow(D.paddle_depth_m / 0.1, 1.5);
+  SIM.shore.position.set(toShore.x * U.uShoreD.value, 0, toShore.y * U.uShoreD.value);
+  SIM.shore.rotation.y = Math.atan2(toShore.x, toShore.y);
+  SIM.towers.visible = !(s.id === "rainbow" || s.id === "calumet" || s.id === "63rd");   // high-rises only along the north and downtown lakefront
+  SIM.yaw = Math.atan2(-toShore.x, toShore.y) ;   // board heading along the beach
+  const wp = prop(h.dir); U.uWindDir.value.set(wp[0], wp[1]); U.uWind.value = h.wind;
+  // light for that hour
+  const t = new Date(h.t), sun = solar(t), el = sun.el * Math.PI / 180, az = sun.az * Math.PI / 180;
+  U.uSun.value.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)).normalize();
+  const day = THREE.MathUtils.clamp((sun.el + 6) / 18, 0, 1), golden = THREE.MathUtils.clamp(1 - Math.abs(sun.el - 3) / 10, 0, 1) * day;
+  U.uSkyTop.value.set(0.04 + 0.22 * day, 0.06 + 0.36 * day, 0.12 + 0.6 * day);
+  U.uSkyHor.value.set(0.08 + 0.62 * day + 0.25 * golden, 0.09 + 0.66 * day + 0.05 * golden, 0.12 + 0.7 * day - 0.15 * golden);
+  U.uSunCol.value.set(1, 0.92 - 0.35 * golden, 0.82 - 0.55 * golden).multiplyScalar(day);
+  U.uOvercast.value = (h.sky ?? 30) / 100; U.uCity.value = 1 - day;
+  SIM.sunLight.position.copy(U.uSun.value).multiplyScalar(100); SIM.sunLight.intensity = 0.2 + 0.8 * day * (1 - 0.6 * U.uOvercast.value);
+  $("#sim-title").textContent = `Wave simulation · ${s.name}`;
+  $("#sim-sub").textContent = `${fmtFull.format(t)} · ${ft(h.hs_paddle)} ft, ${h.tp.toFixed(1)} s, from ${compass(h.wave_dir)} · wind ${mph(h.wind)} mph ${compass(h.dir)}`;
+  $("#compass").innerHTML = `Shore is behind you · lake faces ${compass(s.normal)}<br>${RM ? "Animation paused (reduced motion)" : "Pick a camera above"}`;
+}
+function simHud() {
+  const h = H();
+  $("#overlay").innerHTML = `<b>Board rises and falls ${ft(SIM.range || 0)} ft</b><span>${(SIM.range || 0).toFixed(2)} m over the last 30 s · waves ${h.tp.toFixed(1)} s apart</span><span>${LABEL[h.rating]} · ${h.reasons[0]}</span>`;
+}
+document.querySelectorAll("[data-view]").forEach((b) => b.onclick = () => { SIM.view = b.dataset.view; document.querySelectorAll("[data-view]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); });
+
+// ------------------------------------------------------------ wiring
+function setHour(i) { hourIdx = Math.max(0, Math.min(i, hourly().length - 1)); $("#hour").value = hourIdx; renderHour(); }
+function renderHour() {
+  const h = H(); $("#hour-o").textContent = `${hourIdx === 0 ? "Now" : "+" + hourIdx + " h"} · ${fmtH.format(new Date(h.t))}`;
+  renderVerdict(); drawChart(); setSimHour();
+}
+function renderAll() { if (spotIdx >= D.spots.length) spotIdx = 0; renderMeta(); renderSpots(); legend(); $("#hour").max = hourly().length - 1; renderWindows(); renderMarine(); renderFoot(); renderHour(); }
+$("#hour").oninput = (e) => setHour(+e.target.value);
+window.addEventListener("resize", () => D && drawChart());
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => D && (legend(), drawChart()));
+
+async function boot() {
+  initSim();
+  const txt = document.getElementById("sup-data").textContent.trim();
+  try {
+    if (txt) D = JSON.parse(txt);
+    else { const r = await fetch("api/sup.json", { cache: "no-store" }); if (!r.ok) throw new Error(`The forecast service answered ${r.status}.`); D = await r.json(); D.live = true;
+      setInterval(async () => { try { const r2 = await fetch("api/sup.json", { cache: "no-store" }); if (r2.ok) { const nd = await r2.json(); if (nd.generated !== D.generated) { D = Object.assign(nd, { live: true }); renderAll(); } } } catch (e) {} }, 300000); }
+    if (!D.spots || !D.spots.length || !D.spots[0].hourly.length) throw new Error("The forecast file has no hours in it.");
+    renderAll();
+  } catch (e) {
+    $("#verdict").innerHTML = `<div class="empty" style="grid-column:1/-1"><strong>No forecast loaded.</strong><br>${e.message}</div>`;
+  }
+}
+boot();
+window.__sup = { get D() { return D; }, setHour, SIM };
+})();
+</script>

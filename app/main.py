@@ -2,6 +2,8 @@
 Chicago Storm 3D live service.
 
     GET  /                 the 3-D viewer (live mode: loads api/scene.json, refreshes itself)
+    GET  /sup              stand-up paddling wave forecast for the lakefront (loads api/sup.json)
+    GET  /api/sup.json     SUP forecast: 8 spots x 48 h (refreshed every SUP_INTERVAL_MIN, default 30)
     GET  /api/scene.json   latest scene (gzip when the client accepts it)
     GET  /api/status       freshness, latest scan time, errors, next run
     GET  /healthz          liveness probe (always 200 while the process is up)
@@ -22,6 +24,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from .pipeline import Pipeline
+from . import sup_waves as sup_waves_mod
+from .sup_waves import SupForecaster
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -29,6 +33,7 @@ log = logging.getLogger("klot.web")
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 pipeline = Pipeline()
+sup = SupForecaster(pipeline.cfg.data_dir)
 SCHEDULER = os.environ.get("SCHEDULER", "internal")  # internal | external (cron calls /api/refresh)
 
 
@@ -37,12 +42,15 @@ async def lifespan(_app):
     if SCHEDULER == "internal":
         log.info("Starting background pipeline: %s every %s min", pipeline.cfg.site, pipeline.cfg.interval_min)
         pipeline.start()
+        if os.environ.get("SUP", "on") != "off":
+            sup.start()
     else:
         log.info("External scheduler: POST /api/refresh to update")
         if not pipeline.status["ready"]:
             threading.Thread(target=pipeline.run_once, daemon=True).start()
     yield
     pipeline.stop()
+    sup.stop()
 
 
 app = FastAPI(title="Chicago Storm 3D", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -72,9 +80,21 @@ def scene(request: Request):
     return FileResponse(pipeline.scene_path, media_type="application/json", headers=headers)
 
 
+@app.get("/sup", include_in_schema=False)
+def sup_page():
+    return FileResponse(os.path.join(STATIC, "sup.html"), media_type="text/html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/api/sup.json")
+def sup_json():
+    if not os.path.exists(sup.path):
+        raise HTTPException(503, sup.status.get("last_error") or "The first paddling forecast is still being built.")
+    return FileResponse(sup.path, media_type="application/json", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/api/status")
 def status():
-    return JSONResponse(pipeline.public_status(), headers={"Cache-Control": "no-store"})
+    return JSONResponse(pipeline.public_status() | {"sup": sup.status}, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/healthz", include_in_schema=False)
@@ -95,4 +115,5 @@ def refresh(x_refresh_token: str = Header(default="")):
     if not token or x_refresh_token != token:
         raise HTTPException(403, "Set REFRESH_TOKEN on the server and send it as X-Refresh-Token.")
     started = pipeline.run_once()
-    return {"ran": started, "status": pipeline.public_status()}
+    sup_ok = sup.run_once()
+    return {"ran": started, "status": pipeline.public_status(), "sup": sup_ok}

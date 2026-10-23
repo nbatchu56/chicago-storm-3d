@@ -117,9 +117,13 @@ def test_http(env, monkeypatch):
     monkeypatch.setenv("SOURCE", "demo")
     monkeypatch.setenv("SCHEDULER", "external")
     monkeypatch.setenv("REFRESH_TOKEN", "s3cret")
+    monkeypatch.setenv("SUP", "off")
     fresh_modules()
     from fastapi.testclient import TestClient
     import app.main as main
+    def offline():
+        raise RuntimeError("offline in tests")
+    monkeypatch.setattr(main.sup_waves_mod, "build", offline)
     main.pipeline.lock.acquire()                     # hold off the startup run so we can see "not ready"
     with TestClient(main.app) as c:
         assert c.get("/healthz").json() == {"ok": True}
@@ -138,3 +142,10 @@ def test_http(env, monkeypatch):
         assert st["ready"] and st["stale"] is False and st["scan_age_min"] < 10
         html = c.get("/").text
         assert "Chicago Storm 3D" in html and "pollLive" in html
+        # SUP forecast: page always served; data once built (stubbed here, no network in tests)
+        assert "Chicago SUP Waves" in c.get("/sup").text
+        assert c.get("/api/sup.json").status_code == 503
+        monkeypatch.setattr(main.sup_waves_mod, "build", lambda: {"generated": "2026-10-23T18:00:00+00:00", "sources": {"errors": []}, "spots": [{"id": "x", "hourly": []}]})
+        assert main.sup.run_once()
+        assert c.get("/api/sup.json").json()["generated"].startswith("2026-10-23")
+        assert c.get("/api/status").json()["sup"]["updated"].startswith("2026-10-23")

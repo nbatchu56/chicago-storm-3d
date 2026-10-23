@@ -75,9 +75,43 @@ def test_offshore_wind_is_flagged():
     data = sw.build(now=NOW, hours=3, get=make_get(6.0, 270, "0.2"))
     v = by_id(data)["north-ave"]["hourly"][0]
     assert v["offshore"] and v["hs_paddle"] < 0.2
-    assert v["rating"] in ("rough", "no-go") and "offshore" in v["reasons"][0]
+    assert v["rating"] in ("offshore", "no-go") and "offshore" in v["reasons"][0]
 
 
 def test_light_wind_glassy():
     data = sw.build(now=NOW, hours=3, get=make_get(1.5, 90, "0.1"))
     assert by_id(data)["ohio-st"]["hourly"][0]["rating"] in ("glassy", "good")
+
+
+NSH = """FZUS53 KLOT 231445
+NSHLOT
+
+Nearshore Marine Forecast
+National Weather Service Chicago IL
+945 AM CDT Fri Oct 23 2026
+
+LMZ740-232100-
+Winthrop Harbor to Wilmette Harbor IL-
+945 AM CDT Fri Oct 23 2026
+
+.TODAY...East winds 5 to 10 kt. Waves 1 foot or less.
+.TONIGHT...Southeast winds 10 kt. Waves 1 foot or less.
+$$
+
+LMZ741-232100-
+Wilmette Harbor to Northerly Island IL-
+945 AM CDT Fri Oct 23 2026
+
+.TODAY...East winds 5 to 10 kt. Waves 1 foot or less.
+.TONIGHT...Southeast winds 10 to 15 kt.
+Waves 1 to 2 ft.
+.SATURDAY...South winds 10 kt.
+$$
+"""
+
+
+def test_parse_nearshore_product():
+    m = sw.parse_nsh(NSH, "LMZ741")
+    assert m["title"].startswith("Wilmette Harbor") and [p["name"] for p in m["periods"]] == ["Today", "Tonight", "Saturday"]
+    assert m["periods"][1]["text"] == "Southeast winds 10 to 15 kt. Waves 1 to 2 ft."
+    assert sw.parse_nsh(NSH, "LMZ745") is None

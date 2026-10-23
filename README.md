@@ -19,6 +19,18 @@ tests/test_service.py        offline tests (stand-in archive serving a real Leve
 Dockerfile, docker-compose.yml, fly.toml, render.yaml
 ```
 
+## Stand-up paddling forecast (`/sup`)
+
+`/sup` is a paddling forecast for eight lakefront launches (Montrose, North Avenue, Oak Street, Ohio Street, 31st Street, 63rd Street, Rainbow, Calumet), rebuilt every 30 minutes (`SUP_INTERVAL_MIN`):
+
+- wind and gusts from the NWS hourly gridpoint forecast, recent hours from NDBC buoys/stations;
+- fetch over the lake ray-cast from each beach, wind duration from the wind history, USACE growth curves for open-lake waves, matched to the nearest reporting wave buoy now;
+- shoaling, refraction and breaking to the paddle zone (~2.5 m deep), plus local chop;
+- breakwater/pier shelter per spot (approximate), an offshore-wind safety flag, water temperature;
+- an hourly SUP rating, best daylight windows, the NWS nearshore marine text, and a 3-D water simulation of any hour.
+
+`python -m app.sup_waves --out sup.json` builds it once. `SUP=off` disables it.
+
 ## Run it locally
 
 ```bash
