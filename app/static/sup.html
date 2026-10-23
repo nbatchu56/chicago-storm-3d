@@ -809,7 +809,7 @@ function setSimHour() {
       S.push(Math.pow(f, -5) * Math.exp(-1.25 * Math.pow(fp / f, 4)) * Math.pow(3.3, Math.exp(-((f - fp) ** 2) / (2 * sg * sg * fp * fp)))); fs.push(f); }
     const tot = S.reduce((a, b) => a + b, 0);
     for (let i = 0; i < n; i++) {
-      const w = 2 * Math.PI * fs[i], a = (c.hs / 2.83) * Math.sqrt(2 * S[i] / tot);
+      const w = 2 * Math.PI * fs[i], a = (c.hs / 4) * Math.sqrt(2 * S[i] / tot);   // sum of a^2/2 = m0 = (Hs/4)^2
       const relDeg = c.rel + (rnd() - 0.5) * 2 * c.spread * (0.4 + 0.6 * i / n);
       const b = (s.normal + relDeg) * Math.PI / 180;                 // compass bearing the waves come from
       const px = -Math.sin(b), pz = Math.cos(b);                      // propagation (world x east, z south)
