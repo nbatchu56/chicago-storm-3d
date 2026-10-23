@@ -45,7 +45,7 @@ jobs:
           git clone -q --depth 1 https://github.com/fengyanshi/FUNWAVE-TVD.git fwsrc
           cd fwsrc
           sed -i 's/^COMPILER *=.*/COMPILER    = gnu/; s/^DEF_FC *=.*/DEF_FC      = mpif90/' Makefile
-          make -j2 > "$RUNNER_TEMP/build.log" 2>&1 || { echo "::error title=FUNWAVE build::$(tail -c 2500 "$RUNNER_TEMP/build.log" | tr '\n' '|')"; exit 1; }
+          make -j2 > "$RUNNER_TEMP/build.log" 2>&1 || { echo "::error title=FUNWAVE build::$(tail -c 2500 "$RUNNER_TEMP/build.log" | grep -v '^Get:\|^Hit:\|^Reading\|^Selecting\|^Preparing\|^Unpacking\|^Setting up\|^Processing' | sed 's/%/%25/g' | tr '\n' '|')"; exit 1; }
           mkdir -p ~/funwave && cp $(find funwave-work -maxdepth 1 -type f -perm -u+x -name 'funwave*' | head -1) ~/funwave/funwave
           ls -la ~/funwave
       - name: Prepare
