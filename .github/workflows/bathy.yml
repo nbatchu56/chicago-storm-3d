@@ -1,0 +1,38 @@
+name: Bathymetry
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Also build the wave-model grid for the route"
+        type: boolean
+        default: true
+permissions:
+  contents: write
+concurrency:
+  group: bathy
+  cancel-in-progress: false
+jobs:
+  bathy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: pip install numpy scipy boto3 rasterio pyproj
+      - name: Build lake-bottom grids
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          python -m app.bathymetry --out "$RUNNER_TEMP/out/bathy.json" ${{ inputs.model && '--model' || '' }} 2>&1 | tee "$RUNNER_TEMP/out/bathy.log"
+      - name: Publish to the bathy branch
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP/out"
+          git init -q -b bathy
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "bathymetry $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" bathy
