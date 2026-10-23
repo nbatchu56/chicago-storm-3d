@@ -1,0 +1,1029 @@
+<title>Chicago Storm 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: full-bleed 3D scene; instrument panels float over it (status top-left, controls right, timeline bottom). */
+:root {
+  color-scheme: dark;
+  --bg: #0b1218;
+  --panel: rgba(12, 20, 28, 0.84);
+  --panel-solid: #0f1922;
+  --line: #24384a;
+  --fg: #dce6ee;
+  --muted: #8ea2b4;
+  --accent: #f0b44c;      /* warm streetlight amber */
+  --obs: #5cc8e8;         /* observed radar */
+  --fc: #b892f5;          /* forecast */
+  --danger: #f2705a;
+  --font-ui: "IBM Plex Sans Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --gut: 16px;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 14px; overflow: hidden; }
+#app { position: fixed; inset: 0; }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+#labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.lbl { position: absolute; transform: translate(-50%, -100%); font: 500 11px/1.2 var(--font-data); color: var(--fg);
+  text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,.8); white-space: nowrap; padding-bottom: 6px; }
+.lbl::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 1px; height: 5px; background: var(--fg); opacity: .7; }
+.lbl.lake { font-family: var(--font-ui); font-style: italic; letter-spacing: .12em; text-transform: uppercase; color: #a9cde0; }
+.lbl.lake::after { display: none; }
+.lbl.radar { color: var(--accent); }
+
+.panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+
+/* status */
+#hud { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); left: calc(var(--gut) + env(safe-area-inset-left, 0px));
+  padding: 12px 14px; width: min(320px, calc(100vw - 2 * var(--gut))); display: grid; gap: 8px; }
+#hud h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: .01em; text-wrap: balance; }
+#hud .src { color: var(--muted); font-size: 12.5px; }
+.timebox { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+#clock { font: 500 22px/1 var(--font-data); font-variant-numeric: tabular-nums; }
+.chip { font: 600 11px/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; padding: 4px 7px; border-radius: 3px;
+  border: 1px solid currentColor; }
+.chip.obs { color: var(--obs); } .chip.fc { color: var(--fc); }
+.live { display: flex; align-items: center; gap: 7px; font: 12px/1.35 var(--font-data); color: var(--muted); }
+.live::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--obs); box-shadow: 0 0 0 3px rgba(92,200,232,.18); }
+.live.stale { color: var(--danger); } .live.stale::before { background: var(--danger); box-shadow: 0 0 0 3px rgba(242,112,90,.2); }
+.live.wait::before { background: var(--accent); box-shadow: 0 0 0 3px rgba(240,180,76,.2); }
+.readouts { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 8px; }
+.readouts dt { color: var(--muted); }
+.readouts dd { margin: 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; }
+.sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: 0; background: transparent; }
+
+/* controls */
+#controls { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px));
+  width: 268px; max-height: calc(100% - 2 * var(--gut) - 96px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto; padding: 4px 14px 14px; }
+#controls section { display: grid; gap: 8px; padding-top: 12px; }
+#controls section + section { border-top: 1px solid var(--line); margin-top: 12px; }
+#controls h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg button { border: 0; border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
+button { font: 500 13px/1 var(--font-ui); color: var(--fg); background: transparent; padding: 8px 6px; cursor: pointer; border: 1px solid var(--line); border-radius: 4px; }
+button:hover { background: rgba(255,255,255,.05); }
+button[aria-pressed="true"] { background: var(--accent); color: #1b1305; border-color: var(--accent); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cams { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; font-size: 13px; }
+.row output { font: 12px var(--font-data); color: var(--accent); font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+.note { color: var(--muted); font-size: 12px; line-height: 1.4; margin: 0; }
+.wave-out { font: 12px/1.5 var(--font-data); color: var(--fg); background: rgba(0,0,0,.25); border-radius: 4px; padding: 6px 8px; }
+label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cursor: pointer; }
+.file { position: relative; }
+.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.file span { display: block; text-align: center; border: 1px dashed var(--line); border-radius: 4px; padding: 9px; font-size: 13px; }
+.file:hover span { border-color: var(--accent); }
+code { font-family: var(--font-data); font-size: 11.5px; color: var(--fg); }
+
+/* timeline */
+#timeline { left: calc(var(--gut) + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--gut) + env(safe-area-inset-bottom, 0px)); padding: 10px 14px; display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; }
+#play { width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border-color: var(--accent); color: var(--accent); }
+#play svg { width: 16px; height: 16px; fill: currentColor; }
+.track { position: relative; display: grid; gap: 6px; min-width: 0; }
+.bar { position: relative; height: 6px; border-radius: 3px; background: var(--line); }
+.bar i { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.bar .o { background: var(--obs); opacity: .7; } .bar .f { background: var(--fc); opacity: .6; }
+.bar b { position: absolute; top: -5px; width: 2px; height: 16px; background: var(--fg); transform: translateX(-1px); }
+#scrub { position: absolute; left: 0; right: 0; top: -9px; height: 24px; opacity: 0; cursor: pointer; }
+.ticks { display: flex; justify-content: space-between; font: 11px var(--font-data); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ticks .now { color: var(--fg); }
+.speed { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
+.speed select { background: var(--panel-solid); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 6px; font: 12px var(--font-data); }
+
+#toggle { display: none; }
+#msg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: min(440px, calc(100vw - 32px)); padding: 16px 18px; text-align: center; }
+#msg p { margin: 6px 0 0; color: var(--muted); }
+#msg strong { font-size: 16px; }
+
+@media (max-width: 760px) {
+  #hud { padding: 10px 12px; gap: 6px; width: calc(100vw - 2 * var(--gut) - 100px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)); }
+  #hud .src { display: none; }
+  .ticks .long { display: none; }
+  #hud h1 { font-size: 17px; }
+  #clock { font-size: 18px; }
+  .readouts { font-size: 12px; }
+  #toggle { display: block; position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); top: calc(var(--gut) + env(safe-area-inset-top, 0px));
+    background: var(--panel); }
+  #controls { top: auto; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); width: auto;
+    bottom: calc(var(--gut) + 92px + env(safe-area-inset-bottom, 0px)); max-height: 58%; }
+  #timeline { grid-template-columns: auto 1fr; }
+  .speed { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div id="app">
+  <canvas id="gl" tabindex="0" aria-label="3D view of the storm over Chicago. Drag to orbit, scroll or pinch to zoom, right-drag to pan."></canvas>
+  <div id="labels"></div>
+
+  <div id="hud" class="panel" aria-live="polite">
+    <h1>Chicago Storm 3D</h1>
+    <div class="src" id="source">Loading scene…</div>
+    <div class="live" id="live" hidden></div>
+    <div class="timebox"><span id="clock">--:--</span><span class="chip obs" id="status">Observed</span></div>
+    <dl class="readouts">
+      <dt>Downtown rain</dt><dd id="r-rain">–</dd>
+      <dt>Radar echo</dt><dd id="r-dbz">–</dd>
+      <dt>Storm motion</dt><dd id="r-motion">–</dd>
+      <dt>Lake waves</dt><dd id="r-wave">–</dd>
+    </dl>
+  </div>
+
+  <button id="toggle" aria-expanded="false" aria-controls="controls">Controls</button>
+
+  <aside id="controls" class="panel" aria-label="Scene controls">
+    <section>
+      <h2>View</h2>
+      <div class="seg" role="group" aria-label="Render style">
+        <button id="m-real" aria-pressed="true">Realistic</button>
+        <button id="m-radar" aria-pressed="false">Radar colors</button>
+      </div>
+      <div class="cams" role="group" aria-label="Camera">
+        <button data-cam="overview">Overview</button>
+        <button data-cam="lake">From the lake</button>
+        <button data-cam="trail">Lakefront Trail</button>
+        <button data-cam="above">Above the storm</button>
+        <button data-cam="top">Radar top-down</button>
+        <button data-cam="ohare">O'Hare</button>
+      </div>
+    </section>
+    <section>
+      <h2>Light</h2>
+      <div class="seg" role="group" aria-label="Time of day">
+        <button data-light="day" aria-pressed="true">Day</button>
+        <button data-light="dusk" aria-pressed="false">Dusk</button>
+        <button data-light="night" aria-pressed="false">Night</button>
+      </div>
+    </section>
+    <section>
+      <h2>Atmosphere</h2>
+      <div class="row"><label for="exag">Vertical scale</label><output id="exag-o">×3</output></div>
+      <input type="range" id="exag" min="1" max="5" step="0.5" value="3">
+      <div class="row"><label for="dens">Cloud density</label><output id="dens-o">100%</output></div>
+      <input type="range" id="dens" min="0.3" max="2" step="0.05" value="1">
+      <div class="row"><label for="extra">Extra low cloud</label><output id="extra-o">0%</output></div>
+      <input type="range" id="extra" min="0" max="1" step="0.05" value="0">
+      <p class="note">Radar only sees rain and snow. Clouds here are inferred from the echoes; the extra low layer is illustrative.</p>
+      <label class="check"><input type="checkbox" id="bolts" checked> Lightning flashes in strong cores</label>
+    </section>
+    <section>
+      <h2>Lake wind &amp; waves</h2>
+      <div class="row"><label for="wspd">Wind speed</label><output id="wspd-o">12 m/s</output></div>
+      <input type="range" id="wspd" min="0" max="25" step="0.5" value="12">
+      <div class="row"><label for="wdir">Wind from</label><output id="wdir-o">20° NNE</output></div>
+      <input type="range" id="wdir" min="0" max="355" step="5" value="20">
+      <div class="wave-out" id="wave-out">–</div>
+      <p class="note">Offshore waves from the USACE wind-wave growth curves with fetch measured from the Chicago shore; surf breaks where depth falls below about 1.3× wave height.</p>
+    </section>
+    <section>
+      <h2>Quality</h2>
+      <div class="seg" role="group" aria-label="Render quality">
+        <button data-q="0" aria-pressed="false">Fast</button>
+        <button data-q="1" aria-pressed="true">Balanced</button>
+        <button data-q="2" aria-pressed="false">Sharp</button>
+      </div>
+    </section>
+    <section>
+      <h2>Your radar data</h2>
+      <label class="file"><input type="file" id="file" accept=".json,application/json"><span>Load a scene file (.json)</span></label>
+      <p class="note">Make one from real KLOT scans with <code>radar_to_scene.py</code>. You can also drop the file onto the view.</p>
+      <p class="note" id="about"></p>
+    </section>
+  </aside>
+
+  <div id="timeline" class="panel">
+    <button id="play" aria-label="Play"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="play-icon" d="M3 1.5v13l11-6.5z"/></svg></button>
+    <div class="track">
+      <div class="bar" id="bar"><i class="o" id="bar-o"></i><i class="f" id="bar-f"></i><b id="head"></b>
+        <input type="range" id="scrub" min="0" max="1" step="0.001" value="0" aria-label="Scene time"></div>
+      <div class="ticks" id="ticks"></div>
+    </div>
+    <div class="speed"><label for="spd">Speed</label>
+      <select id="spd"><option value="0.35">Slow</option><option value="0.8" selected>Normal</option><option value="1.6">Fast</option></select></div>
+  </div>
+
+  <div id="msg" class="panel" hidden></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script id="scene-data" type="application/json"></script>
+<script>
+"use strict";
+(() => {
+const $ = (s) => document.querySelector(s);
+const RM = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ---------------------------------------------------------------- geography (km from State & Madison)
+const ORIGIN = { lat: 41.8820, lon: -87.6278 };
+const KX = 111.32 * Math.cos(ORIGIN.lat * Math.PI / 180), KY = 110.57;
+const ll = (lat, lon) => [(lon - ORIGIN.lon) * KX, (lat - ORIGIN.lat) * KY];
+// Lake Michigan shoreline: west shore north->south, around the Indiana dunes, up the Michigan side
+const SHORE_LL = [
+  [45.0,-87.42],[44.40,-87.50],[43.75,-87.70],[43.04,-87.88],[42.73,-87.78],[42.58,-87.81],[42.49,-87.80],
+  [42.36,-87.82],[42.25,-87.80],[42.16,-87.76],[42.07,-87.68],[42.02,-87.665],[41.97,-87.640],[41.92,-87.626],
+  [41.900,-87.619],[41.892,-87.598],[41.886,-87.611],[41.870,-87.611],[41.866,-87.608],[41.850,-87.609],
+  [41.810,-87.580],[41.790,-87.572],[41.760,-87.550],[41.735,-87.530],[41.710,-87.521],[41.680,-87.500],
+  [41.660,-87.450],[41.620,-87.380],[41.610,-87.260],[41.630,-87.100],[41.680,-87.000],[41.720,-86.900],
+  [41.770,-86.800],[41.850,-86.650],[41.950,-86.570],[42.100,-86.480],[42.400,-86.280],[42.780,-86.210],
+  [43.230,-86.340],[43.950,-86.450],[44.630,-86.240],[45.300,-85.600]];
+const SHORE = SHORE_LL.map(([a, b]) => ll(a, b));
+const LAKE = SHORE.concat([ll(46.2, -85.4), ll(46.2, -87.3)]);
+const PLACES = [
+  ["Chicago Loop", 41.8820, -87.6278], ["O'Hare", 41.9786, -87.9048], ["Midway", 41.7868, -87.7522],
+  ["Evanston", 42.0451, -87.6877], ["Gary", 41.6020, -87.3372], ["Michigan City", 41.7075, -86.8950],
+  ["Naperville", 41.7508, -88.1535], ["Waukegan", 42.3636, -87.8448]];
+function shoreDistKm(x, y) { let md = 1e9;
+  for (let i = 0; i < SHORE.length - 1; i++) { const [ax, ay] = SHORE[i], [bx, by] = SHORE[i + 1], dx = bx - ax, dy = by - ay;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy))); md = Math.min(md, Math.hypot(x - ax - t * dx, y - ay - t * dy)); }
+  return md; }
+function inLake(x, y) {
+  let c = false;
+  for (let i = 0, j = LAKE.length - 1; i < LAKE.length; j = i++) {
+    const [ax, ay] = LAKE[i], [bx, by] = LAKE[j];
+    if ((ay > y) !== (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax) c = !c;
+  }
+  return c;
+}
+
+// ---------------------------------------------------------------- wave growth (USACE CEM II-2), same as chicago_nearshore_waves.py
+const FETCH = [[0,280],[22.5,330],[45,160],[67.5,120],[90,80],[112.5,65],[135,35],[157.5,15],[180,2],[202.5,0],
+  [225,0],[247.5,0],[270,0],[292.5,0],[315,0],[337.5,20],[360,280]];
+function fetchKm(d) { d = ((d % 360) + 360) % 360; for (let i = 0; i < FETCH.length - 1; i++) { const [a, fa] = FETCH[i], [b, fb] = FETCH[i + 1]; if (d >= a && d <= b) return fa + (fb - fa) * (d - a) / (b - a); } return 0; }
+function cem(u10, fetchM, durH) {
+  if (u10 <= 0 || fetchM <= 0) return { hm0: 0, tp: 0, regime: fetchM <= 0 ? "offshore wind, no fetch" : "calm" };
+  const cd = 0.001 * (1.1 + 0.035 * u10), us = u10 * Math.sqrt(cd);
+  let xh = 9.81 * fetchM / (us * us), regime = "fetch-limited";
+  if (durH) { const xt = Math.pow(9.81 * durH * 3600 / (77.23 * us), 1 / 0.67); if (xt < xh) { xh = xt; regime = "duration-limited"; } }
+  let hm0 = 4.13e-2 * us * us / 9.81 * Math.sqrt(xh), tp = 0.651 * us / 9.81 * Math.cbrt(xh);
+  const hfd = 211.5 * us * us / 9.81, tfd = 239.8 * us / 9.81;
+  if (hm0 >= hfd) { hm0 = hfd; tp = tfd; regime = "fully developed"; }
+  return { hm0, tp, regime };
+}
+const COMPASS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+const compass = (d) => COMPASS[Math.round((((d % 360) + 360) % 360) / 22.5) % 16];
+
+// ---------------------------------------------------------------- state
+const S = {
+  scene: null, frames: [], t: 0, playing: !RM, speed: 0.8, mode: 0, light: "day", exag: 3, density: 1, extra: 0,
+  wind: { speed: 12, dir: 20, duration: 8 }, wave: null, bolts: !RM, quality: 1,
+  flash: 0, flashPos: [0, 0, 5], nextStrike: 0, strikeT: -10, cityLat: 0,
+};
+try { const q = localStorage.getItem("chi3d-quality"); if (q !== null) S.quality = +q; } catch (e) {}
+
+// ---------------------------------------------------------------- renderer
+const canvas = $("#gl");
+let renderer;
+function fail(title, text) { const m = $("#msg"); m.hidden = false; m.innerHTML = `<strong>${title}</strong><p>${text}</p>`; }
+if (!window.THREE) { fail("3D library didn't load", "Check your connection and reload the page."); return; }
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" }); }
+catch (e) { fail("WebGL isn't available", "This view needs WebGL 2. Try a current version of Chrome, Edge, Firefox or Safari."); return; }
+if (!renderer.capabilities.isWebGL2) { fail("WebGL 2 isn't available", "This view needs WebGL 2 for 3D textures. Try a current desktop browser."); return; }
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.autoClear = true;
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.004, 4000);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.08; controls.maxPolarAngle = Math.PI - 0.05;   // allow looking up at the storm from the ground
+controls.minDistance = 0.05; controls.maxDistance = 900; controls.screenSpacePanning = false;
+
+const scene = new THREE.Scene();
+const rtScene = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType });
+rtScene.depthTexture = new THREE.DepthTexture(4, 4); rtScene.depthTexture.type = THREE.UnsignedIntType;
+const rtVol = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false });
+rtVol.texture.minFilter = rtVol.texture.magFilter = THREE.LinearFilter;
+const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const quadGeo = new THREE.PlaneGeometry(2, 2);
+
+// ---------------------------------------------------------------- textures
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function makeNoise(N = 64) {
+  // tileable Perlin-Worley-style noise: inverted cellular noise blended with periodic value-noise fBm
+  const rnd = mulberry(1234), data = new Uint8Array(N * N * N), C = 6;
+  const pts = new Float32Array(C * C * C * 3); for (let i = 0; i < pts.length; i++) pts[i] = rnd();
+  const lat = (L) => { const a = new Float32Array(L * L * L); for (let i = 0; i < a.length; i++) a[i] = rnd(); return a; };
+  const lats = [8, 16, 32].map((L) => [L, lat(L)]);
+  const sm = (t) => t * t * (3 - 2 * t);
+  function vnoise(L, a, x, y, z) {
+    const fx = x * L, fy = y * L, fz = z * L, ix = Math.floor(fx), iy = Math.floor(fy), iz = Math.floor(fz);
+    const tx = sm(fx - ix), ty = sm(fy - iy), tz = sm(fz - iz); let v = 0;
+    for (let c = 0; c < 8; c++) { const dx = c & 1, dy = (c >> 1) & 1, dz = (c >> 2) & 1;
+      const w = (dx ? tx : 1 - tx) * (dy ? ty : 1 - ty) * (dz ? tz : 1 - tz);
+      v += w * a[(((iz + dz) % L) * L + ((iy + dy) % L)) * L + ((ix + dx) % L)]; }
+    return v;
+  }
+  let i = 0;
+  for (let z = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++, i++) {
+    const px = (x + .5) / N * C, py = (y + .5) / N * C, pz = (z + .5) / N * C;
+    const cx = Math.floor(px), cy = Math.floor(py), cz = Math.floor(pz); let md = 9;
+    for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const gx = cx + dx, gy = cy + dy, gz = cz + dz;
+      const k = ((((gz % C) + C) % C) * C + (((gy % C) + C) % C)) * C + (((gx % C) + C) % C);
+      const ex = gx + pts[k * 3] - px, ey = gy + pts[k * 3 + 1] - py, ez = gz + pts[k * 3 + 2] - pz;
+      const d = ex * ex + ey * ey + ez * ez; if (d < md) md = d;
+    }
+    const w = 1 - Math.min(Math.sqrt(md), 1);
+    const f = (0.55 * vnoise(lats[0][0], lats[0][1], x / N, y / N, z / N) + 0.3 * vnoise(lats[1][0], lats[1][1], x / N, y / N, z / N) + 0.15 * vnoise(lats[2][0], lats[2][1], x / N, y / N, z / N));
+    data[i] = Math.max(0, Math.min(255, Math.round((0.6 * w + 0.4 * f) * 255 * 1.15 - 20)));
+  }
+  const t = new THREE.Data3DTexture(data, N, N, N);
+  t.format = THREE.RedFormat; t.type = THREE.UnsignedByteType; t.minFilter = t.magFilter = THREE.LinearFilter;
+  t.wrapS = t.wrapT = t.wrapR = THREE.RepeatWrapping; t.unpackAlignment = 1; t.needsUpdate = true;
+  return t;
+}
+const noiseTex = makeNoise(64);
+
+// NWS reflectivity colours, indexed by byte (dBZ = b/3 - 10)
+const DBZ_STOPS = [[5,"#04e9e7"],[10,"#019ff4"],[15,"#0300f4"],[20,"#02fd02"],[25,"#01c501"],[30,"#008e00"],[35,"#fdf802"],
+  [40,"#e5bc00"],[45,"#fd9500"],[50,"#fd0000"],[55,"#d40000"],[60,"#bc0000"],[65,"#f800fd"],[70,"#9854c6"],[75,"#fdfdfd"]];
+const palData = new Uint8Array(256 * 4);
+for (let b = 0; b < 256; b++) { const dbz = b / 3 - 10; let col = DBZ_STOPS[0][1];
+  for (const [lv, c] of DBZ_STOPS) if (dbz >= lv) col = c;
+  const c = new THREE.Color(col); palData.set([c.r * 255, c.g * 255, c.b * 255, 255], b * 4); }
+const palTex = new THREE.DataTexture(palData, 256, 1); palTex.needsUpdate = true;
+const dbzColor = (dbz) => { let col = null; for (const [lv, c] of DBZ_STOPS) if (dbz >= lv) col = c; return col; };
+
+const emptyVol = (() => { const t = new THREE.Data3DTexture(new Uint8Array(8), 2, 2, 2); t.format = THREE.RedFormat; t.needsUpdate = true; return t; })();
+
+// ---------------------------------------------------------------- shared GLSL
+const GRID_GLSL = `
+precision highp sampler3D;
+uniform sampler3D uCloudA, uCloudB, uDbzA, uDbzB, uNoise;
+uniform float uMix; uniform vec2 uShiftA, uShiftB;
+uniform vec3 uGridMin; uniform vec3 uGridN; uniform vec2 uGridD;
+uniform float uTime, uExtra;
+vec3 tc(vec3 pk) { return vec3(((pk.x - uGridMin.x) / uGridD.x + 0.5) / uGridN.x, ((pk.y - uGridMin.y) / uGridD.x + 0.5) / uGridN.y, pk.z / (uGridD.y * uGridN.z)); }
+float edgeFade(vec3 pk) {
+  vec2 lo = pk.xy - uGridMin.xy, hi = (uGridMin.xy + (uGridN.xy - 1.0) * uGridD.x) - pk.xy;
+  float e = min(min(lo.x, lo.y), min(hi.x, hi.y));
+  return smoothstep(0.0, 8.0, e) * step(0.0, pk.z) * (1.0 - smoothstep(uGridD.y * uGridN.z - 0.6, uGridD.y * uGridN.z, pk.z));
+}
+float cloudRaw(vec3 pk) {
+  return mix(texture(uCloudA, tc(pk - vec3(uShiftA, 0.0))).r, texture(uCloudB, tc(pk - vec3(uShiftB, 0.0))).r, uMix) * edgeFade(pk);
+}
+float dbzByte(vec3 pk) {
+  return mix(texture(uDbzA, tc(pk - vec3(uShiftA, 0.0))).r, texture(uDbzB, tc(pk - vec3(uShiftB, 0.0))).r, uMix) * edgeFade(pk) * 255.0;
+}
+float extraLayer(vec3 pk, float n2) {
+  if (uExtra <= 0.0) return 0.0;
+  float hump = smoothstep(1.3, 1.8, pk.z) * (1.0 - smoothstep(2.2, 2.9, pk.z));
+  if (hump <= 0.0) return 0.0;
+  float cov = texture(uNoise, pk / vec3(40.0, 40.0, 9.0) + vec3(0.37, 0.11, 0.0) + vec3(uTime * 0.0004, 0.0, 0.0)).r;
+  return clamp((cov - (1.0 - uExtra)) * 2.0, 0.0, 1.0) * 0.55 * hump * (0.35 + 0.65 * n2) * smoothstep(0.0, 8.0, min(min(pk.x - uGridMin.x, pk.y - uGridMin.y), min(uGridMin.x + (uGridN.x - 1.0) * uGridD.x - pk.x, uGridMin.y + (uGridN.y - 1.0) * uGridD.x - pk.y)));
+}
+float cloudDensity(vec3 pk, float raw) {
+  vec3 drift = vec3(uTime * 0.002, uTime * 0.001, 0.0);
+  float n1 = texture(uNoise, pk / vec3(13.0, 13.0, 4.5) + drift).r;
+  float n2 = texture(uNoise, pk / vec3(3.6, 3.6, 1.6) + drift * 2.0).r;
+  float d = 0.0;
+  if (raw > 0.004) { d = raw * 1.35 - (1.0 - n1) * 0.55 - (1.0 - n2) * 0.2; d = clamp(d * 1.9, 0.0, 1.0); }
+  return max(d, extraLayer(pk, n2));
+}
+`;
+
+// ---------------------------------------------------------------- sky
+const LIGHTS = {
+  day:   { az: 205, el: 38, sun: [3.0, 2.88, 2.7], ambTop: [0.42, 0.52, 0.72], ambBot: [0.22, 0.24, 0.27], hor: [0.62, 0.70, 0.80], zen: [0.20, 0.38, 0.70], exp: 1.0, city: 0, land: [0.075, 0.085, 0.045] },
+  dusk:  { az: 262, el: 4, sun: [2.6, 1.35, 0.6], ambTop: [0.22, 0.22, 0.34], ambBot: [0.16, 0.11, 0.11], hor: [0.95, 0.52, 0.34], zen: [0.12, 0.17, 0.36], exp: 1.25, city: 0.06, land: [0.085, 0.08, 0.05] },
+  night: { az: 150, el: 28, sun: [0.10, 0.12, 0.18], ambTop: [0.012, 0.016, 0.028], ambBot: [0.016, 0.014, 0.012], hor: [0.02, 0.019, 0.028], zen: [0.004, 0.005, 0.012], exp: 2.0, city: 0.14, land: [0.08, 0.08, 0.07] },
+};
+const U = {
+  uSunDir: { value: new THREE.Vector3() }, uSunCol: { value: new THREE.Vector3() }, uAmbTop: { value: new THREE.Vector3() },
+  uAmbBot: { value: new THREE.Vector3() }, uHor: { value: new THREE.Vector3() }, uZen: { value: new THREE.Vector3() },
+  uCity: { value: 0 }, uOvercast: { value: 0 }, uFlash: { value: 0 }, uFlashPos: { value: new THREE.Vector3() },
+  uTime: { value: 0 }, uCamPos: { value: new THREE.Vector3() }, uHaze: { value: 1 }, uLand: { value: new THREE.Vector3() },
+  // grid
+  uCloudA: { value: emptyVol }, uCloudB: { value: emptyVol }, uDbzA: { value: emptyVol }, uDbzB: { value: emptyVol }, uNoise: { value: noiseTex },
+  uMix: { value: 0 }, uShiftA: { value: new THREE.Vector2() }, uShiftB: { value: new THREE.Vector2() },
+  uGridMin: { value: new THREE.Vector3(-80, -80, 0) }, uGridN: { value: new THREE.Vector3(2, 2, 2) }, uGridD: { value: new THREE.Vector2(2, 0.5) },
+  uExtra: { value: 0 },
+};
+const SKY_FN = `
+uniform vec3 uSunDir, uSunCol, uHor, uZen; uniform float uOvercast, uFlash;
+vec3 skyColor(vec3 d, bool sun) {
+  float h = d.y;
+  vec3 c = mix(uHor, uZen, pow(clamp(h, 0.0, 1.0), 0.45));
+  if (h < 0.0) c = uHor * mix(0.75, 0.45, clamp(-h * 4.0, 0.0, 1.0));
+  float mu = max(dot(d, uSunDir), 0.0);
+  c += uSunCol * pow(mu, 6.0) * 0.08;
+  if (sun) c += uSunCol * smoothstep(0.99975, 0.99992, mu) * 8.0;
+  vec3 grey = vec3(dot(c, vec3(0.3, 0.5, 0.2)));
+  c = mix(c, grey * 0.55, uOvercast * 0.75);
+  return c + uFlash * vec3(0.35, 0.36, 0.5);
+}`;
+const sky = new THREE.Mesh(new THREE.SphereGeometry(2500, 32, 16), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, uniforms: U,
+  vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: `uniform vec3 uCamPos; varying vec3 vW; ${SKY_FN}
+    void main(){ gl_FragColor = vec4(skyColor(normalize(vW - uCamPos), true), 1.0); }`,
+}));
+sky.renderOrder = -10; sky.frustumCulled = false; scene.add(sky);
+
+// ---------------------------------------------------------------- ground + lake
+const MAXP = 64;
+const lakeU = { uLake: { value: LAKE.map(([x, y]) => new THREE.Vector2(x, y)).concat(Array(MAXP - LAKE.length).fill(new THREE.Vector2())) }, uLakeN: { value: LAKE.length },
+  uShore: { value: SHORE.map(([x, y]) => new THREE.Vector2(x, y)).concat(Array(MAXP - SHORE.length).fill(new THREE.Vector2())) }, uShoreN: { value: SHORE.length },
+  uHs: { value: 1 }, uTp: { value: 4 }, uWaveDir: { value: new THREE.Vector2(0, 1) }, uWhitecap: { value: 0.02 }, uWindSpd: { value: 12 } };
+const groundMat = new THREE.ShaderMaterial({
+  uniforms: Object.assign(U, lakeU), extensions: { derivatives: true },
+  vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: `${GRID_GLSL} ${SKY_FN}
+uniform vec3 uCamPos, uAmbTop, uAmbBot, uFlashPos, uLand; uniform float uCity, uHaze;
+uniform vec2 uLake[${MAXP}]; uniform int uLakeN; uniform vec2 uShore[${MAXP}]; uniform int uShoreN;
+uniform float uHs, uTp, uWhitecap, uWindSpd; uniform vec2 uWaveDir;
+varying vec3 vW;
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+  return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
+bool inLake(vec2 p){ bool c = false;
+  for (int i = 0; i < ${MAXP}; i++) { if (i >= uLakeN) break; int j = i == 0 ? uLakeN - 1 : i - 1;
+    vec2 a = uLake[i], b = uLake[j];
+    if (((a.y > p.y) != (b.y > p.y)) && (p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x)) c = !c; }
+  return c; }
+float shoreDist(vec2 p, out vec2 toShore){ float md = 1e9; toShore = vec2(0.0);
+  for (int i = 0; i < ${MAXP} - 1; i++) { if (i >= uShoreN - 1) break; vec2 a = uShore[i], b = uShore[i+1];
+    vec2 ab = b - a; float t = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0); vec2 q = a + ab * t; float d = length(p - q);
+    if (d < md) { md = d; toShore = q - p; } }
+  return md; }
+float cloudShadow(vec3 pk){
+  vec3 sd = vec3(uSunDir.x, -uSunDir.z, uSunDir.y); float s = 0.0;
+  if (sd.z < 0.02) return 1.0;
+  for (int i = 0; i < 4; i++) { float h = 1.5 + float(i) * 2.2; s += cloudRaw(pk + sd * (h / sd.z)); }
+  return exp(-s * 2.2);
+}
+void main(){
+  vec2 p = vec2(vW.x, -vW.z);                         // km east, km north
+  vec3 V = normalize(uCamPos - vW); float dist = length(uCamPos - vW);
+  float shadow = cloudShadow(vec3(p, 0.0));
+  float sunUp = smoothstep(-0.02, 0.06, uSunDir.y);
+  vec3 sunL = uSunCol * max(uSunDir.y, 0.0) * shadow * sunUp;
+  vec3 amb = mix(uAmbBot, uAmbTop, 0.7) * (1.0 - 0.45 * uOvercast);
+  float flash = uFlash * 2.5 * exp(-length(vec3(p, 0.0) - uFlashPos) / 9.0);
+  vec2 fw = fwidth(p); float foot = max(fw.x, fw.y);
+  vec3 col;
+  if (inLake(p)) {
+    vec2 toS; float ds = shoreDist(p, toS) * 1000.0;     // metres to shore
+    // wave field: 8 directional components around the peak wavelength
+    float Lp = max(9.81 * uTp * uTp / 6.2832, 1.0);      // m, deep water
+    vec2 wd = uWaveDir; vec2 grad = vec2(0.0); float unres = 0.0;
+    float rel[8]; rel[0]=1.6; rel[1]=1.0; rel[2]=0.74; rel[3]=0.55; rel[4]=0.38; rel[5]=0.26; rel[6]=0.17; rel[7]=0.11;
+    float ang[8]; ang[0]=-0.45; ang[1]=0.2; ang[2]=-0.15; ang[3]=0.6; ang[4]=-0.75; ang[5]=0.35; ang[6]=0.95; ang[7]=-0.5;
+    float slopeTarget = 0.06 + 0.012 * uWindSpd;         // rms slope grows with wind (Cox-Munk-like)
+    for (int i = 0; i < 8; i++) {
+      float L = Lp * rel[i]; float k = 6.2832 / (L * 0.001);   // rad / km
+      vec2 d = vec2(cos(ang[i]) * wd.x - sin(ang[i]) * wd.y, sin(ang[i]) * wd.x + cos(ang[i]) * wd.y);
+      float w = sqrt(9.81 * 6.2832 / L);
+      float s = slopeTarget * (uHs > 0.02 ? 1.0 : 0.25) * (0.55 + 0.45 * sin(float(i) * 2.1)) / 2.4;
+      float fade = clamp(1.0 - foot / (L * 0.001 * 0.6), 0.0, 1.0);
+      grad += d * s * cos(k * dot(p, d) - w * uTime + float(i) * 1.7) * fade;
+      unres += s * s * (1.0 - fade);
+    }
+    vec3 N = normalize(vec3(-grad.x, 1.0, grad.y));
+    float rough = sqrt(unres) + 0.02;
+    float F = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    vec3 R = reflect(-V, N); R.y = abs(R.y);
+    vec3 refl = skyColor(R, false) * (0.55 + 0.45 * shadow);
+    vec3 body = vec3(0.012, 0.045, 0.05) * (sunL + amb * 2.0) + vec3(0.0, 0.01, 0.012) * uCity;
+    vec3 H = normalize(uSunDir + V);
+    float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
+    col = mix(body, refl, F) + uSunCol * spec * shadow * sunUp * 0.6;
+    // whitecaps (Monahan & O'Muircheartaigh 1980 coverage)
+    float wc = vnoise(p * 900.0 + uTime * 0.6) * vnoise(p * 310.0 - uTime * 0.3);
+    float cover = clamp(uWhitecap, 0.0, 0.3);
+    float foamPat = smoothstep(1.0 - cover * 4.0, 1.0 - cover * 3.0, wc);
+    float foam = mix(foamPat, cover, clamp(foot * 60.0, 0.0, 1.0));
+    // surf zone: Dean profile h = 0.1 x^(2/3); breaking where h < Hs / 0.78 (scaled by approach angle)
+    float approach = clamp(dot(normalize(toS + 1e-6), wd), 0.0, 1.0);
+    float Hloc = uHs * sqrt(approach);
+    float h = 0.1 * pow(max(ds, 0.0), 0.6667);
+    float surf = (Hloc > 0.05) ? (1.0 - smoothstep(Hloc / 0.78 * 0.7, Hloc / 0.78 * 1.25, h)) : 0.0;
+    float bands = 0.5 + 0.5 * sin(ds * 0.35 - uTime * 6.2832 / max(uTp, 1.0));
+    surf *= mix(0.55 + 0.45 * bands, 0.75, clamp(foot * 300.0, 0.0, 1.0));
+    foam = max(foam, surf);
+    col = mix(col, (sunL + amb * 2.2) * 0.75, foam * 0.85);
+  } else {
+    // land: late-October fields, Chicago's mile-section street grid from State & Madison
+    float n = vnoise(p * 0.9) * 0.6 + vnoise(p * 4.0) * 0.4;
+    vec3 base = uLand * (0.75 + 0.5 * n);
+    float urban = smoothstep(46.0, 18.0, length((p - vec2(-14.0, 2.0)) * vec2(1.0, 0.8)));
+    urban = max(urban, smoothstep(14.0, 4.0, length(p - vec2(-16.0, -28.0))) * 0.7) * (0.75 + 0.25 * vnoise(p * 1.7));
+    base = mix(base, vec3(0.095, 0.095, 0.1) * (0.85 + 0.3 * n), urban);
+    vec2 g = abs(fract(p / 1.609 + 0.5) - 0.5) * 1.609;    // distance to section line, km
+    float lw = 0.012;
+    float line = (1.0 - smoothstep(lw, lw + max(foot, 0.002), min(g.x, g.y))) * clamp(1.0 - foot / 0.4, 0.0, 1.0);
+    vec2 g2 = abs(fract(p / 0.2011 + 0.5) - 0.5) * 0.2011; // street every 1/8 mile
+    float street = (1.0 - smoothstep(0.004, 0.004 + max(foot, 0.001), min(g2.x, g2.y))) * clamp(1.0 - foot / 0.05, 0.0, 1.0) * urban;
+    float shore; vec2 tS; shore = shoreDist(p, tS);
+    base = mix(base, vec3(0.32, 0.29, 0.22), (1.0 - smoothstep(0.03, 0.09, shore)) * 0.8);   // beaches / lakefront park edge
+    col = base * (sunL + amb * 1.6);
+    col = mix(col, col * 0.6 + vec3(0.12) * (sunL + amb), (line + street * 0.6) * urban);
+    vec3 lamp = vec3(1.0, 0.72, 0.42);
+    col += lamp * uCity * urban * (line * 1.6 + street * 0.9 + 0.05) * 1.4;
+  }
+  col += flash * vec3(0.6, 0.62, 0.8);
+  // aerial haze, thicker in rain
+  float hc = max(uCamPos.y, 0.001), hf = hc < 0.05 ? 1.0 : 3.0 * (1.0 - exp(-hc / 3.0)) / hc;   // haze scale height 3 km
+  float haze = 1.0 - exp(-dist * hf / (70.0 * uHaze));
+  col = mix(col, skyColor(normalize(vec3(-V.x, 0.02, -V.z)), false) * 0.85, haze);
+  gl_FragColor = vec4(col, 1.0);
+}`,
+});
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600, 1, 1).rotateX(-Math.PI / 2), groundMat);
+ground.frustumCulled = false; scene.add(ground);
+
+// ---------------------------------------------------------------- skyline (generic towers, true height)
+function buildSkyline() {
+  const rnd = mulberry(42), towers = [];
+  const add = (x, y, w, d, h) => { if (!inLake(x, y) && shoreDistKm(x, y) > 0.14) towers.push([x, y, w, d, h]); };   // keep Lake Shore Drive and the park strip clear
+  const zones = [ // [cx, cy, sx, sy, count, scale]
+    [-0.8, 0.3, 1.2, 1.4, 260, 1.0], [0.75, 1.3, 0.4, 0.6, 70, 0.9], [-0.4, 2.3, 1.1, 0.7, 120, 0.6],
+    [-0.6, -1.7, 1.0, 1.0, 90, 0.55], [-1.3, 6.0, 0.7, 3.5, 110, 0.4], [-1.3, -5.0, 1.0, 2.5, 50, 0.25], [-3.4, 0.2, 1.6, 1.4, 90, 0.25]];
+  for (const [cx, cy, sx, sy, n, sc] of zones) for (let i = 0; i < n; i++) {
+    const x = cx + (rnd() - 0.5) * 2 * sx, y = cy + (rnd() - 0.5) * 2 * sy;
+    const core = Math.exp(-((x + 0.5) ** 2 + (y - 0.4) ** 2) / 1.2);
+    const h = (0.02 + Math.pow(rnd(), 2.4) * 0.17 * sc + core * rnd() * 0.12) * (0.6 + 0.6 * sc);
+    const w = 0.025 + rnd() * 0.035; add(x, y, w, w * (0.7 + rnd() * 0.6), h);
+  }
+  // a handful of supertall generic towers (heights typical of the Loop and Streeterville)
+  [[-0.7, -0.15, 0.07, 0.07, 0.442], [0.0, 0.9, 0.05, 0.05, 0.423], [0.35, 0.05, 0.05, 0.05, 0.346], [0.55, 1.6, 0.045, 0.045, 0.344],
+   [-0.15, 0.5, 0.05, 0.05, 0.307], [0.42, 0.45, 0.045, 0.045, 0.290], [-0.35, -0.3, 0.04, 0.04, 0.26], [0.25, 1.1, 0.04, 0.04, 0.262]]
+    .forEach((t) => towers.push(t));
+  const geo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+  const mat = new THREE.ShaderMaterial({ uniforms: U,
+    vertexShader: `varying vec3 vW; varying vec3 vN; varying vec3 vL; varying vec3 vS; flat varying int vId;
+      void main(){ vec4 w = modelMatrix * instanceMatrix * vec4(position,1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
+        vL = position; vS = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz)); vId = gl_InstanceID;
+        gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform vec3 uSunDir, uSunCol, uAmbTop, uAmbBot, uCamPos, uFlashPos; uniform float uCity, uFlash, uOvercast;
+      varying vec3 vW; varying vec3 vN; varying vec3 vL; varying vec3 vS; flat varying int vId;
+      float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+      void main(){
+        vec3 N = normalize(vN); float tone = 0.55 + 0.45 * hash(vec3(float(vId)));
+        vec3 albedo = mix(vec3(0.20, 0.23, 0.27), vec3(0.42, 0.40, 0.37), tone);
+        float sunUp = smoothstep(-0.02, 0.06, uSunDir.y);
+        vec3 c = albedo * (uSunCol * max(dot(N, uSunDir), 0.0) * sunUp * (1.0 - 0.7 * uOvercast) + mix(uAmbBot, uAmbTop, 0.5 + 0.5 * N.y) * 1.4);
+        // floors every 3.8 m, window bays every 3 m
+        float fl = floor(vL.y * vS.y * 1000.0 / 3.8);
+        float bay = floor((abs(N.x) > 0.5 ? vL.z * vS.z : vL.x * vS.x) * 1000.0 / 3.0);
+        vec2 f = vec2(fract(vL.y * vS.y * 1000.0 / 3.8), fract((abs(N.x) > 0.5 ? vL.z * vS.z : vL.x * vS.x) * 1000.0 / 3.0));
+        float win = step(0.25, f.x) * step(f.x, 0.85) * step(0.15, f.y) * step(f.y, 0.85) * (1.0 - step(0.9, abs(N.y)));
+        float lit = step(0.62, hash(vec3(fl, bay, float(vId))));
+        c += vec3(1.0, 0.8, 0.55) * win * lit * uCity * (0.9 + 0.6 * hash(vec3(bay, fl, 3.0)));
+        c += uFlash * 1.5 * exp(-length(vec3(vW.x, -vW.z, 0.0) - uFlashPos) / 9.0) * vec3(0.6, 0.62, 0.8) * albedo;
+        float hc = max(uCamPos.y, 0.001), hf = hc < 0.05 ? 1.0 : 3.0 * (1.0 - exp(-hc / 3.0)) / hc;
+        float haze = 1.0 - exp(-length(uCamPos - vW) * hf / 70.0);
+        gl_FragColor = vec4(mix(c, mix(uAmbBot, uAmbTop, 0.5) * 1.2, haze), 1.0);
+      }` });
+  const mesh = new THREE.InstancedMesh(geo, mat, towers.length);
+  const m = new THREE.Matrix4();
+  towers.forEach(([x, y, w, d, h], i) => { m.makeScale(w, h, d); m.setPosition(x, 0, -y); mesh.setMatrixAt(i, m); });
+  mesh.frustumCulled = false; scene.add(mesh);
+}
+buildSkyline();
+
+// ---------------------------------------------------------------- rain streaks around the camera
+const RAIN_N = 7000;
+const rainGeo = new THREE.BufferGeometry();
+{ const pos = new Float32Array(RAIN_N * 2 * 3), seed = new Float32Array(RAIN_N * 2 * 4); const r = mulberry(9);
+  for (let i = 0; i < RAIN_N; i++) { const a = [r(), r(), r(), r()];
+    for (let k = 0; k < 2; k++) { pos.set([0, k, 0], (i * 2 + k) * 3); seed.set(a, (i * 2 + k) * 4); } }
+  rainGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3)); rainGeo.setAttribute("seed", new THREE.BufferAttribute(seed, 4)); }
+const rainMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uTime: U.uTime, uCamPos: U.uCamPos, uRain: { value: 0 }, uDrift: { value: new THREE.Vector2() }, uAmb: { value: new THREE.Vector3(0.5, 0.5, 0.5) } },
+  vertexShader: `attribute vec4 seed; uniform float uTime, uRain; uniform vec3 uCamPos; uniform vec2 uDrift; varying float vA;
+    void main(){ vec3 box = vec3(0.16, 0.12, 0.16); float fall = 0.0085 * (0.8 + 0.4 * seed.w);
+      vec3 p = seed.xyz * box + vec3(uDrift.x, -fall, uDrift.y) * uTime;
+      p = mod(p - (uCamPos - box * 0.5), box) + (uCamPos - box * 0.5);
+      p.y = max(p.y, 0.0);
+      vec3 streak = normalize(vec3(uDrift.x, -fall, uDrift.y)) * 0.007;
+      p += streak * position.y;
+      vA = step(seed.w, clamp(uRain / 25.0, 0.05, 1.0)) * (1.0 - position.y * 0.6);
+      gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0); }`,
+  fragmentShader: `uniform float uRain; uniform vec3 uAmb; varying float vA; void main(){ gl_FragColor = vec4(uAmb * 0.7 * vA * clamp(uRain / 8.0, 0.3, 1.0), 1.0); }` });
+const rain = new THREE.LineSegments(rainGeo, rainMat); rain.frustumCulled = false; scene.add(rain);
+
+// ---------------------------------------------------------------- lightning bolt
+const boltGeo = new THREE.BufferGeometry(); boltGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(600 * 3), 3));
+const boltMat = new THREE.LineBasicMaterial({ color: new THREE.Color(4, 4, 6), transparent: true, opacity: 1, depthWrite: false });
+const bolt = new THREE.LineSegments(boltGeo, boltMat); bolt.frustumCulled = false; bolt.visible = false; scene.add(bolt);
+function makeBolt(x, y, topKm) {
+  const r = Math.random, pts = [];
+  const branch = (sx, sy, sz, ez, spread) => { let px = sx, py = sy, pz = sz; const steps = Math.max(4, Math.round((sz - ez) / 0.12));
+    for (let i = 0; i < steps; i++) { const nz = Math.max(ez, pz - (sz - ez) / steps); const nx = px + (r() - 0.5) * spread, ny = py + (r() - 0.5) * spread;
+      pts.push(px, pz, py, nx, nz, ny); if (r() < 0.08 && pts.length < 1500) branch(nx, ny, nz, Math.max(ez, nz - 0.8 - r()), spread * 0.9);
+      px = nx; py = ny; pz = nz; } };
+  branch(x, y, topKm, 0, 0.22);
+  const a = boltGeo.attributes.position.array; a.fill(0); const n = Math.min(pts.length, a.length) / 3;
+  for (let i = 0; i < n; i++) { a[i * 3] = pts[i * 3]; a[i * 3 + 1] = pts[i * 3 + 1] * S.exag; a[i * 3 + 2] = -pts[i * 3 + 2]; }
+  boltGeo.setDrawRange(0, n); boltGeo.attributes.position.needsUpdate = true;
+}
+
+// ---------------------------------------------------------------- volume pass (full-screen ray march)
+const volMat = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false,
+  uniforms: Object.assign(U, { tDepth: { value: rtScene.depthTexture }, uProjInv: { value: new THREE.Matrix4() }, uCamWorld: { value: new THREE.Matrix4() },
+    uNear: { value: 0.004 }, uFar: { value: 4000 }, uExag: { value: 3 }, uMode: { value: 0 }, uDensity: { value: 1 }, uPal: { value: palTex },
+    uStepBase: { value: 0.5 }, uMaxSteps: { value: 220 }, uRes: { value: new THREE.Vector2(1, 1) } }),
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: `#include <packing>
+${GRID_GLSL}
+uniform sampler2D tDepth, uPal; uniform mat4 uProjInv, uCamWorld; uniform float uNear, uFar, uExag, uDensity, uStepBase, uCity, uFlash, uOvercast;
+uniform int uMode, uMaxSteps; uniform vec3 uCamPos, uSunDir, uSunCol, uAmbTop, uAmbBot, uFlashPos; uniform vec2 uRes;
+varying vec2 vUv;
+float hg(float c, float g){ float g2 = g * g; return (1.0 - g2) / (12.566 * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
+float ign(vec2 p){ return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+void main(){
+  vec4 vv = uProjInv * vec4(vUv * 2.0 - 1.0, -1.0, 1.0); vec3 dv = normalize(vv.xyz / vv.w);
+  vec3 dir = normalize((uCamWorld * vec4(dv, 0.0)).xyz);
+  float zb = texture2D(tDepth, vUv).x;
+  float tScene = (zb >= 0.99999) ? 1e9 : (-perspectiveDepthToViewZ(zb, uNear, uFar)) / max(-dv.z, 1e-4);
+  vec3 bmin = vec3(uGridMin.x, 0.0, -(uGridMin.y + (uGridN.y - 1.0) * uGridD.x));
+  vec3 bmax = vec3(uGridMin.x + (uGridN.x - 1.0) * uGridD.x, uGridD.y * uGridN.z * uExag, -uGridMin.y);
+  vec3 inv = 1.0 / dir; vec3 t0s = (bmin - uCamPos) * inv, t1s = (bmax - uCamPos) * inv;
+  vec3 tmin = min(t0s, t1s), tmax = max(t0s, t1s);
+  float t0 = max(max(tmin.x, tmin.y), max(tmin.z, 0.0)), t1 = min(min(tmax.x, tmax.y), tmax.z); t1 = min(t1, tScene);
+  if (t1 <= t0) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+  vec3 sunK = vec3(uSunDir.x, -uSunDir.z, uSunDir.y);              // sun in km space (east, north, up)
+  float cosT = dot(dir, uSunDir);
+  float phase = mix(hg(cosT, 0.62), hg(cosT, -0.2), 0.35) * 12.566;
+  float sunUp = smoothstep(-0.03, 0.05, uSunDir.y);
+  float camDist = length(uCamPos);
+  float stepBase = uStepBase * clamp(t0 / 25.0, 1.0, 3.0);        // coarser steps far away
+  float t = t0 + ign(gl_FragCoord.xy) * stepBase;
+  float T = 1.0; vec3 L = vec3(0.0);
+  for (int i = 0; i < 600; i++) {
+    if (i >= uMaxSteps || t > t1 || T < 0.01) break;
+    vec3 pw = uCamPos + dir * t;
+    vec3 pk = vec3(pw.x, -pw.z, pw.y / uExag);
+    float raw = cloudRaw(pk);
+    float db = dbzByte(pk);
+    float dt = stepBase;
+    if (raw < 0.004 && db < 1.0 && (uExtra <= 0.0 || pk.z < 1.2 || pk.z > 3.0)) { t += dt * 2.5; continue; }
+    float dbz = db / 3.0 - 10.0;
+    float rr = db > 1.0 ? pow(pow(10.0, dbz / 10.0) / 200.0, 0.625) : 0.0;   // Marshall-Palmer, mm/h
+    vec3 S; float sig;
+    if (uMode == 1) {
+      float a = smoothstep(15.0, 62.0, dbz); a = a * a * 2.6 * step(1.0, db) + step(1.0, db) * 0.012;
+      vec3 pc = pow(texture2D(uPal, vec2((db + 0.5) / 256.0, 0.5)).rgb, vec3(2.2));
+      float sc = raw * 0.03 * uDensity;
+      sig = a + sc;
+      if (sig < 1e-4) { t += dt * 1.6; continue; }
+      S = (pc * 1.5 * a + vec3(0.7) * sc * (uAmbTop + 0.3)) / sig;
+    } else {
+      float d = cloudDensity(pk, raw);
+      float sc = d * 7.0 * uDensity;
+      float below = 1.0 - smoothstep(0.0, 1.0, d);                   // rain shafts read mostly below/outside cloud
+      float sr = 0.33 * pow(rr, 0.63) * (0.35 + 0.65 * below) * step(1.0, db);
+      sig = sc + sr;
+      if (sig < 1e-4) { t += dt * 1.6; continue; }
+      // light march toward the sun (true geometry, km)
+      float od = 0.0;
+      if (sunUp > 0.0) { float ls = 0.35; for (int j = 0; j < 4; j++) { vec3 q = pk + sunK * ls; od += cloudRaw(q) * ls * 1.4; ls *= 2.1; } }
+      float Tsun = exp(-od * 7.0 * uDensity * 0.55) * sunUp;
+      float powder = 1.0 - exp(-sc * 0.9);
+      float hz = clamp(pk.z / 12.0, 0.0, 1.0);
+      float occ = cloudRaw(pk + vec3(0.0, 0.0, 1.2)) + cloudRaw(pk + vec3(0.0, 0.0, 3.0)) + 0.5 * cloudRaw(pk + vec3(0.0, 0.0, 5.5));
+      vec3 amb = mix(uAmbBot, uAmbTop, hz * 0.8 + 0.2) * exp(-occ * 1.2) * 0.8;
+      amb += uCity * vec3(1.0, 0.7, 0.42) * exp(-length(pk.xy - vec2(-12.0, 0.0)) / 28.0) * exp(-pk.z / 2.5) * 0.9;
+      vec3 sunS = uSunCol * Tsun * phase * mix(0.4, 1.0, powder);
+      vec3 cloudCol = sunS + amb;
+      vec3 rainCol = (uSunCol * Tsun * 0.18 + amb * 0.75) * vec3(0.78, 0.82, 0.9);
+      S = (cloudCol * sc + rainCol * sr) / sig;
+      float fl = uFlash * 18.0 * exp(-length(pk - uFlashPos) / 5.5);
+      S += vec3(0.7, 0.72, 1.0) * fl;
+    }
+    float tr = exp(-sig * dt);
+    L += T * S * (1.0 - tr);
+    T *= tr;
+    t += dt;
+  }
+  gl_FragColor = vec4(L, T);
+}` });
+const volQuad = new THREE.Mesh(quadGeo, volMat); volQuad.frustumCulled = false;
+const volScene = new THREE.Scene(); volScene.add(volQuad);
+
+const compMat = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false,
+  uniforms: { tScene: { value: rtScene.texture }, tVol: { value: rtVol.texture }, uExp: { value: 1 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: `uniform sampler2D tScene, tVol; uniform float uExp; varying vec2 vUv;
+    vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
+    void main(){ vec3 s = texture2D(tScene, vUv).rgb; vec4 v = texture2D(tVol, vUv);
+      vec3 c = (s * v.a + v.rgb) * uExp; c = aces(c); c = pow(c, vec3(1.0/2.2));
+      c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233))) * 43758.5453) - 0.5) / 255.0;
+      gl_FragColor = vec4(c, 1.0); }` });
+const compScene = new THREE.Scene(); const compQuad = new THREE.Mesh(quadGeo, compMat); compQuad.frustumCulled = false; compScene.add(compQuad);
+
+// ---------------------------------------------------------------- scene loading
+async function gunzipB64(b64) {
+  const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  if (!("DecompressionStream" in window)) throw new Error("This browser can't unpack the scene (needs DecompressionStream).");
+  const ds = new DecompressionStream("gzip");
+  const buf = await new Response(new Blob([bin]).stream().pipeThrough(ds)).arrayBuffer();
+  return new Uint8Array(buf);
+}
+function tex3(data, nx, ny, nz) { const t = new THREE.Data3DTexture(data, nx, ny, nz); t.format = THREE.RedFormat; t.type = THREE.UnsignedByteType;
+  t.minFilter = t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = t.wrapR = THREE.ClampToEdgeWrapping; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
+
+async function loadScene(obj, keepView) {
+  if (!obj || !obj.meta || !Array.isArray(obj.frames) || !obj.frames.length) throw new Error("That file isn't a Chicago Storm 3D scene. Make one with radar_to_scene.py.");
+  const g = obj.meta.grid, n = g.nx * g.ny * g.nz;
+  const frames = [];
+  for (const f of obj.frames) {
+    const raw = await gunzipB64(f.data);
+    if (raw.length !== 2 * n) throw new Error("Scene volume size doesn't match its grid.");
+    const cloud = raw.subarray(0, n), dbz = raw.subarray(n);
+    // lightning candidates: columns whose max echo at 2-8 km is >= 50 dBZ
+    const cand = [], k0 = Math.round(2 / g.dz_km), k1 = Math.min(g.nz - 1, Math.round(8 / g.dz_km));
+    let coverCloud = 0;
+    for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) { let mx = 0;
+      for (let k = k0; k <= k1; k++) { const b = dbz[(k * g.ny + j) * g.nx + i]; if (b > mx) mx = b; }
+      if (mx / 3 - 10 >= 50) cand.push([g.x0_km + i * g.dx_km, g.y0_km + j * g.dx_km, mx / 3 - 10]); }
+    frames.push({ t: new Date(f.t), kind: f.kind, lead: f.lead, cloud, dbz, cand, tc: tex3(cloud, g.nx, g.ny, g.nz), td: tex3(dbz, g.nx, g.ny, g.nz) });
+  }
+  S.frames.forEach((f) => { f.tc.dispose(); f.td.dispose(); });
+  S.scene = obj; S.frames = frames; S.t = 0;
+  U.uGridMin.value.set(g.x0_km, g.y0_km, 0); U.uGridN.value.set(g.nx, g.ny, g.nz); U.uGridD.value.set(g.dx_km, g.dz_km);
+  const w = obj.meta.wind || {}; S.wind = { speed: +w.speed || 0, dir: +w.dir || 0, duration: +w.duration_h || 8, source: w.source || "scenario" };
+  $("#wspd").value = S.wind.speed; $("#wdir").value = S.wind.dir; updateWaves();
+  const nObs = frames.filter((f) => f.kind === "obs").length; S.nObs = nObs;
+  $("#source").textContent = `${obj.meta.source} · ${nObs} scans + ${frames.length - nObs} forecast frames`;
+  const mot = obj.meta.motion_km_per_min || [0, 0], spd = Math.hypot(mot[0], mot[1]) * 60;
+  const toward = (Math.atan2(mot[0], mot[1]) * 180 / Math.PI + 360) % 360;
+  $("#r-motion").textContent = spd > 1 ? `${spd.toFixed(0)} km/h toward ${compass(toward)}` : "nearly stationary";
+  $("#about").textContent = `Grid ${g.nx}×${g.ny}×${g.nz} at ${g.dx_km} km × ${g.dz_km * 1000} m. Cloud base ${obj.meta.cloud_base_km} km. Lake wind: ${S.wind.source}.`;
+  buildTimeline(); buildLabels();
+  if (!keepView || !S.playing) S.t = Math.max(0, nObs - 1);   // open on the latest real scan
+  else S.t = Math.min(S.t, frames.length - 1);
+  if (obj.meta.has_precip === false) $("#r-rain").textContent = "dry";
+  S.noPrecip = obj.meta.has_precip === false;
+}
+
+// ---------------------------------------------------------------- time helpers
+const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+const fmtShort = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit" });
+function frameState() {
+  const n = S.frames.length, t = Math.min(Math.max(S.t, 0), n - 1), i = Math.min(Math.floor(t), n - 2 < 0 ? 0 : n - 2), f = n > 1 ? t - i : 0;
+  return { i, j: Math.min(i + 1, n - 1), f, t };
+}
+function timeAt(st) { const a = S.frames[st.i].t.getTime(), b = S.frames[st.j].t.getTime(); return new Date(a + (b - a) * st.f); }
+
+function buildTimeline() {
+  const n = S.frames.length, nObs = S.nObs, span = Math.max(n - 1, 1);
+  const scrub = $("#scrub"); scrub.max = n - 1; scrub.step = 0.01;
+  const pObs = (nObs - 1) / span * 100;
+  $("#bar-o").style.cssText = `left:0;width:${pObs}%`; $("#bar-f").style.cssText = `left:${pObs}%;right:0`;
+  const tk = $("#ticks"); tk.innerHTML = "";
+  const first = S.frames[0], now = S.frames[nObs - 1], last = S.frames[n - 1];
+  const mk = (txt, cls) => { const s = document.createElement("span"); s.textContent = txt; if (cls) s.className = cls; tk.appendChild(s); };
+  const mk2 = (lng, txt, cls) => { const s = document.createElement("span"); if (cls) s.className = cls; s.innerHTML = `<span class="long">${lng}</span>${txt}`; tk.appendChild(s); };
+  mk(fmtShort.format(first.t)); mk2("Latest scan ", fmtShort.format(now.t), "now"); mk2(`+${last.lead} min · `, fmtShort.format(last.t));
+}
+
+// ---------------------------------------------------------------- labels
+const labelsEl = $("#labels"); let labelItems = [];
+function buildLabels() {
+  labelsEl.innerHTML = ""; labelItems = [];
+  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"); d.className = "lbl" + (cls ? " " + cls : ""); d.textContent = txt; labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y) }); };
+  for (const [name, la, lo] of PLACES) { const [x, y] = ll(la, lo); add(name, x, y, name === "Chicago Loop" ? 0.45 : 0.02); }
+  add("Lake Michigan", 30, 25, 0, "lake");
+  const r = S.scene && S.scene.meta.radar_xy_km; if (r) add(`${S.scene.meta.site === "DEMO" ? "KLOT" : S.scene.meta.site} radar`, r[0], r[1], 0.03, "radar");
+}
+const tmpV = new THREE.Vector3();
+function updateLabels() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  for (const it of labelItems) {
+    tmpV.copy(it.p).project(camera);
+    const dist = camera.position.distanceTo(it.p);
+    const vis = tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1 && dist < 260 && dist > 0.3;
+    it.d.style.display = vis ? "" : "none";
+    if (vis) { it.d.style.left = `${(tmpV.x * 0.5 + 0.5) * w}px`; it.d.style.top = `${(-tmpV.y * 0.5 + 0.5) * h}px`; it.d.style.opacity = String(Math.min(1, (260 - dist) / 60)); }
+  }
+}
+
+// ---------------------------------------------------------------- sampling on the CPU (readouts, rain, lightning)
+function sampleByte(arrKey, st, xk, yk, k) {
+  const g = S.scene.meta.grid, mot = S.scene.meta.motion_km_per_min || [0, 0];
+  const A = S.frames[st.i], B = S.frames[st.j], dtm = (B.t - A.t) / 60000;
+  const get = (fr, sx, sy) => { const i = Math.round((xk - sx - g.x0_km) / g.dx_km), j = Math.round((yk - sy - g.y0_km) / g.dx_km);
+    if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) return 0; return fr[arrKey][(k * g.ny + j) * g.nx + i]; };
+  const a = get(A, mot[0] * st.f * dtm, mot[1] * st.f * dtm), b = get(B, -mot[0] * (1 - st.f) * dtm, -mot[1] * (1 - st.f) * dtm);
+  if (!a && !b) return 0; if (!a) return st.f > 0.5 ? b : 0; if (!b) return st.f < 0.5 ? a : 0; return a + (b - a) * st.f;
+}
+const rainRate = (dbz) => dbz <= 5 ? 0 : Math.pow(Math.pow(10, dbz / 10) / 200, 1 / 1.6);
+function cloudCover(st, xk, yk) {
+  const g = S.scene.meta.grid; let s = 0, n = 0;
+  for (let dy = -24; dy <= 24; dy += 8) for (let dx = -24; dx <= 24; dx += 8) { let col = 0;
+    for (let k = 2; k < g.nz; k += 3) col = Math.max(col, sampleByte("cloud", st, xk + dx, yk + dy, k)); s += col / 255; n++; }
+  return s / n;
+}
+
+// ---------------------------------------------------------------- lighting & waves
+function setLight(name) {
+  S.light = name; const L = LIGHTS[name];
+  const az = L.az * Math.PI / 180, el = L.el * Math.PI / 180;
+  U.uSunDir.value.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)).normalize();
+  U.uSunCol.value.set(...L.sun); U.uAmbTop.value.set(...L.ambTop); U.uAmbBot.value.set(...L.ambBot);
+  U.uHor.value.set(...L.hor); U.uZen.value.set(...L.zen); U.uCity.value = L.city; U.uLand.value.set(...L.land); compMat.uniforms.uExp.value = L.exp;
+  document.querySelectorAll("[data-light]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.light === name)));
+}
+function updateWaves() {
+  S.wind.speed = +$("#wspd").value; S.wind.dir = +$("#wdir").value;
+  const fk = fetchKm(S.wind.dir), w = cem(S.wind.speed, fk * 1000, S.wind.duration); S.wave = w;
+  $("#wspd-o").textContent = `${S.wind.speed.toFixed(1).replace(/\.0$/, "")} m/s`;
+  $("#wdir-o").textContent = `${S.wind.dir}° ${compass(S.wind.dir)}`;
+  const wc = 3.84e-6 * Math.pow(S.wind.speed, 3.41);
+  $("#wave-out").innerHTML = w.hm0 > 0.01
+    ? `Fetch ${fk.toFixed(0)} km · ${w.regime}<br>Offshore H<sub>s</sub> ${w.hm0.toFixed(2)} m · T<sub>p</sub> ${w.tp.toFixed(1)} s<br>Whitecaps ${(wc * 100).toFixed(1)}% of surface`
+    : `Fetch ${fk.toFixed(0)} km · ${w.regime}<br>Nearshore lake stays calm`;
+  $("#r-wave").textContent = w.hm0 > 0.01 ? `${w.hm0.toFixed(1)} m, ${w.tp.toFixed(1)} s` : "calm (offshore wind)";
+  const a = S.wind.dir * Math.PI / 180;
+  lakeU.uWaveDir.value.set(-Math.sin(a), -Math.cos(a));   // propagation toward (dir + 180), km east/north
+  lakeU.uHs.value = w.hm0; lakeU.uTp.value = Math.max(w.tp, 1.2); lakeU.uWhitecap.value = Math.min(wc, 0.3); lakeU.uWindSpd.value = S.wind.speed;
+}
+
+// ---------------------------------------------------------------- cameras
+const CAMS = {
+  overview: { p: [72, 42, 16], t: [-22, 2, -2], exag: 3 },
+  lake: { p: [4.5, 0.035, 0.8], t: [-30, 2.2, 0], exag: 1 },
+  trail: { p: [0.18, 0.004, -3.7], t: [-3.2, 0.55, 0.6], exag: 1 },
+  above: { p: [-2, 38, 34], t: [-42, 10, 0], exag: 2 },
+  top: { p: [0, 250, 0.01], t: [0, 0, 0], exag: 3 },
+  ohare: { p: [-23.2, 0.03, -10.8], t: [-60, 1.8, -4], exag: 1 },
+};
+let camTween = null;
+function goCam(name, instant) {
+  const c = CAMS[name]; if (!c) return;
+  setExag(c.exag);
+  const p1 = new THREE.Vector3(...c.p), t1 = new THREE.Vector3(...c.t);   // world: x east, y up, z south
+  if (instant || RM) { camera.position.copy(p1); controls.target.copy(t1); controls.update(); camTween = null; return; }
+  camTween = { p0: camera.position.clone(), t0: controls.target.clone(), p1, t1, s: performance.now(), d: 1400 };
+}
+function setExag(v) { S.exag = v; volMat.uniforms.uExag.value = v; $("#exag").value = v; $("#exag-o").textContent = `×${v}`; }
+
+// ---------------------------------------------------------------- resize / quality
+const QUALITY = [{ scale: 0.35, step: 0.8, max: 160 }, { scale: 0.5, step: 0.55, max: 240 }, { scale: 0.75, step: 0.4, max: 340 }];
+function resize() {
+  const w = canvas.clientWidth, h = canvas.clientHeight, pr = renderer.getPixelRatio();
+  renderer.setSize(w, h, false); camera.aspect = w / Math.max(h, 1); camera.updateProjectionMatrix();
+  rtScene.setSize(Math.round(w * pr), Math.round(h * pr));
+  const q = QUALITY[S.quality]; rtVol.setSize(Math.max(2, Math.round(w * pr * q.scale)), Math.max(2, Math.round(h * pr * q.scale)));
+  volMat.uniforms.uStepBase.value = q.step; volMat.uniforms.uMaxSteps.value = q.max;
+}
+window.addEventListener("resize", resize);
+
+// ---------------------------------------------------------------- UI wiring
+function setMode(m) { S.mode = m; volMat.uniforms.uMode.value = m; $("#m-real").setAttribute("aria-pressed", String(m === 0)); $("#m-radar").setAttribute("aria-pressed", String(m === 1)); }
+$("#m-real").onclick = () => setMode(0); $("#m-radar").onclick = () => setMode(1);
+document.querySelectorAll("[data-cam]").forEach((b) => b.onclick = () => goCam(b.dataset.cam));
+document.querySelectorAll("[data-light]").forEach((b) => b.onclick = () => setLight(b.dataset.light));
+document.querySelectorAll("[data-q]").forEach((b) => b.onclick = () => { S.quality = +b.dataset.q;
+  document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  try { localStorage.setItem("chi3d-quality", String(S.quality)); } catch (e) {} resize(); });
+document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-pressed", String(+x.dataset.q === S.quality)));
+$("#exag").oninput = (e) => setExag(+e.target.value);
+$("#dens").oninput = (e) => { S.density = +e.target.value; volMat.uniforms.uDensity.value = S.density; $("#dens-o").textContent = `${Math.round(S.density * 100)}%`; };
+$("#extra").oninput = (e) => { S.extra = +e.target.value; U.uExtra.value = S.extra; $("#extra-o").textContent = `${Math.round(S.extra * 100)}%`; };
+$("#wspd").oninput = updateWaves; $("#wdir").oninput = updateWaves;
+$("#bolts").checked = S.bolts; $("#bolts").onchange = (e) => { S.bolts = e.target.checked; };
+$("#spd").onchange = (e) => { S.speed = +e.target.value; };
+const ICON_PLAY = "M3 1.5v13l11-6.5z", ICON_PAUSE = "M3 1.5h3.5v13H3zM9.5 1.5H13v13H9.5z";
+function setPlaying(p) { S.playing = p; $("#play-icon").setAttribute("d", p ? ICON_PAUSE : ICON_PLAY); $("#play").setAttribute("aria-label", p ? "Pause" : "Play"); }
+$("#play").onclick = () => { if (!S.playing && S.t >= S.frames.length - 1) S.t = 0; setPlaying(!S.playing); };
+$("#scrub").oninput = (e) => { S.t = +e.target.value; setPlaying(false); };
+$("#toggle").onclick = () => { const c = $("#controls"), open = c.dataset.open !== "1"; c.dataset.open = open ? "1" : "0"; applyPanel(); };
+function applyPanel() { const narrow = matchMedia("(max-width: 760px)").matches, c = $("#controls");
+  c.hidden = narrow && c.dataset.open !== "1"; $("#toggle").setAttribute("aria-expanded", String(!c.hidden)); }
+matchMedia("(max-width: 760px)").addEventListener("change", applyPanel); applyPanel();
+async function loadFile(file) {
+  const m = $("#msg"); m.hidden = false; m.innerHTML = `<strong>Loading ${file.name}…</strong>`;
+  try { await loadScene(JSON.parse(await file.text())); m.hidden = true; }
+  catch (err) { m.innerHTML = `<strong>Couldn't load that scene</strong><p>${err.message}</p>`; setTimeout(() => { m.hidden = true; }, 6000); }
+}
+$("#file").onchange = (e) => { if (e.target.files[0]) loadFile(e.target.files[0]); };
+canvas.addEventListener("dragover", (e) => e.preventDefault());
+canvas.addEventListener("drop", (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+
+// ---------------------------------------------------------------- frame loop
+const clock = new THREE.Clock(); let lastHud = 0;
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.1), now = performance.now();
+  U.uTime.value += dt;
+  if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
+  controls.update();
+  if (camera.position.y < 0.002) camera.position.y = 0.002;
+  if (!S.frames.length) { renderer.setRenderTarget(null); return; }
+
+  if (S.playing) { S.t += dt * S.speed; if (S.t > S.frames.length - 1 + 0.6) S.t = 0; }
+  const st = frameState(), A = S.frames[st.i], B = S.frames[st.j];
+  const mot = S.scene.meta.motion_km_per_min || [0, 0], dtm = (B.t - A.t) / 60000;
+  U.uCloudA.value = A.tc; U.uCloudB.value = B.tc; U.uDbzA.value = A.td; U.uDbzB.value = B.td; U.uMix.value = st.f;
+  U.uShiftA.value.set(mot[0] * st.f * dtm, mot[1] * st.f * dtm); U.uShiftB.value.set(-mot[0] * (1 - st.f) * dtm, -mot[1] * (1 - st.f) * dtm);
+  U.uCamPos.value.copy(camera.position);
+
+  // conditions at the camera and downtown
+  const cx = camera.position.x, cy = -camera.position.z;
+  const camDbz = sampleByte("dbz", st, cx, cy, 1) / 3 - 10, camRain = rainRate(camDbz);
+  const lowCam = camera.position.y < S.scene.meta.cloud_base_km * Math.max(1, S.exag) * 0.9;
+  rainMat.uniforms.uRain.value = lowCam ? camRain : 0; rain.visible = lowCam && camRain > 0.2;
+  const ws = S.wind.speed, wa = S.wind.dir * Math.PI / 180; rainMat.uniforms.uDrift.value.set(-Math.sin(wa) * ws * 0.0004, Math.cos(wa) * ws * 0.0004);
+  rainMat.uniforms.uAmb.value.copy(U.uAmbTop.value).addScalar(LIGHTS[S.light].city * 0.6);
+  U.uHaze.value = lowCam ? 1 / (1 + camRain * 0.25) : 1;
+  if (now - lastHud > 120) { U.uOvercast.value = Math.min(1, cloudCover(st, cx, cy) * 1.6); }
+
+  // lightning
+  let flash = 0;
+  const cand = S.frames[Math.round(st.t)].cand;
+  if (S.bolts && cand.length) {
+    if (now > S.nextStrike) {
+      const c = cand[Math.floor(Math.random() * cand.length)];
+      const x = c[0] + (Math.random() - 0.5) * 2, y = c[1] + (Math.random() - 0.5) * 2;
+      S.flashPos = [x, y, 4.5 + Math.random() * 3]; S.strikeT = now;
+      if (Math.random() < 0.55) { makeBolt(x, y, S.scene.meta.cloud_base_km + 0.6 + Math.random()); bolt.visible = true; } else bolt.visible = false;
+      const rate = Math.min(0.6, 0.12 + cand.length * 0.002);   // strikes per second; keeps flashes well under 3 per second
+      S.nextStrike = now + (-Math.log(1 - Math.random()) / rate) * 1000 + 250;
+    }
+    const age = (now - S.strikeT) / 1000;
+    if (age < 0.45) flash = (age < 0.06 ? 1 : age < 0.11 ? 0.25 : age < 0.18 ? 0.8 : Math.max(0, 0.5 * (1 - (age - 0.18) / 0.27)));
+  }
+  bolt.visible = bolt.visible && flash > 0.05; boltMat.opacity = flash;
+  U.uFlash.value = flash * 0.6; U.uFlashPos.value.set(...S.flashPos);
+
+  // render: opaque scene -> volume -> composite
+  const q = QUALITY[S.quality];
+  volMat.uniforms.uProjInv.value.copy(camera.projectionMatrixInverse); volMat.uniforms.uCamWorld.value.copy(camera.matrixWorld);
+  volMat.uniforms.uNear.value = camera.near; volMat.uniforms.uFar.value = camera.far;
+  renderer.setRenderTarget(rtScene); renderer.render(scene, camera);
+  renderer.setRenderTarget(rtVol); renderer.render(volScene, quadCam);
+  renderer.setRenderTarget(null); renderer.render(compScene, quadCam);
+  updateLabels();
+
+  if (now - lastHud > 120) { lastHud = now; updateHud(st); }
+}
+function updateHud(st) {
+  const fr = S.frames[Math.round(st.t)], isFc = st.t > S.nObs - 1 + 0.001;
+  $("#clock").textContent = fmt.format(timeAt(st));
+  const lead = Math.round((timeAt(st) - S.frames[S.nObs - 1].t) / 60000);
+  const chip = $("#status"); chip.className = "chip " + (isFc ? "fc" : "obs"); chip.textContent = isFc ? `Forecast +${lead} min` : "Observed radar";
+  const db = sampleByte("dbz", st, 0, 0, 1), dbz = db / 3 - 10, rr = db ? rainRate(dbz) : 0;
+  const desc = rr < 0.2 ? "dry" : rr < 2.5 ? "light" : rr < 10 ? "moderate" : rr < 50 ? "heavy" : "violent";
+  $("#r-rain").textContent = rr < 0.2 ? "dry" : `${rr.toFixed(1)} mm/h (${desc})`;
+  const col = db ? dbzColor(dbz) : null;
+  $("#r-dbz").innerHTML = db ? `<span class="sw" style="background:${col}"></span>${dbz.toFixed(0)} dBZ` : "no echo";
+  const sc = $("#scrub"); if (document.activeElement !== sc) sc.value = st.t;
+  $("#head").style.left = `${st.t / Math.max(S.frames.length - 1, 1) * 100}%`;
+}
+
+// ---------------------------------------------------------------- boot
+setLight("day"); setMode(0); setPlaying(S.playing); resize();
+const initial = (location.hash || "").replace("#", "");
+goCam(CAMS[initial] ? initial : "overview", true);
+requestAnimationFrame(tick);
+// Live mode: a page with no embedded scene loads the newest one from the radar service next to it
+const LIVE = { on: false, updated: null, status: null, timer: null };
+const ago = (iso) => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ${m % 60} min ago`; };
+function showLive() {
+  const el = $("#live"), st = LIVE.status; if (!LIVE.on || !st) return; el.hidden = false;
+  if (!st.ready) { el.className = "live wait"; el.textContent = st.running ? "Processing the first radar scans…" : "Waiting for the first radar scans…"; return; }
+  const scan = st.latest_scan ? fmtShort.format(new Date(st.latest_scan)) : "–";
+  el.className = "live" + (st.stale ? " stale" : "");
+  el.textContent = st.stale ? `Radar data is stale: newest scan ${scan} (${ago(st.latest_scan)})`
+    : `Live · newest scan ${scan} · updated ${ago(st.updated)}${st.has_precip === false ? " · no precipitation on radar" : ""}`;
+}
+async function pollLive(first) {
+  try {
+    const res = await fetch("api/status", { cache: "no-store" });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    LIVE.status = await res.json(); showLive();
+    if (LIVE.status.ready && LIVE.status.updated !== LIVE.updated) {
+      const sr = await fetch("api/scene.json", { cache: "no-store" });
+      if (!sr.ok) throw new Error(`scene ${sr.status}`);
+      await loadScene(await sr.json(), !first && !!S.frames.length);
+      LIVE.updated = LIVE.status.updated; $("#msg").hidden = true; showLive();
+    } else if (!LIVE.status.ready && !S.frames.length) {
+      const m = $("#msg"); m.hidden = false; m.innerHTML = "<strong>Processing the latest KLOT radar scans</strong><p>The first update takes a minute or two. This page loads it automatically.</p>";
+    }
+  } catch (e) {
+    if (!S.frames.length) fail("The radar service isn't responding", "This page loads live scenes from the service it is hosted on. Check that the service is running, then reload.");
+    const el = $("#live"); el.hidden = false; el.className = "live stale"; el.textContent = "Can't reach the radar service; showing the last scene";
+  }
+  clearTimeout(LIVE.timer); LIVE.timer = setTimeout(() => pollLive(false), LIVE.status && LIVE.status.ready ? 60000 : 15000);
+}
+setInterval(showLive, 30000);
+(async () => {
+  try {
+    const txt = document.getElementById("scene-data").textContent.trim();
+    if (!txt) { LIVE.on = true; await pollLive(true); return; }
+    await loadScene(JSON.parse(txt));
+  } catch (e) { fail("No storm loaded", e.message); }
+})();
+window.__storm = { S, goCam, setLight, setMode, setExag, loadScene, LIVE, pollLive };
+})();
+</script>

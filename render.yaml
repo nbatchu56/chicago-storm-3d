@@ -1,0 +1,24 @@
+# Render Blueprint: New > Blueprint > pick this repo.
+# Needs a paid instance with >= 1 GB RAM and no idle spin-down (free instances sleep, which stops the pipeline).
+services:
+  - type: web
+    name: chicago-storm-3d
+    runtime: docker
+    region: ohio
+    plan: standard
+    healthCheckPath: /healthz
+    envVars:
+      - key: SOURCE
+        value: aws
+      - key: RADAR_SITE
+        value: KLOT
+      - key: INTERVAL_MIN
+        value: "5"
+      - key: NDBC_STATIONS
+        value: "45007,45174,CHII2"
+      - key: REFRESH_TOKEN
+        generateValue: true
+    disk:
+      name: storm-data
+      mountPath: /data
+      sizeGB: 1

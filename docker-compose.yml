@@ -1,0 +1,18 @@
+# Run on any Linux server or your own computer:  docker compose up -d   ->  http://localhost:8080
+services:
+  storm:
+    build: .
+    image: chicago-storm-3d
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SOURCE: aws            # set to "demo" to run without radar access
+      RADAR_SITE: KLOT
+      INTERVAL_MIN: "5"
+      NDBC_STATIONS: "45007,45174,CHII2"
+      # REFRESH_TOKEN: change-me   # enables POST /api/refresh
+    volumes:
+      - storm-data:/data
+volumes:
+  storm-data:

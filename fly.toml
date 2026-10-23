@@ -1,0 +1,34 @@
+# Fly.io:  fly launch --copy-config --no-deploy  ->  fly volumes create storm_data --size 1  ->  fly deploy
+app = "chicago-storm-3d"          # change to a unique name
+primary_region = "ord"            # Chicago
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SOURCE = "aws"
+  RADAR_SITE = "KLOT"
+  INTERVAL_MIN = "5"
+  NDBC_STATIONS = "45007,45174,CHII2"
+
+[mounts]
+  source = "storm_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"      # keep the radar pipeline running between visitors
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "2gb"           # worst-case gridding peaks near 0.9 GB
