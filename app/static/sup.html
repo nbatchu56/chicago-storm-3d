@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Chicago SUP Waves</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -234,6 +235,14 @@ const isDay = (d) => solar(d).el > -0.8;
 const spot = () => D.spots[spotIdx];
 const hourly = () => spot().hourly;
 const H = () => hourly()[Math.min(hourIdx, hourly().length - 1)];
+// Board drift if you stop paddling: a standing paddler drifts at roughly 5-8% of the wind speed (rule of thumb; we use 6%)
+const DRIFT_FRAC = 0.06;
+function drift(h, s) {
+  const v = DRIFT_FRAC * h.wind, b = (h.dir + 180) * Math.PI / 180, nrm = s.normal * Math.PI / 180;   // downwind bearing; lake bearing
+  const toLake = Math.cos(b - nrm), along = Math.sin(b - nrm);
+  const where = toLake > 0.5 ? "out toward the lake" : toLake < -0.5 ? "back toward shore" : "along the beach";
+  return { v, m10: v * 600, where, toLake, along, bearing: (h.dir + 180) % 360 };
+}
 function relWind(h, s) { // onshore / offshore / cross relative to the beach
   const a = ((h.dir - s.normal + 540) % 360) - 180;
   if (Math.abs(a) <= 45) return "onshore"; if (Math.abs(a) >= 100) return "offshore"; return Math.abs(a) <= 70 ? "side-onshore" : "cross-shore";
@@ -276,6 +285,7 @@ function renderVerdict() {
   const s = spot(), h = H(), t = new Date(h.t);
   const rel = relWind(h, s);
   const air = h.air_c != null ? `${Math.round(h.air_c * 9 / 5 + 32)}°F air` : "";
+  const dr = drift(h, s);
   $("#verdict").innerHTML = `
     <div>
       <h2>${s.name}</h2>
@@ -289,8 +299,8 @@ function renderVerdict() {
       <div class="num"><div class="k">Wind</div><div class="v">${ARROW(h.dir)}${mph(h.wind)} mph</div><div class="s">${h.gust != null ? `gusts ${mph(h.gust)} · ` : ""}from ${compass(h.dir)} · ${rel}</div></div>
       <div class="num"><div class="k">Open lake</div><div class="v">${ft(h.hs_offshore)} ft</div><div class="s">${h.fetch_km.toFixed(0)} km fetch · ${h.duration_h} h of wind${h.nws_wave_m != null ? ` · NWS ${ft(h.nws_wave_m)} ft` : ""}</div></div>
       <div class="num"><div class="k">Breakers</div><div class="v">${h.break_dist_m != null ? `${h.break_dist_m} m out` : "none"}</div><div class="s">${h.break_dist_m != null ? `start in ${h.break_depth_m} m of water` : "no breaking waves expected"}</div></div>
-      <div class="num"><div class="k">Sky</div><div class="v">${h.sky != null ? h.sky + "%" : "–"}</div><div class="s">cloud cover${h.pop != null ? ` · ${h.pop}% rain` : ""}${air ? " · " + air : ""}</div></div>
-      <div class="num"><div class="k">Light</div><div class="v">${isDay(t) ? "Day" : "Dark"}</div><div class="s">sun ${solar(t).el.toFixed(0)}° above horizon</div></div>
+      <div class="num"><div class="k">Sky</div><div class="v">${h.sky != null ? h.sky + "%" : "–"}</div><div class="s">cloud cover${h.pop != null ? ` · ${h.pop}% rain` : ""}${air ? " · " + air : ""} · ${isDay(t) ? "daylight" : "dark"}</div></div>
+      <div class="num"><div class="k">Drift if you stop</div><div class="v"${dr.toLake > 0.5 && h.wind > 3 ? ' style="color:var(--offshore)"' : ""}>${Math.round(dr.m10 / 10) * 10} m</div><div class="s">per 10 min, ${dr.where}${h.swell > 0.05 ? ` · ${ft(h.swell)} ft leftover swell` : ""}</div></div>
     </div>`;
 }
 function verdictWord(h) {
@@ -363,7 +373,7 @@ function renderMarine() {
 }
 function renderFoot() {
   const src = D.sources || {};
-  $("#foot").innerHTML = `<p>Wind: NWS gridpoint forecast ${src.nws_grid || "(unavailable)"}${src.wind ? `, recent hours from NDBC ${src.wind}` : ""}. Waves: USACE wind-wave growth over the fetch from each beach, ${D.buoy_now ? `matched to buoy ${D.buoy_now.station} now (×${D.calibration}) and fading back to the model over 6 hours, ` : "no wave buoy reporting, "}then shoaling, refraction and breaking over a sandy beach profile to the paddle zone (${D.paddle_depth_m} m deep, roughly 100–200 m out), plus local chop.</p>
+  $("#foot").innerHTML = `<p>Wind: NWS gridpoint forecast ${src.nws_grid || "(unavailable)"}${src.wind ? `, recent hours from NDBC ${src.wind}` : ""}. Waves: USACE wind-wave growth over the fetch from each beach, ${D.buoy_now ? `matched to buoy ${D.buoy_now.station} now (×${D.calibration}) and fading back to the model over 6 hours, ` : "no wave buoy reporting, "}stepped hour by hour so waves keep building while the wind holds and die away over about ${D.decay_h || 4} hours after it drops (faster against an opposing wind; a wind shift leaves the old sea running as swell), then shoaling, refraction and breaking over a sandy beach profile to the paddle zone (${D.paddle_depth_m} m deep, roughly 100–200 m out), plus local chop. The simulation uses shallow-water wave speeds with refraction and shoaling across the beach profile; whitecap coverage follows Monahan &amp; O'Muircheartaigh (1980). Drift assumes about 6% of the wind speed for a standing paddler.</p>
   <p>Ratings are rules of thumb for flat-water SUP: glassy under 0.5 ft and 7 mph; good under 1 ft and 11 mph; choppy under 2 ft and 16 mph; rough under 3.3 ft and 20 mph. Offshore wind over 8 mph is flagged on its own and becomes no-go above 15 mph. This is a model, not an official forecast. Breakwaters are approximated and seawall reflection isn't modeled.</p>`;
   if ((src.errors || []).length) $("#foot").innerHTML += `<p>Data notes: ${src.errors.join("; ")}</p>`;
 }
@@ -519,8 +529,12 @@ function initSim() {
   r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(55, 2, 0.1, 6000);
   const N = 28;   // wave components
-  const U = { uTime: { value: 0 }, uA: { value: new Float32Array(N) }, uK: { value: new Float32Array(N) }, uW: { value: new Float32Array(N) },
-    uDx: { value: new Float32Array(N) }, uDz: { value: new Float32Array(N) }, uP: { value: new Float32Array(N) }, uQ: { value: 0.6 },
+  const TABW = 256, DMAX = 1500;   // refraction/shoaling table: 256 samples over 0-1500 m from the shoreline
+  const tabData = new Float32Array(TABW * N * 4);
+  const tabTex = new THREE.DataTexture(tabData, TABW, N, THREE.RGBAFormat, THREE.FloatType);
+  tabTex.minFilter = tabTex.magFilter = THREE.NearestFilter; tabTex.needsUpdate = true;
+  const U = { uTime: { value: 0 }, uA: { value: new Float32Array(N) }, uKy: { value: new Float32Array(N) }, uW: { value: new Float32Array(N) },
+    uP: { value: new Float32Array(N) }, uQ: { value: 0.6 }, uTab: { value: tabTex }, uGust: { value: 0 },
     uShoreN: { value: new THREE.Vector2(1, 0) }, uShoreD: { value: 150 }, uHs: { value: 0.3 }, uSun: { value: new THREE.Vector3(0.3, 0.5, 0.2).normalize() },
     uSunCol: { value: new THREE.Vector3(1, 0.95, 0.85) }, uSkyTop: { value: new THREE.Vector3(0.3, 0.5, 0.8) }, uSkyHor: { value: new THREE.Vector3(0.75, 0.82, 0.88) },
     uWind: { value: 4 }, uWindDir: { value: new THREE.Vector2(1, 0) }, uCam: { value: new THREE.Vector3() }, uOvercast: { value: 0.3 }, uCity: { value: 0 },
@@ -532,26 +546,39 @@ function initSim() {
     uFlash: { value: 0 }, uFlashKm: { value: new THREE.Vector3() }, uRain: { value: 0 } };
   const WAVE = `
     #define N ${N}
-    uniform float uTime, uQ, uA[N], uK[N], uW[N], uDx[N], uDz[N], uP[N], uShoreD, uHs; uniform vec2 uShoreN;
-    float depthAt(vec2 p) { float d = max(uShoreD - dot(p, uShoreN), 0.0); return 0.1 * pow(d, 0.6667); }   // Dean profile, metres
-    float limAt(vec2 p) { return clamp(0.62 * depthAt(p) / max(uHs, 0.02), 0.0, 1.0); }                   // depth-limited (breaking) height
+    #define TABW ${TABW}
+    #define DMAX ${DMAX}.0
+    uniform float uTime, uQ, uA[N], uKy[N], uW[N], uP[N], uShoreD, uHs; uniform vec2 uShoreN; uniform sampler2D uTab;
+    float distOff(vec2 p) { return uShoreD - dot(p, uShoreN); }                       // metres offshore of the waterline
+    float depthAt(vec2 p) { return 0.1 * pow(max(distOff(p), 0.0), 0.6667); }         // Dean profile
+    float limAt(vec2 p) { return clamp(0.62 * depthAt(p) / max(uHs, 0.02), 0.0, 1.0); }   // depth-limited (breaking) height
+    // per-wave phase integral, shoaling factor and cross-shore wavenumber at distance d (linear in the table, extrapolated offshore)
+    vec3 tab(int i, float d) {
+      float x = clamp(d, 0.0, DMAX) / DMAX * float(TABW - 1); int i0 = int(floor(x)); int i1 = min(i0 + 1, TABW - 1); float f = x - float(i0);
+      vec4 a = texelFetch(uTab, ivec2(i0, i), 0), b = texelFetch(uTab, ivec2(i1, i), 0);
+      vec3 v = mix(a.xyz, b.xyz, f);
+      if (d > DMAX) v.x += b.z * (d - DMAX);
+      return v;   // (P, A, kx)
+    }
     `;
   const waterMat = new THREE.ShaderMaterial({ uniforms: U, extensions: { derivatives: true },
     vertexShader: `${WAVE}
       varying vec3 vW; varying float vLim; varying vec2 vP;
       void main() { vec2 p = (modelMatrix * vec4(position, 1.0)).xz; float lim = limAt(p);
         vec3 disp = vec3(0.0);
+        vec2 tn = vec2(-uShoreN.y, uShoreN.x); float sAl = dot(p, tn), dO = distOff(p);
         for (int i = 0; i < N; i++) {
-          float L = 6.2832 / uK[i]; float wv = smoothstep(5.0, 10.0, L);    // only waves the mesh can resolve
-          float a = uA[i] * lim * wv; vec2 d = vec2(uDx[i], uDz[i]);
-          float th = uK[i] * dot(d, p) - uW[i] * uTime + uP[i];
-          float q = min(uQ, 1.0 / max(uK[i] * a * float(N), 1e-4));
-          disp += vec3(q * a * d.x * cos(th), a * sin(th), q * a * d.y * cos(th));
+          vec3 T = tab(i, dO); vec2 K = uKy[i] * tn + T.z * uShoreN; float kk = max(length(K), 1e-4);
+          float wv = smoothstep(5.0, 10.0, 6.2832 / kk);                     // only waves the mesh can resolve
+          float a = uA[i] * T.y * lim * wv; vec2 dir = K / kk;
+          float th = uKy[i] * sAl - T.x - uW[i] * uTime + uP[i];
+          float q = min(uQ, 1.0 / max(kk * a * float(N), 1e-4));
+          disp += vec3(q * a * dir.x * cos(th), a * sin(th), q * a * dir.y * cos(th));
         }
         vec3 w = vec3(p.x, 0.0, p.y) + disp; vW = w; vLim = lim; vP = p;
         gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0); }`,
     fragmentShader: `${WAVE}
-      uniform vec3 uSun, uSunCol, uSkyTop, uSkyHor, uCam; uniform float uWind, uOvercast, uCity; uniform vec2 uWindDir;
+      uniform vec3 uSun, uSunCol, uSkyTop, uSkyHor, uCam; uniform float uWind, uOvercast, uCity, uGust; uniform vec2 uWindDir;
       varying vec3 vW; varying float vLim; varying vec2 vP;
       float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
@@ -561,15 +588,19 @@ function initSim() {
         float foot = max(length(fwidth(p)), 1e-3);
         // analytic slope of every component, faded where the pixel is too coarse to resolve it
         vec2 grad = vec2(0.0); float steep = 0.0; float unres = 0.0;
+        vec2 tn = vec2(-uShoreN.y, uShoreN.x); float sAl = dot(p, tn), dO = distOff(p);
         for (int i = 0; i < N; i++) {
-          float L = 6.2832 / uK[i]; float wf = clamp(1.0 - foot * 3.0 / L, 0.0, 1.0);
-          float a = uA[i] * vLim; vec2 d = vec2(uDx[i], uDz[i]);
-          float th = uK[i] * dot(d, p) - uW[i] * uTime + uP[i];
-          float sl = a * uK[i] * cos(th);
-          grad += d * sl * wf; steep += max(sin(th), 0.0) * a * uK[i] * wf; unres += (a * uK[i]) * (a * uK[i]) * (1.0 - wf);
+          vec3 T = tab(i, dO); vec2 K = uKy[i] * tn + T.z * uShoreN; float kk = max(length(K), 1e-4);
+          float wf = clamp(1.0 - foot * 3.0 * kk / 6.2832, 0.0, 1.0);
+          float a = uA[i] * T.y * vLim;
+          float th = uKy[i] * sAl - T.x - uW[i] * uTime + uP[i];
+          grad += K * a * cos(th) * wf; steep += max(sin(th), 0.0) * a * kk * wf; unres += (a * kk) * (a * kk) * (1.0 - wf);
         }
+        // gust patches (cat's paws): rougher, darker water sweeping downwind at gust speed
+        vec2 gq = p / 45.0 - uWindDir * uTime * max(uWind, 1.0) * 1.2 / 45.0;
+        float gust = smoothstep(0.45, 0.85, noise(gq) * 0.65 + noise(gq * 2.3 + 7.1) * 0.35) * uGust;
         // capillary ripples from the wind, finer than any component
-        vec2 o = uWindDir * uTime * 0.6; float e = 0.03, rs = (0.01 + 0.006 * uWind) * clamp(1.0 - foot * 6.0, 0.0, 1.0);
+        vec2 o = uWindDir * uTime * 0.6; float e = 0.03, rs = (0.01 + 0.006 * uWind) * (1.0 + 1.6 * gust) * clamp(1.0 - foot * 6.0, 0.0, 1.0);
         float n0 = noise(p * 4.0 - o * 4.0), nx = noise((p + vec2(e, 0.0)) * 4.0 - o * 4.0), nz = noise((p + vec2(0.0, e)) * 4.0 - o * 4.0);
         grad += vec2(nx - n0, nz - n0) / e * rs;
         vec3 Nn = normalize(vec3(-grad.x, 1.0, -grad.y));
@@ -583,7 +614,10 @@ function initSim() {
         vec3 Hv = normalize(uSun + V); float rough = 0.05 + 0.008 * uWind + sqrt(unres);
         c += uSunCol * pow(max(dot(Nn, Hv), 0.0), 2.0 / (rough * rough)) / (1.0 + rough * 20.0) * sunUp * (1.0 - 0.8 * uOvercast) * 2.0;
         // whitecaps on steep crests once the wind passes ~5 m/s, and surf where waves are depth-limited
-        float wc = smoothstep(5.0, 11.0, uWind) * smoothstep(0.18, 0.4, steep) * noise(p * 1.3 + uTime * 0.3);
+        // whitecap coverage follows Monahan & O'Muircheartaigh (1980): W = 3.84e-6 U^3.41
+        float W = clamp(3.84e-6 * pow(uWind * (1.0 + 0.5 * gust), 3.41), 0.0, 0.25);
+        float crest = smoothstep(0.08, 0.3, steep) * noise(p * 1.3 + uTime * 0.3);
+        float wc = smoothstep(1.0 - 3.0 * W, 1.0 - 1.5 * W, crest) * step(0.002, W);
         float surf = (1.0 - vLim) * smoothstep(0.03, 0.15, uHs) * (0.5 + 0.5 * noise(p * 0.8 - uTime * 0.5));
         float white = clamp(max(wc, surf), 0.0, 1.0);
         c = mix(c, vec3(0.88, 0.92, 0.93) * (0.45 + 0.55 * sunUp), white * 0.85);
@@ -592,8 +626,9 @@ function initSim() {
       }` });
   const water = new THREE.Mesh(new THREE.PlaneGeometry(700, 700, 300, 300).rotateX(-Math.PI / 2), waterMat);
   water.frustumCulled = false; scene.add(water);
-  const farWater = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000, 1, 1).rotateX(-Math.PI / 2), waterMat);
-  farWater.position.y = -0.05; farWater.renderOrder = -1; scene.add(farWater);
+  // distant water: a ring outside the detailed patch, low enough that wave troughs never dip below it
+  const farWater = new THREE.Mesh(new THREE.RingGeometry(330, 9000, 64, 1).rotateX(-Math.PI / 2), waterMat);
+  farWater.position.y = -1.5; farWater.renderOrder = -1; scene.add(farWater);
   // sky dome
   const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: U,
     vertexShader: `varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0); }`,
@@ -698,14 +733,21 @@ function initSim() {
     fragmentShader: `uniform float uRain; uniform vec3 uSkyHor; varying float vA; void main(){ gl_FragColor = vec4(pow(uSkyHor, vec3(1.0/2.2)) * 0.95, vA * clamp(uRain / 6.0, 0.25, 0.7)); }` });
   const rain = new THREE.LineSegments(rainGeo, rainMat); rain.frustumCulled = false; rain.visible = false; scene.add(rain);
 
-  SIM.ok = true; Object.assign(SIM, { r, scene, cam, U, board, shore, towers, sunLight, N, rain });
+  const driftArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0.25, 0), 4, 0xffffff, 1.0, 0.6);
+  driftArrow.line.material.linewidth = 2; scene.add(driftArrow);
+  SIM.ok = true; Object.assign(SIM, { r, scene, cam, U, board, shore, towers, sunLight, N, rain, tabData, tabTex, TABW, DMAX, driftArrow });
   const resize = () => { const w = canvas.clientWidth, h = canvas.clientHeight; r.setSize(w, h, false); cam.aspect = w / Math.max(h, 1); cam.updateProjectionMatrix(); };
   new ResizeObserver(resize).observe(canvas); resize();
   // CPU copy of the wave field for board motion
+  SIM.tab = (i, d) => {
+    const x = Math.min(Math.max(d, 0), DMAX) / DMAX * (TABW - 1), i0 = Math.floor(x), i1 = Math.min(i0 + 1, TABW - 1), f = x - i0, o0 = (i * TABW + i0) * 4, o1 = (i * TABW + i1) * 4;
+    const P = tabData[o0] * (1 - f) + tabData[o1] * f + (d > DMAX ? tabData[o1 + 2] * (d - DMAX) : 0);
+    return [P, tabData[o0 + 1] * (1 - f) + tabData[o1 + 1] * f];
+  };
   SIM.heightAt = (x, z) => {
-    let y = 0; const u = SIM.U; const hDepth = Math.max(u.uShoreD.value - (x * u.uShoreN.value.x + z * u.uShoreN.value.y), 0);
-    const lim = Math.min(1, Math.max(0, 0.62 * 0.1 * Math.pow(hDepth, 0.6667) / Math.max(u.uHs.value, 0.02)));
-    for (let i = 0; i < N; i++) y += u.uA.value[i] * lim * Math.sin(u.uK.value[i] * (u.uDx.value[i] * x + u.uDz.value[i] * z) - u.uW.value[i] * u.uTime.value + u.uP.value[i]);
+    let y = 0; const u = SIM.U, n = u.uShoreN.value, dO = u.uShoreD.value - (x * n.x + z * n.y), sAl = -x * n.y + z * n.x;
+    const lim = Math.min(1, Math.max(0, 0.62 * 0.1 * Math.pow(Math.max(dO, 0), 0.6667) / Math.max(u.uHs.value, 0.02)));
+    for (let i = 0; i < N; i++) { const [P, A] = SIM.tab(i, dO); y += u.uA.value[i] * A * lim * Math.sin(u.uKy.value[i] * sAl - P - u.uW.value[i] * u.uTime.value + u.uP.value[i]); }
     return y;
   };
   let last = performance.now(), hist = [];
@@ -726,6 +768,7 @@ function initSim() {
     else if (SIM.view === "beach") { const sn = SIM.U.uShoreN.value, d = SIM.U.uShoreD.value; cam.position.set(sn.x * (d + 8), 2.2, sn.y * (d + 8)); cam.lookAt(0, 0.3, 0); }
     else { const sn = SIM.U.uShoreN.value; const side = new THREE.Vector2(-sn.y, sn.x); cam.position.set(side.x * 7 + sn.x * 3, 2.4, side.y * 7 + sn.y * 3); cam.lookAt(-sn.x * 7, -0.6, -sn.y * 7); }
     paddle.visible = SIM.view !== "rider";
+    driftArrow.position.set(0, board.position.y + 0.3, 0); driftArrow.visible = SIM.view !== "rider" && (SIM.driftLen || 0) > 0.3;
     SIM.U.uCam.value.copy(cam.position);
     skyMesh.position.copy(cam.position);
     const sk = SIM.spotKm || [0, 0]; SIM.U.uCamKm.value.set(sk[0] + cam.position.x / 1000, sk[1] - cam.position.z / 1000, Math.max(cam.position.y, 0.5) / 1000);
@@ -742,28 +785,67 @@ function setSimHour() {
   if (!SIM.ok) return;
   const s = spot(), h = H(), U = SIM.U, N = SIM.N;
   let seed = 12345; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  // world: x east, z south; waves travel toward (dir + 180)
-  const prop = (deg) => { const a = (deg + 180) * Math.PI / 180; return [Math.sin(a), -Math.cos(a)]; };
-  const swellHs = Math.sqrt(Math.max(h.hs_paddle ** 2 - h.chop ** 2, 0)), chopHs = h.chop;
-  const comps = [];
-  const addSpectrum = (Hs, Tp, dirFrom, spread, n) => {
-    if (Hs < 0.005 || Tp < 0.5) return;
-    const fp = 1 / Tp, fs = [], S = [];
-    for (let i = 0; i < n; i++) { const f = fp * (0.75 + 1.6 * i / (n - 1)); const sg = f <= fp ? 0.07 : 0.09;
-      const r = Math.exp(-((f - fp) ** 2) / (2 * sg * sg * fp * fp)); S.push(Math.pow(f, -5) * Math.exp(-1.25 * Math.pow(fp / f, 4)) * Math.pow(3.3, r)); fs.push(f); }
+  const prop = (deg) => { const a = (deg + 180) * Math.PI / 180; return [Math.sin(a), -Math.cos(a)]; };   // travel direction for waves/wind from deg
+  // shoreline frame: n = unit vector toward land (x east, z south), t along the beach
+  const nrm = s.normal * Math.PI / 180, nx = -Math.sin(nrm), nz = Math.cos(nrm), tx = -nz, tz = nx;
+  const dBoard = Math.pow(D.paddle_depth_m / 0.1, 1.5);          // board sits where the water is ~2.5 m deep
+  const g = 9.81, depth = (d) => 0.1 * Math.pow(Math.max(d, 0.5), 0.6667);
+  const wavenum = (w, hh) => { let k = w * w / g / Math.sqrt(Math.tanh(w * w / g * hh)); for (let it = 0; it < 12; it++) { const th = Math.tanh(k * hh); k -= (g * k * th - w * w) / (g * th + g * k * hh * (1 - th * th)); } return k; };
+  const cgOf = (w, k, hh) => { const kh = k * hh; return 0.5 * (w / k) * (1 + 2 * kh / Math.sinh(Math.min(2 * kh, 700))); };
+  // wave systems at the board: model components (wind sea + leftover swell) plus local wind chop
+  const comps = (h.components && h.components.length ? h.components.map((c) => ({ ...c }))
+    : [{ kind: "wind sea", hs: Math.sqrt(Math.max(h.hs_paddle ** 2 - h.chop ** 2, 0)), tp: h.tp, dir: h.wave_dir, ang: null }]);
+  const rel = (fromDeg) => ((fromDeg - s.normal + 540) % 360) - 180;
+  comps.forEach((c) => { c.rel = c.ang != null ? c.ang : rel(c.dir); c.spread = c.kind === "swell" ? 12 : 28; });
+  comps.push({ kind: "chop", hs: Math.max(h.chop, 0.02 + 0.006 * h.wind), tp: Math.max(0.9, 0.5 + 0.12 * h.wind), rel: rel(h.dir), spread: 50 });
+  const energy = comps.map((c) => c.hs * c.hs), eTot = energy.reduce((a, b) => a + b, 0) || 1;
+  const nChop = 8, slots = comps.map((c, i) => c.kind === "chop" ? nChop : Math.max(3, Math.round((N - nChop) * energy[i] / Math.max(eTot - energy[energy.length - 1], 1e-9))));
+  let used = slots.reduce((a, b) => a + b, 0); while (used > N) { const j = slots.indexOf(Math.max(...slots.slice(0, -1))); slots[j]--; used--; }
+  const waves = [];
+  comps.forEach((c, ci) => {
+    const n = slots[ci]; if (n <= 0 || c.hs < 0.004 || c.tp < 0.5) return;
+    const fp = 1 / c.tp, fs = [], S = [];
+    for (let i = 0; i < n; i++) { const f = fp * (0.78 + 1.5 * i / Math.max(n - 1, 1)); const sg = f <= fp ? 0.07 : 0.09;
+      S.push(Math.pow(f, -5) * Math.exp(-1.25 * Math.pow(fp / f, 4)) * Math.pow(3.3, Math.exp(-((f - fp) ** 2) / (2 * sg * sg * fp * fp)))); fs.push(f); }
     const tot = S.reduce((a, b) => a + b, 0);
-    for (let i = 0; i < n; i++) { const a = (Hs / 2.83) * Math.sqrt(2 * S[i] / tot) ; // amplitude so 4*sqrt(m0) ~ Hs
-      const w = 2 * Math.PI * fs[i], k = w * w / 9.81, th = dirFrom + (rnd() - 0.5) * 2 * spread * (0.4 + 0.6 * i / n);
-      const [dx, dz] = prop(th); comps.push([a, k, w, dx, dz, rnd() * 6.283]); }
-  };
-  addSpectrum(swellHs, h.tp, h.wave_dir, 30, Math.round(N * 0.6));
-  addSpectrum(Math.max(chopHs, 0.02 + 0.006 * h.wind), Math.max(0.9, 0.5 + 0.12 * h.wind), h.dir, 50, N - Math.round(N * 0.6));
-  while (comps.length < N) comps.push([0, 1, 1, 1, 0, 0]);
-  comps.slice(0, N).forEach(([a, k, w, dx, dz, p], i) => { U.uA.value[i] = a; U.uK.value[i] = k; U.uW.value[i] = w; U.uDx.value[i] = dx; U.uDz.value[i] = dz; U.uP.value[i] = p; });
+    for (let i = 0; i < n; i++) {
+      const w = 2 * Math.PI * fs[i], a = (c.hs / 2.83) * Math.sqrt(2 * S[i] / tot);
+      const relDeg = c.rel + (rnd() - 0.5) * 2 * c.spread * (0.4 + 0.6 * i / n);
+      const b = (s.normal + relDeg) * Math.PI / 180;                 // compass bearing the waves come from
+      const px = -Math.sin(b), pz = Math.cos(b);                      // propagation (world x east, z south)
+      waves.push({ a, w, cn: px * nx + pz * nz, ct: px * tx + pz * tz, ph: rnd() * 6.283 });
+    }
+  });
+  while (waves.length < N) waves.push({ a: 0, w: 1, cn: 1, ct: 0, ph: 0 });
+  // refraction + shoaling table: Snell (k sin(theta) conserved along the beach), energy flux conserved
+  const TW = SIM.TABW, DM = SIM.DMAX, tab = SIM.tabData, step = DM / (TW - 1);
+  waves.slice(0, N).forEach((wv, i) => {
+    const hb = D.paddle_depth_m, kb = wavenum(wv.w, hb), ky = kb * wv.ct, sgn = wv.cn >= 0 ? 1 : -1;
+    const kxb = Math.max(Math.abs(kb * wv.cn), 1e-4), cgb = cgOf(wv.w, kb, hb), fluxB = cgb * kxb / kb;
+    U.uA.value[i] = wv.a; U.uKy.value[i] = ky; U.uW.value[i] = wv.w; U.uP.value[i] = wv.ph;
+    const kxAt = (d) => { const k = wavenum(wv.w, depth(d)); return [k, sgn * Math.sqrt(Math.max(k * k - ky * ky, 1e-6))]; };
+    // integrate P(d) = integral of kx from the board outward/inward
+    const P = new Float64Array(TW), A = new Float32Array(TW), KX = new Float32Array(TW);
+    for (let j = 0; j < TW; j++) { const d = j * step, [k, kx] = kxAt(d); KX[j] = kx; const cg = cgOf(wv.w, k, depth(d)), flux = cg * Math.abs(kx) / k;
+      A[j] = Math.min(3, Math.sqrt(fluxB / Math.max(flux, 1e-6))); }
+    const jb = dBoard / step, j0 = Math.floor(jb);
+    for (let j = j0 + 1; j < TW; j++) P[j] = P[j - 1] + 0.5 * (KX[j - 1] + KX[j]) * step;
+    for (let j = j0; j >= 0; j--) P[j] = (j === j0 ? 0 : P[j + 1]) - (j === j0 ? 0 : 0.5 * (KX[j + 1] + KX[j]) * step);
+    const off = P[j0] + (jb - j0) * KX[j0] * step;                  // make P = 0 exactly at the board
+    for (let j = 0; j < TW; j++) { const o = (i * TW + j) * 4; tab[o] = P[j] - off; tab[o + 1] = A[j]; tab[o + 2] = KX[j]; tab[o + 3] = 0; }
+  });
+  SIM.tabTex.needsUpdate = true;
   U.uHs.value = h.hs_paddle; U.uQ.value = Math.min(0.8, 0.3 + h.hs_paddle * 0.6);
   // shoreline: lake lies toward s.normal; shore is behind the board at paddle distance (Dean: h = 2.5 m at ~165 m)
-  const nrm = s.normal * Math.PI / 180, toShore = new THREE.Vector2(-Math.sin(nrm), Math.cos(nrm)); // unit vector toward land (x east, z south)
-  U.uShoreN.value.copy(toShore); U.uShoreD.value = Math.pow(D.paddle_depth_m / 0.1, 1.5);
+  const toShore = new THREE.Vector2(nx, nz);
+  U.uShoreN.value.copy(toShore); U.uShoreD.value = dBoard;
+  U.uGust.value = h.gust != null && h.wind > 0.5 ? Math.min(1, Math.max(0, (h.gust / h.wind - 1.1) * 1.6)) : 0.3;
+  const dr = drift(h, s), db = dr.bearing * Math.PI / 180;
+  SIM.driftLen = Math.min(12, dr.m10 / 25);   // arrow: metres drifted in ~4 min, capped
+  SIM.driftArrow.setDirection(new THREE.Vector3(Math.sin(db), 0, -Math.cos(db)));
+  SIM.driftArrow.setLength(Math.max(SIM.driftLen, 0.5), Math.min(1.2, 0.3 + SIM.driftLen * 0.25), 0.6);
+  SIM.driftArrow.setColor(dr.toLake > 0.5 && h.wind > 3 ? 0xc06bff : 0xffffff);
+  SIM.drift = dr;
   SIM.shore.position.set(toShore.x * U.uShoreD.value, 0, toShore.y * U.uShoreD.value);
   SIM.shore.rotation.y = Math.atan2(toShore.x, toShore.y);
   SIM.towers.visible = !(s.id === "rainbow" || s.id === "calumet" || s.id === "63rd");   // high-rises only along the north and downtown lakefront
@@ -787,7 +869,12 @@ function setSimHour() {
 function simHud() {
   const h = H();
   const rainTxt = RAD.rainNow > 0.2 ? `<span>Rain overhead: ${RAD.rainNow.toFixed(1)} mm/h from radar</span>` : "";
-  $("#overlay").innerHTML = `<b>Board rises and falls ${ft(SIM.range || 0)} ft</b><span>${(SIM.range || 0).toFixed(2)} m over the last 30 s · waves ${h.tp.toFixed(1)} s apart</span>${rainTxt}<span>${LABEL[h.rating]} · ${h.reasons[0]}</span>`;
+  const dr = SIM.drift; const driftTxt = dr ? `<span>Arrow: drift if you stop, about ${Math.round(dr.m10 / 10) * 10} m per 10 min ${dr.where}</span>` : "";
+  // significant height of the simulated sea at the board (4 x RMS surface elevation): typical rise-and-fall of the board
+  let m0 = 0; const U = SIM.U, dB = U.uShoreD.value, lim = Math.min(1, 0.62 * 0.1 * Math.pow(dB, 0.6667) / Math.max(U.uHs.value, 0.02));
+  for (let i = 0; i < SIM.N; i++) { const A = SIM.tab(i, dB)[1]; m0 += 0.5 * (U.uA.value[i] * A * lim) ** 2; }
+  const hsB = 4 * Math.sqrt(m0), big = Math.max(hsB * 1.6, SIM.range || 0);
+  $("#overlay").innerHTML = `<b>Board rises and falls about ${ft(hsB)} ft</b><span>bigger sets to ${ft(big)} ft · waves ${h.tp.toFixed(1)} s apart</span>${rainTxt}${driftTxt}<span>${LABEL[h.rating]} · ${h.reasons[0]}</span>`;
 }
 document.querySelectorAll("[data-view]").forEach((b) => b.onclick = () => { SIM.view = b.dataset.view; document.querySelectorAll("[data-view]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); });
 

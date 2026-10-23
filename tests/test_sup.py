@@ -115,3 +115,63 @@ def test_parse_nearshore_product():
     assert m["title"].startswith("Wilmette Harbor") and [p["name"] for p in m["periods"]] == ["Today", "Tonight", "Saturday"]
     assert m["periods"][1]["text"] == "Southeast winds 10 to 15 kt. Waves 1 to 2 ft."
     assert sw.parse_nsh(NSH, "LMZ745") is None
+
+
+# ---------------------------------------------------------------- wave memory (synthetic winds)
+def make_get_series(wind_fn):
+    """wind_fn(hours_from_NOW) -> (speed m/s, from deg). History goes to NDBC rows, the rest to the NWS grid."""
+    rows = []
+    for k in range(0, 30 * 6):
+        t = NOW - dt.timedelta(minutes=10 * k)
+        u, d = wind_fn(-(k / 6.0))
+        rows.append((t, int(d), round(u, 1), round(u * 1.3, 1), "MM", "MM"))
+    hours = range(-2, 60)
+    vals = lambda f: {"values": [{"validTime": f"{(NOW + dt.timedelta(hours=h)):%Y-%m-%dT%H:00:00+00:00}/PT1H", "value": f(h)} for h in hours]}
+    raw = {"properties": {"windSpeed": vals(lambda h: wind_fn(h)[0] * 3.6), "windGust": vals(lambda h: wind_fn(h)[0] * 1.3 * 3.6),
+                          "windDirection": vals(lambda h: wind_fn(h)[1]), "waveHeight": vals(lambda h: None), "temperature": vals(lambda h: 12),
+                          "skyCover": vals(lambda h: 50), "probabilityOfPrecipitation": vals(lambda h: 0)}}
+
+    def get(url, accept="", timeout=20):
+        if "realtime2/45174" in url:
+            return ndbc_text(rows)
+        if "ndbc" in url or "zones" in url or "products" in url:
+            raise OSError("not used")
+        if "/points/" in url:
+            return json.dumps({"properties": {"forecastGridData": "https://api.weather.gov/gridpoints/LOT/75,73"}})
+        return json.dumps(raw)
+    return get
+
+
+def hs_at(data, spot, lead):
+    return by_id(data)[spot]["hourly"][lead]["hs_paddle"]
+
+
+def test_waves_linger_after_wind_dies():
+    wind = lambda h: (10.0, 20) if h < 6 else (1.0, 20)
+    data = sw.build(now=NOW, hours=24, get=make_get_series(wind))
+    h0, h2, h12 = hs_at(data, "rainbow", 5), hs_at(data, "rainbow", 8), hs_at(data, "rainbow", 18)
+    print(f"Rainbow paddle Hs: before drop {h0:.2f} m, 2 h after {h2:.2f} m, 12 h after {h12:.2f} m")
+    assert h0 > 0.4
+    assert h2 > 0.4 * h0          # still bumpy two hours after the wind dies
+    assert h12 < 0.2 * h0         # mostly gone by the next day
+    assert any("leftover" in r for r in by_id(data)["rainbow"]["hourly"][8]["reasons"])
+
+
+def test_wind_shift_turns_sea_into_swell_and_opposing_wind_kills_it_faster():
+    opposed = lambda h: (10.0, 20) if h < 6 else (6.0, 220)       # SW wind blows against the NNE-born waves
+    crossed = lambda h: (10.0, 20) if h < 6 else (6.0, 290)       # WNW wind: offshore, but not head-on to the swell
+    a = sw.build(now=NOW, hours=12, get=make_get_series(opposed))
+    b = sw.build(now=NOW, hours=12, get=make_get_series(crossed))
+    ha, hb = by_id(a)["rainbow"]["hourly"][9], by_id(b)["rainbow"]["hourly"][9]
+    print(f"3 h after shift: opposed swell {ha['swell']:.2f} m, crossed swell {hb['swell']:.2f} m")
+    assert any(c["kind"] == "swell" for c in hb["components"])
+    assert ha["swell"] < hb["swell"]
+    assert hb["rating"] in ("offshore", "rough", "no-go", "choppy")
+
+
+def test_waves_build_from_calm():
+    wind = lambda h: (0.5, 20) if h < 0 else (9.0, 20)
+    data = sw.build(now=NOW, hours=12, get=make_get_series(wind))
+    h1, h8 = hs_at(data, "rainbow", 1), hs_at(data, "rainbow", 8)
+    print(f"building: +1 h {h1:.2f} m, +8 h {h8:.2f} m")
+    assert h8 > 1.5 * h1

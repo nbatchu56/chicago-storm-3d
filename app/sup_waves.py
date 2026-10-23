@@ -17,6 +17,7 @@ nearshore marine zone forecasts.
 """
 
 import datetime as dt
+import functools
 import json
 import logging
 import math
@@ -279,17 +280,24 @@ _PROFILE = dean_profile(depth_offshore=10.0, A=0.10, dx=2.0)
 
 
 def nearshore(hs_off, tp, theta0):
-    """Offshore waves (10 m depth) -> Hs at the paddle zone, breaker depth and distance from shore."""
+    """Offshore waves (10 m depth) -> Hs at the paddle zone, breaker depth and distance from shore,
+    and the wave angle to the shore normal at the paddle zone."""
     if hs_off < 0.03 or abs(theta0) >= 85 or tp < 0.8:
-        return 0.0, None, None
+        return 0.0, None, None, None
+    return _nearshore_cached(round(hs_off, 2), round(tp, 1), round(theta0 / 2) * 2)
+
+
+@functools.lru_cache(maxsize=20000)
+def _nearshore_cached(hs_off, tp, theta0):
     x, h = _PROFILE
     res = transform(x, h, hs_off, tp, theta0)
     i = int(np.argmin(np.abs(res["h_still"] - PADDLE_DEPTH_M)))
+    ang = float(res["theta"][i])
     brk = np.where(res["qb"] > 0.05)[0]
     if brk.size:
         ib = int(brk.max())
-        return float(res["hs"][i]), round(float(res["h_still"][ib]), 1), int(res["x"][ib])
-    return float(res["hs"][i]), None, None
+        return float(res["hs"][i]), round(float(res["h_still"][ib]), 1), int(res["x"][ib]), ang
+    return float(res["hs"][i]), None, None, ang
 
 
 def wind_duration(series, i, max_h=18):
@@ -304,6 +312,81 @@ def wind_duration(series, i, max_h=18):
             break
         speeds.append(u)
     return len(speeds), float(np.mean(speeds))
+
+
+# ---------------------------------------------------------------------------- sea state with memory
+G = 9.81
+DECAY_H = float(os.environ.get("SUP_DECAY_H", 4.0))   # e-folding time of leftover waves on the lake (hours)
+SHIFT_DEG = 45.0                                        # a wind shift beyond this turns the old sea into swell
+
+
+def _ustar(u):
+    return u * math.sqrt(0.001 * (1.1 + 0.035 * u))
+
+
+def sea_limits(u, fetch_m):
+    """Largest Hs/Tp this wind can hold over this fetch (fetch-limited or fully developed), CEM II-2."""
+    if u < 0.5 or fetch_m <= 0:
+        return 0.0, 0.0
+    us = _ustar(u)
+    x = G * fetch_m / us ** 2
+    hs, tp = 4.13e-2 * us ** 2 / G * math.sqrt(x), 0.651 * us / G * x ** (1 / 3)
+    hs_fd, tp_fd = 211.5 * us ** 2 / G, 239.8 * us / G
+    return (hs_fd, tp_fd) if hs >= hs_fd else (hs, tp)
+
+
+def grow(hs_prev, u, fetch_m, dt_h=1.0):
+    """One step of the CEM equivalent-duration method: the sea already present is treated as if the
+    current wind had been blowing long enough to make it, then the wind blows for dt_h more."""
+    hs_max, tp_max = sea_limits(u, fetch_m)
+    if hs_max <= 0:
+        return 0.0, 0.0
+    us = _ustar(u)
+    x_eq = (max(hs_prev, 0.0) * G / (4.13e-2 * us ** 2)) ** 2
+    t_eq = 77.23 * us / G * x_eq ** 0.67 / 3600.0 if x_eq > 0 else 0.0
+    x = min((G * (t_eq + dt_h) * 3600.0 / (77.23 * us)) ** (1 / 0.67), G * fetch_m / us ** 2)
+    hs, tp = 4.13e-2 * us ** 2 / G * math.sqrt(x), 0.651 * us / G * x ** (1 / 3)
+    return (hs_max, tp_max) if hs >= hs_max else (hs, tp)
+
+
+class SeaState:
+    """Wind sea plus leftover swell at one place, stepped hour by hour."""
+
+    def __init__(self):
+        self.ws = {"hs": 0.0, "tp": 0.0, "dir": None, "left": False}
+        self.swell = []
+
+    def step(self, u, wdir, fetch_fn, dt_h=1.0):
+        decay = math.exp(-dt_h / DECAY_H)
+        if u is None or wdir is None:                       # no wind data: everything just decays
+            self.ws["hs"] *= decay
+            for sw in self.swell:
+                sw["hs"] *= decay
+            return
+        ws = self.ws
+        if ws["dir"] is not None and ws["hs"] > 0.03 and abs(angdiff(wdir, ws["dir"])) > SHIFT_DEG:
+            self.swell.append(dict(ws))                      # wind shifted: old sea keeps running as swell
+            ws.update(hs=0.0, tp=0.0)
+        ws["dir"] = wdir
+        hs_max, tp_max = sea_limits(u, fetch_fn(wdir))
+        if ws["hs"] > hs_max * 1.05:                         # wind eased: the extra height dies away slowly
+            ws["hs"] = max(hs_max, ws["hs"] * decay)
+            ws["tp"] = max(ws["tp"], tp_max)
+            ws["left"] = True
+        else:
+            ws["hs"], ws["tp"] = grow(ws["hs"], u, fetch_fn(wdir), dt_h)
+            ws["left"] = False
+        for sw in self.swell:                                # opposing wind knocks swell down about twice as fast
+            opposed = u > 3.0 and abs(angdiff(wdir, sw["dir"])) > 120
+            sw["hs"] *= math.exp(-dt_h / (DECAY_H * (0.5 if opposed else 1.0)))
+        self.swell = sorted([sw for sw in self.swell if sw["hs"] >= 0.03], key=lambda c: -c["hs"])[:3]
+
+    def components(self):
+        out = [dict(self.ws, kind="wind sea")] if self.ws["hs"] >= 0.02 and self.ws["dir"] is not None else []
+        return out + [dict(sw, kind="swell") for sw in self.swell]
+
+    def total_hs(self):
+        return math.sqrt(sum(c["hs"] ** 2 for c in self.components()))
 
 
 def rate(hs, wind, gust, offshore, onshore_angle):
@@ -389,44 +472,65 @@ def build(now=None, hours=48, get=http_get):
     if series[i_now]["wind"] is None:
         raise RuntimeError("No wind observation or forecast for the current hour")
 
-    # calibration against the wave buoy, if one is reporting
+    # calibration against the wave buoy, if one is reporting: hindcast the sea at the buoy the same way
     calib = 1.0
     if wave_now and wave_now["wvht"]:
         bt = fetch_table(wave_now["lat"], wave_now["lon"], 90)
-        n_dur, u_eff = wind_duration(series, i_now)
-        hs_model, _, _ = cem_wave_growth(u_eff, interp_dir(bt, series[i_now]["dir"]) * 1000, max(n_dur, 1))
+        sea = SeaState()
+        for k in range(0, i_now + 1):
+            sea.step(series[k]["wind"], series[k]["dir"], lambda d: interp_dir(bt, d) * 1000)
+        hs_model = sea.total_hs()
         if hs_model > 0.1:
             calib = float(np.clip(wave_now["wvht"] / hs_model, 0.5, 2.0))
+    hist_hours = sum(1 for k in range(0, i_now) if series[k]["wind"] is not None)
+    if hist_hours < 6:
+        sources["errors"].append(f"only {hist_hours} h of wind history: waves already on the lake may be underestimated")
 
     spots_out = []
     for spot in SPOTS:
         table = fetch_table(spot["lat"], spot["lon"], spot["normal"])
+        fetch_m = lambda d, t=table: interp_dir(t, d) * 1000  # noqa: E731
+        sea = SeaState()
         hourly = []
-        for k in range(i_now, len(series)):
-            s = series[k]
-            if s["wind"] is None or s["dir"] is None:
+        for k in range(0, len(series)):
+            s_ = series[k]
+            sea.step(s_["wind"], s_["dir"], fetch_m)
+            if k < i_now or s_["wind"] is None or s_["dir"] is None:
                 continue
-            n_dur, u_eff = wind_duration(series, k)
-            fetch = interp_dir(table, s["dir"])
-            hs_off, tp, _ = cem_wave_growth(u_eff, fetch * 1000, max(n_dur, 1))
             lead = k - i_now
             c_t = 1 + (calib - 1) * math.exp(-lead / 6.0)          # buoy correction fades over ~6 h
-            hs_off *= c_t * shelter_factor(spot, s["dir"])
-            tp *= c_t ** (2 / 3)                                     # growth laws: Tp ~ Hs^(2/3)
-            theta0 = angdiff(s["dir"], spot["normal"])
-            hs_pz, brk_depth, brk_dist = nearshore(hs_off, tp, theta0)
-            chop, chop_tp, _ = cem_wave_growth(s["wind"], 300.0, 1)      # last ~300 m of water
-            hs_paddle = math.hypot(hs_pz, chop)
-            offshore = abs(theta0) > 100
-            level, reasons = rate(hs_paddle, s["wind"], s["gust"], offshore, theta0)
+            comps, pz = [], []
+            for c in sea.components():
+                hs_off = c["hs"] * c_t * shelter_factor(spot, c["dir"])
+                tp = c["tp"] * c_t ** (2 / 3)                        # growth laws: Tp ~ Hs^(2/3)
+                theta0 = angdiff(c["dir"], spot["normal"])
+                hs_pz, brk_depth, brk_dist, ang = nearshore(hs_off, tp, theta0)
+                comps.append({"kind": c["kind"], "hs_off": hs_off, "tp": tp, "dir": c["dir"], "hs": hs_pz,
+                              "ang": ang, "brk": (brk_depth, brk_dist), "left": c["kind"] == "swell" or c.get("left", False)})
+            chop, chop_tp, _ = cem_wave_growth(s_["wind"], 300.0, 1)      # last ~300 m of water
+            hs_paddle = math.sqrt(sum(c["hs"] ** 2 for c in comps) + chop ** 2)
+            hs_off_tot = math.sqrt(sum(c["hs_off"] ** 2 for c in comps))
+            swell_pz = math.sqrt(sum(c["hs"] ** 2 for c in comps if c["kind"] == "swell"))
+            left_pz = math.sqrt(sum(c["hs"] ** 2 for c in comps if c["left"]))
+            dom = max(comps, key=lambda c: c["hs"], default=None)
+            theta_w = angdiff(s_["dir"], spot["normal"])
+            offshore = abs(theta_w) > 100
+            n_dur, _ = wind_duration(series, k)
+            level, reasons = rate(hs_paddle, s_["wind"], s_["gust"], offshore, theta_w)
+            if left_pz > 0.1 and left_pz > 0.6 * hs_paddle:
+                reasons.append(f"leftover waves from earlier wind ({left_pz * 3.281:.1f} ft), dying down slowly")
+            brk = max((c for c in comps if c["brk"][0] is not None), key=lambda c: c["hs"], default=None)
+            use_dom = dom is not None and dom["hs"] > chop
             hourly.append({
-                "t": s["t"].isoformat(), "wind": round(s["wind"], 1), "gust": None if s["gust"] is None else round(s["gust"], 1),
-                "dir": round(s["dir"]), "offshore": offshore, "fetch_km": round(fetch, 1), "duration_h": n_dur,
-                "hs_offshore": round(hs_off, 2), "tp": round(tp if hs_pz > chop else max(tp, chop_tp), 1),
-                "hs_paddle": round(hs_paddle, 2), "chop": round(chop, 2),
-                "break_depth_m": brk_depth, "break_dist_m": brk_dist,
-                "wave_dir": round(s["dir"]), "rating": level, "reasons": reasons,
-                "nws_wave_m": s["wave_nws"], "air_c": s["temp"], "sky": s["sky"], "pop": s["pop"],
+                "t": s_["t"].isoformat(), "wind": round(s_["wind"], 1), "gust": None if s_["gust"] is None else round(s_["gust"], 1),
+                "dir": round(s_["dir"]), "offshore": offshore, "fetch_km": round(interp_dir(table, s_["dir"]), 1), "duration_h": n_dur,
+                "hs_offshore": round(hs_off_tot, 2), "tp": round(dom["tp"] if use_dom else chop_tp, 1),
+                "hs_paddle": round(hs_paddle, 2), "chop": round(chop, 2), "swell": round(swell_pz, 2),
+                "break_depth_m": brk["brk"][0] if brk else None, "break_dist_m": brk["brk"][1] if brk else None,
+                "wave_dir": round(dom["dir"] if use_dom else s_["dir"]), "rating": level, "reasons": reasons,
+                "components": [{"kind": c["kind"], "hs": round(c["hs"], 3), "tp": round(c["tp"], 1), "dir": round(c["dir"]),
+                                "ang": None if c["ang"] is None else round(c["ang"], 1)} for c in comps if c["hs"] >= 0.01],
+                "nws_wave_m": s_["wave_nws"], "air_c": s_["temp"], "sky": s_["sky"], "pop": s_["pop"],
             })
         spots_out.append({k: spot[k] for k in ("id", "name", "lat", "lon", "normal", "zone", "note")} | {"hourly": hourly})
 
@@ -437,7 +541,7 @@ def build(now=None, hours=48, get=http_get):
             marine[zone] = m
 
     return {
-        "version": 1, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds"), "start": now.isoformat(),
+        "version": 2, "decay_h": DECAY_H, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds"), "start": now.isoformat(),
         "sources": sources, "calibration": round(calib, 2),
         "buoy_now": None if not wave_now else {
             "station": wave_now["station"], "t": wave_now["t"].isoformat(), "hs_m": wave_now["wvht"],
