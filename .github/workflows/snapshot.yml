@@ -1,7 +1,7 @@
 name: Radar snapshot
 
 # Builds one live scene from the newest KLOT scans and publishes it to the `snapshot` branch
-# (scene.json + status.json), so it can be loaded into the viewer from anywhere.
+# (scene.json + status.json + sup.json), so it can be loaded into the viewer from anywhere.
 on:
   workflow_dispatch:
 
@@ -24,7 +24,15 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: SUP wave forecast (buoys + NWS)
+        continue-on-error: true
+        env:
+          NWS_USER_AGENT: "chicago-storm-3d (github.com/${{ github.repository }})"
+        run: |
+          mkdir -p "$RUNNER_TEMP/storm"
+          python -m app.sup_waves --out "$RUNNER_TEMP/storm/sup.json"
       - name: Build scene from the newest KLOT scans
+        continue-on-error: true
         env:
           PYART_QUIET: "1"
           MPLBACKEND: Agg
@@ -36,10 +44,11 @@ jobs:
           OUT: ${{ runner.temp }}/storm
         run: |
           mkdir -p "$RUNNER_TEMP/pub" && cd "$RUNNER_TEMP/pub"
-          cp "$OUT/scene.json" "$OUT/status.json" .
+          for f in scene.json status.json sup.json; do [ -f "$OUT/$f" ] && cp "$OUT/$f" .; done
+          ls -la
           git init -q -b snapshot
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scene.json status.json
+          git add -A
           git commit -q -m "KLOT snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" snapshot
