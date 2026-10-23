@@ -45,11 +45,16 @@ COOPS = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
 LEVEL_STATIONS = ["9087044", "9087031"]       # Calumet Harbor IL, Milwaukee WI (fallback)
 # world grid = lakefront map; model grid = North Ave beach to past Diversey Harbor, out to ~10 m depth
 MODEL_BBOX = (41.905, -87.648, 41.945, -87.598)
+MODEL_BBOXES = {"route": MODEL_BBOX, "montrose": (41.950, -87.648, 41.975, -87.600)}
+ISGS_PAGES = ["https://clearinghouse.isgs.illinois.edu/data/coastal/chicago-beaches-chicago-park-district-topobathymetric-models"]
+ISGS_DIR = os.environ.get("ISGS_DIR", "isgs_cache")
 
 
 def s3():
-    from .chicago_radar_nowcast import _s3
-    return _s3()
+    import boto3
+    from botocore import UNSIGNED
+    from botocore.config import Config
+    return boto3.client("s3", config=Config(signature_version=UNSIGNED))
 
 
 def get(url, timeout=120):
@@ -154,6 +159,92 @@ def lidar_mosaic(g, probe):
     return out
 
 
+# ---------------------------------------------------------------------------- ISGS / Chicago Park District beach surveys
+def _links(html, base):
+    import re
+    out = []
+    for h in re.findall(r'href=["\']([^"\']+)["\']', html):
+        out.append(urllib.parse.urljoin(base, h))
+    return out
+
+
+def isgs_rasters(probe):
+    """Download the Park District topobathymetric DEMs (Montrose, Foster, 63rd, Rainbow); return local raster paths."""
+    import re
+    import zipfile
+    os.makedirs(ISGS_DIR, exist_ok=True)
+    seen, files, log_ = set(), [], []
+    queue = list(ISGS_PAGES)
+    while queue and len(seen) < 25:
+        url = queue.pop(0)
+        if url in seen:
+            continue
+        seen.add(url)
+        try:
+            html = get(url, timeout=60).decode("utf-8", "replace")
+        except Exception as e:  # noqa: BLE001
+            log_.append(f"{url}: {e}"); continue
+        for h in _links(html, url):
+            low = h.lower()
+            if re.search(r"\.(zip|tif|tiff)(\?|$)", low) and ("dem" in low or "topobath" in low or "tbm" in low or low.endswith((".tif", ".tiff"))):
+                files.append(h)
+            elif "clearinghouse.isgs.illinois.edu/data/coastal/" in low and any(b in low for b in ("chicago", "montrose", "foster", "beach")) and h not in seen:
+                queue.append(h)
+    files = list(dict.fromkeys(files))
+    probe["isgs"] = {"pages": len(seen), "candidates": files[:40], "log": log_[:10]}
+    paths = []
+    for f in files:
+        name = os.path.join(ISGS_DIR, os.path.basename(urllib.parse.urlparse(f).path))
+        try:
+            if not os.path.exists(name):
+                raw = get(f, timeout=900)
+                if len(raw) > 1.5e9:
+                    continue
+                with open(name, "wb") as fh:
+                    fh.write(raw)
+            if name.lower().endswith(".zip"):
+                with zipfile.ZipFile(name) as z:
+                    for m in z.namelist():
+                        if m.lower().endswith((".tif", ".tiff")) and ("dem" in m.lower() or "topobath" in m.lower() or "tbm" in m.lower() or "elev" in m.lower()):
+                            z.extract(m, ISGS_DIR); paths.append(os.path.join(ISGS_DIR, m))
+            else:
+                paths.append(name)
+        except Exception as e:  # noqa: BLE001
+            log_.append(f"{f}: {e}")
+    probe["isgs"]["rasters"] = [os.path.basename(p) for p in paths]
+    return paths
+
+
+def sample_raster(path, g, out=None):
+    """Sample any georeferenced raster (any CRS) onto grid g with nearest-cell lookup; NaN where no data."""
+    import rasterio
+    from pyproj import Transformer
+    lon, lat = grid_lonlat(g)
+    res = np.full(lon.shape, np.nan, np.float32) if out is None else out
+    with rasterio.open(path) as ds:
+        tr = Transformer.from_crs("EPSG:4326", ds.crs, always_xy=True)
+        ux, uy = tr.transform(lon, lat)
+        b = ds.bounds
+        inside = (ux >= b.left) & (ux <= b.right) & (uy >= b.bottom) & (uy <= b.top)
+        if not inside.any():
+            return res, None
+        # read decimated to roughly the target spacing (units may be feet)
+        unit = (ds.crs.linear_units or "metre").lower()
+        to_m = 0.3048006 if "foot" in unit or "feet" in unit or "us survey" in unit else 1.0
+        step = max(1, int(g["dx"] / (abs(ds.transform.a) * to_m) / 2))
+        h, w = max(1, ds.height // step), max(1, ds.width // step)
+        from rasterio.enums import Resampling
+        z = ds.read(1, out_shape=(h, w), resampling=Resampling.average, masked=True).astype(np.float32).filled(np.nan)
+        tf = ds.transform * ds.transform.scale(ds.width / w, ds.height / h)
+        zunit = to_m                                   # vertical units follow horizontal for State Plane feet products
+        cols = ((ux - tf.c) / tf.a).astype(int); rows = ((uy - tf.f) / tf.e).astype(int)
+        ok = inside & (rows >= 0) & (cols >= 0) & (rows < h) & (cols < w)
+        v = np.full(lon.shape, np.nan, np.float32); v[ok] = z[rows[ok], cols[ok]] * zunit
+        fill = np.isfinite(v)
+        res[fill] = v[fill]
+        return res, {"crs": ds.crs.to_string(), "units": unit, "cells": int(fill.sum())}
+
+
 # ---------------------------------------------------------------------------- NCEI offshore
 def ncei_grid(g, probe):
     """Elevation (m) from the NCEI DEM mosaic on grid g (raw vertical reference; aligned later)."""
@@ -220,10 +311,17 @@ def blend(lidar, ncei, level, lake_mask=None):
         if both.sum() > 200:
             off = float(np.median(lidar[both] - ncei[both]))
         else:
-            # mosaic heights are usually lake-level relative depths or IGLD85 elevations; pick the plausible one
-            off = 0.0 if np.nanmedian(ncei) > 100 else LWD
-        info["ncei_offset_m"] = round(off, 2); info["ncei_overlap_cells"] = int(both.sum())
-        nz = ncei + off
+            off = None
+        info["ncei_overlap_cells"] = int(both.sum())
+        # the NCEI mosaic stores lake bottoms as depths below LWD (negative, small) and land as elevations
+        # above sea level (~176+); without lidar overlap, convert each kind separately
+        if off is None:
+            nz = np.where(ncei < 60, ncei + LWD, ncei); info["ncei_offset_m"] = "lake cells +176.0 (LWD), land as is"
+        else:
+            nz = np.where(ncei < 60, ncei + LWD, ncei)
+            both2 = np.isfinite(lidar) & np.isfinite(nz) & (lidar < level - 3.0)
+            off2 = float(np.median(lidar[both2] - nz[both2])) if both2.sum() > 200 else 0.0
+            nz = nz + off2; info["ncei_offset_m"] = round(off2, 2)
         # feather NCEI into the lidar edge over ~150 m so there is no step at laser extinction
         gap = ~np.isfinite(z) & np.isfinite(nz)
         z[gap] = nz[gap]; src[gap] = 2
@@ -257,6 +355,29 @@ def build_grid(bbox, d, level, probe, tag):
     log.info("%s grid %dx%d at %.0f m", tag, g["nx"], g["ny"], d)
     p = probe.setdefault(tag, {})
     lid = lidar_mosaic(g, p)
+    if ISGS_PATHS:
+        isg = np.full(lid.shape, np.nan, np.float32); used = {}
+        for path in ISGS_PATHS:
+            try:
+                isg, meta = sample_raster(path, g, isg)
+                if meta:
+                    used[os.path.basename(path)] = meta
+            except Exception as e:  # noqa: BLE001
+                used[os.path.basename(path)] = {"error": str(e)[:200]}
+        both = np.isfinite(isg) & np.isfinite(lid)
+        if both.sum() > 100:
+            d = float(np.median(lid[both] - isg[both]))
+            # small offsets are datum differences (NAVD88 vs IGLD85 ~ tens of cm); large ones mean bad units
+            if abs(d) < 3:
+                isg = isg + d
+                lid = np.where(np.isfinite(isg), isg, lid)
+                used["offset_to_lidar_m"] = round(d, 3)
+            else:
+                used["rejected_offset_m"] = round(d, 2)
+        elif np.isfinite(isg).any() and np.nanmedian(isg) > 150:
+            lid = np.where(np.isfinite(isg), isg, lid)
+        used["cells"] = int(np.isfinite(isg).sum())
+        p["isgs"] = used
     nc = ncei_grid(g, p)
     if not np.isfinite(lid).any() and nc is None:
         raise RuntimeError("no bathymetry source reachable")
@@ -266,6 +387,9 @@ def build_grid(bbox, d, level, probe, tag):
     depth = level - z
     p["depth_stats"] = {"max_m": round(float(np.nanmax(depth)), 2), "water_frac": round(float((depth > 0).mean()), 3)}
     return pack(g, z, src)
+
+
+ISGS_PATHS = []
 
 
 def build(model=False):
@@ -278,9 +402,14 @@ def build(model=False):
            "datum": "bed elevation, cm relative to LWD 176.0 m IGLD85", "lwd_m": LWD,
            "level": {"m_igld85": round(level, 3), "station": st, "t": lt},
            "sources": ["2020 USACE NCMP topobathy lidar DEM (NOAA Digital Coast 9970)", "NOAA NCEI DEM mosaic", "NOAA CO-OPS water level"]}
+    global ISGS_PATHS
+    try:
+        ISGS_PATHS = isgs_rasters(probe)
+    except Exception as e:  # noqa: BLE001
+        probe["isgs_error"] = str(e)[:300]
     out["world"] = build_grid(lf.MAP_BBOX, 10.0, level, probe, "world")
     if model:
-        out["model"] = build_grid(MODEL_BBOX, 4.0, level, probe, "model")
+        out["models"] = {k: build_grid(b, 4.0, level, probe, k) for k, b in MODEL_BBOXES.items()}
     out["probe"] = probe
     return out
 
