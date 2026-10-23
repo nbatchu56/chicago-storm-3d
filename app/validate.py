@@ -49,7 +49,10 @@ def rows_for(st, t0, t1, get):
     return _ndbc_rows_for(st, t0, t1, lambda url, timeout=30: get(url, "text/plain", timeout))
 
 
-def run_buoy(BUOY, days, get, cache):
+BUOY_WIND = {"45198", "45174", "45177", "45007"}      # anemometers ~3-4 m above the water
+
+
+def run_buoy(BUOY, days, get, cache, fb=1.0, fc=1.0, series=True):
     now = dt.datetime.now(UTC)
     for st in [BUOY[0]] + WIND:
         if st not in cache:
@@ -69,8 +72,7 @@ def run_buoy(BUOY, days, get, cache):
         for st in WIND:
             if t in winds[st][0] and t in winds[st][1]:
                 u, d = winds[st][0][t], winds[st][1][t]
-                if st == "CHII2":
-                    u *= 1.0                              # crib anemometer is near 10 m already
+                u *= fb if st in BUOY_WIND else fc              # to 10 m wind
                 used[st] = used.get(st, 0) + 1
                 break
         sea.step(u, d, fetch)
@@ -89,13 +91,40 @@ def run_buoy(BUOY, days, get, cache):
              "pred_peak": {"m": float(p.max()), "t": next(r["t"] for r in out if r["pred"] == p.max())},
              "big_waves_hours": int(big.sum()), "big_waves_bias_m": round(float(np.mean(p[big] - o[big])), 3) if big.any() else None,
              "wind_hours_by_station": used}
-    return {"buoy": BUOY[0], "window": {"start": t0.isoformat(), "end": t1.isoformat()}, "stats": stats, "series": out}
+    return {"buoy": BUOY[0], "window": {"start": t0.isoformat(), "end": t1.isoformat()}, "stats": stats, **({"series": out} if series else {})}
 
 
-def run(days=21, get=sw.http_get):
+def tune(days, get, cache):
+    """Grid search: wind height factors (buoy, crib) and leftover-wave decay time, scored on both buoys
+    by RMSE plus the bias on big-wave hours (what matters on a rough day)."""
+    rows = []
+    for fb in (1.0, 1.1, 1.2, 1.3):
+        for fc in (0.9, 1.0, 1.1):
+            for dh in (3.0, 4.0, 6.0, 8.0):
+                sw.DECAY_H = dh
+                res = [run_buoy(b, days, get, cache, fb, fc, series=False) for b in BUOYS]
+                st = [r["stats"] for r in res if "stats" in r]
+                if not st:
+                    continue
+                score = sum(x["rmse_m"] + 0.5 * abs(x["big_waves_bias_m"] or 0) for x in st) / len(st)
+                rows.append({"fb": fb, "fc": fc, "decay_h": dh, "score": round(score, 4),
+                             **{r["buoy"]: {k: r["stats"][k] for k in ("rmse_m", "bias_m", "r", "big_waves_bias_m")} for r in res if "stats" in r}})
+    sw.DECAY_H = 4.0
+    rows.sort(key=lambda r: r["score"])
+    return rows
+
+
+def run(days=21, get=sw.http_get, do_tune=True):
     cache = {}
-    res = [run_buoy(b, days, get, cache) for b in BUOYS]
-    return {"version": 2, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds"), "buoys": res,
+    base = [run_buoy(b, days, get, cache) for b in BUOYS]
+    grid = tune(days, get, cache) if do_tune else []
+    best = grid[0] if grid else None
+    tuned = []
+    if best:
+        sw.DECAY_H = best["decay_h"]
+        tuned = [run_buoy(b, days, get, cache, best["fb"], best["fc"]) for b in BUOYS]
+        sw.DECAY_H = 4.0
+    return {"version": 3, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds"), "buoys": base, "tuned": tuned, "best": best, "grid_top": grid[:8],
             "model": "sup_waves.SeaState (CEM growth, decay %.1f h, swell on shifts) driven by observed wind" % sw.DECAY_H}
 
 
@@ -107,4 +136,7 @@ if __name__ == "__main__":
     d = run(a.days)
     json.dump(d, open(a.out, "w"), separators=(",", ":"))
     for b in d["buoys"]:
-        print(b["buoy"], json.dumps(b.get("stats") or b.get("error")))
+        print("as is", b["buoy"], json.dumps(b.get("stats") or b.get("error")))
+    print("best", json.dumps(d["best"]))
+    for b in d["tuned"]:
+        print("tuned", b["buoy"], json.dumps(b.get("stats")))
