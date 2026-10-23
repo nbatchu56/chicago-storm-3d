@@ -374,7 +374,24 @@ def wind_duration(series, i, max_h=18):
 
 # ---------------------------------------------------------------------------- sea state with memory
 G = 9.81
-DECAY_H = float(os.environ.get("SUP_DECAY_H", 4.0))   # e-folding time of leftover waves on the lake (hours)
+DECAY_H = float(os.environ.get("SUP_DECAY_H", 6.0))   # e-folding time of leftover waves on the lake (hours; 4-12 fit the buoys about equally)
+
+# Wind for wave growth (USACE CEM II-2): adjust to 10 m height and for air-sea stability.
+ANEMOMETER_M = {"45198": 3.2, "45174": 3.2, "45177": 3.2, "45186": 3.2, "45007": 3.8}   # buoy anemometers; land/crib stations ~10 m
+
+
+def u10(u, station=None):
+    """Wind at 10 m from an anemometer at z (1/7 power law, near-neutral)."""
+    if u is None:
+        return None
+    return u * (10.0 / ANEMOMETER_M.get(station, 10.0)) ** (1 / 7)
+
+
+def stability(air_c, water_c):
+    """CEM amplification R_T: cold air over warmer water (unstable) grows waves faster; warm air over cold water slower."""
+    if air_c is None or water_c is None:
+        return 1.0
+    return float(np.clip(1.0 - 0.022 * (air_c - water_c), 0.85, 1.25))
 SHIFT_DEG = 45.0                                        # a wind shift beyond this turns the old sea into swell
 
 
@@ -525,11 +542,16 @@ def build(now=None, hours=48, get=http_get):
     for t in times:
         ser = nws["series"]
         w, d, g = ser["wind"].get(t), ser["dir"].get(t), ser["gust"].get(t)
+        ww, air = w, ser["temp"].get(t)
         if t <= now and wind_obs:
             near = min(wind_obs, key=lambda r: abs((r["t"] - t).total_seconds()))
             if abs((near["t"] - t).total_seconds()) <= 5400:
                 w, d, g = near["wspd"], near["wdir"], near["gst"] if near["gst"] is not None else g
-        series.append({"t": t, "wind": w, "dir": d, "gust": g, "wave_nws": ser["wave"].get(t),
+                ww = u10(w, sources["wind"])
+                air = near["atmp"] if near.get("atmp") is not None else air
+        if ww is not None:
+            ww *= stability(air, wtmp["c"] if wtmp else None)
+        series.append({"t": t, "wind": w, "u_wave": ww, "dir": d, "gust": g, "wave_nws": ser["wave"].get(t),
                        "temp": ser["temp"].get(t), "sky": ser["sky"].get(t), "pop": ser["pop"].get(t)})
     i_now = 18
     if series[i_now]["wind"] is None:
@@ -541,7 +563,7 @@ def build(now=None, hours=48, get=http_get):
         bt = fetch_table(wave_now["lat"], wave_now["lon"], 90)
         sea = SeaState()
         for k in range(0, i_now + 1):
-            sea.step(series[k]["wind"], series[k]["dir"], lambda d: interp_dir(bt, d) * 1000)
+            sea.step(series[k]["u_wave"], series[k]["dir"], lambda d: interp_dir(bt, d) * 1000)
         hs_model = sea.total_hs()
         if hs_model > 0.1:
             calib = float(np.clip(wave_now["wvht"] / hs_model, 0.5, 2.0))
@@ -557,7 +579,7 @@ def build(now=None, hours=48, get=http_get):
         hourly = []
         for k in range(0, len(series)):
             s_ = series[k]
-            sea.step(s_["wind"], s_["dir"], fetch_m)
+            sea.step(s_["u_wave"], s_["dir"], fetch_m)
             if k < i_now or s_["wind"] is None or s_["dir"] is None:
                 continue
             lead = k - i_now
