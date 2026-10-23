@@ -1395,7 +1395,7 @@ window.addEventListener("resize", resize);
 
 // ---------------------------------------------------------------- UI
 const MODE_NOTE = {
-  live: "Right now, minute by minute: the latest KLOT radar scans carried forward by the nowcast, the nearest lakefront wind station, waves for this hour, and satellite lake temperature. The data refreshes every 30 minutes.",
+  live: "Right now, minute by minute: the latest KLOT radar scans carried forward by the nowcast, the nearest lakefront wind station, waves for this hour, and satellite lake temperature. The page refreshes hourly; Refresh now gets new data on demand.",
   forecast: "Radar extrapolated for 2 hours, then the 48-hour forecast: NWS wind and cloud cover, waves from the wind-wave model. Beyond 2 hours clouds come from forecast sky cover; rain isn't placed.",
   history: "Archived KLOT radar, NDBC observations and satellite lake temperature for a past time.",
   exp: "Set the weather yourself. Storm structure follows the same profiles as the demo storms; waves grow from your wind over the real fetch.",
@@ -1577,7 +1577,7 @@ function updateHud(rr, tp) {
   const chip = $("#status"); const lead = RS && RS.lead ? ` +${RS.lead} min` : "";
   if (S.mode === "live" && SRC.live) { const lastObs = SRC.live.frames[SRC.live.nObs - 1].t, age = (Date.now() - lastObs) / 60000, el = $("#age");
     const gen = DATA.generated ? ` · page built ${fmtHM.format(new Date(DATA.generated))}` : "";
-    el.textContent = age > 150 ? `Data is ${age > 2880 ? Math.round(age / 1440) + " days" : Math.round(age / 60) + " h"} old (radar ${fmtHM.format(new Date(lastObs))}); it refreshes every 30 min${gen}` :
+    el.textContent = age > 150 ? `Data is ${age > 2880 ? Math.round(age / 1440) + " days" : Math.round(age / 60) + " h"} old (radar ${fmtHM.format(new Date(lastObs))}); it refreshes hourly, or use Refresh now${gen}` :
       `Radar ${fmtHM.format(new Date(lastObs))} (${Math.round(age)} min ago)${S.t > lastObs + 60e3 ? ", nowcast since" : ""}${gen}`;
     el.className = "age" + (age > 75 ? " stale" : ""); } else $("#age").textContent = "";
   chip.textContent = { live: S.follow ? "Live" : "Live · paused", forecast: `Forecast${S.t > t0 ? " +" + Math.round((S.t - t0) / 3600e3 * 10) / 10 + " h" : ""}`, history: "Historical", exp: "Experimental" }[S.mode];
