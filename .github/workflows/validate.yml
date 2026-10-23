@@ -1,0 +1,30 @@
+name: Validate waves vs buoy
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Days back"
+        default: "30"
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install numpy scipy
+      - name: Hindcast at buoy 45198
+        run: |
+          mkdir -p out && python -m app.validate --days ${{ inputs.days }} --out out/validate.json | tee out/stats.txt
+          echo "::notice title=validation::$(tr '\n' ' ' < out/stats.txt | sed 's/%/%25/g')"
+      - name: Publish to the validate branch
+        run: |
+          cd out && git init -q -b validate
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -q -m "validation $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" validate

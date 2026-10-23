@@ -30,6 +30,7 @@ jobs:
           NWS_USER_AGENT: "chicago-storm-3d (github.com/${{ github.repository }})"
         run: |
           mkdir -p "$RUNNER_TEMP/storm"
+          git fetch -q --depth 1 origin bathy 2>/dev/null && git show origin/bathy:bathy.json > "$RUNNER_TEMP/bathy.json" && export BATHY_PATH="$RUNNER_TEMP/bathy.json" || echo "no bathymetry yet"
           python -m app.sup_waves --out "$RUNNER_TEMP/storm/sup.json"
       - name: Lakefront map, lake temperature and stations
         continue-on-error: true

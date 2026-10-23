@@ -123,6 +123,20 @@ def lakefront_json():
     return FileResponse(lakefront.path, media_type="application/json", headers={"Cache-Control": "no-cache"})
 
 
+MODEL_FILES = {"bathy": "bathy.json", "swan": "swan.json", "funwave": "funwave.json"}
+
+
+@app.get("/api/{name}.json", include_in_schema=False)
+def model_file(name: str):
+    """Static model products (lake bottom, SWAN library, FUNWAVE fields) placed in DATA_DIR by the workflows."""
+    if name not in MODEL_FILES:
+        raise HTTPException(404, "Not found")
+    path = os.path.join(pipeline.cfg.data_dir, MODEL_FILES[name])
+    if not os.path.exists(path):
+        raise HTTPException(404, f"{MODEL_FILES[name]} isn't installed on this server (see README: wave models).")
+    return FileResponse(path, media_type="application/json", headers={"Cache-Control": "public, max-age=3600"})
+
+
 @app.get("/world", include_in_schema=False)
 def world_page():
     return page("world.html")
