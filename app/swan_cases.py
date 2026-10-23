@@ -101,7 +101,7 @@ def obstacles(lakefront, g, depth):
 def swn(g, level_above_lwd, d, tp, hs, obst):
     xl, yl = (g["nx"] - 1) * g["dx"], (g["ny"] - 1) * g["dx"]
     lines = [
-        f"PROJECT 'chicago' '{case_id(d, tp, hs)[:16]}'",
+        f"PROJECT 'chicago' 'c{d:03d}'",
         f"SET LEVEL={level_above_lwd:.3f} NAUTICAL",
         "MODE STATIONARY TWODIMENSIONAL",
         "COORDINATES CARTESIAN",
@@ -121,7 +121,7 @@ def swn(g, level_above_lwd, d, tp, hs, obst):
         "BREAKING CONSTANT 1.0 0.73",
         "FRICTION JONSWAP CONSTANT 0.038",
         "TRIAD",
-        "DIFFRACTION 0.2",
+        "DIFFRACTION 1 0.2",
         "NUMERIC STOPC 0.005 0.01 0.005 99.5 STAT 40",
         "BLOCK 'COMPGRID' NOHEAD 'out.mat' LAY 3 XP YP HSIGN DIR TM01 DEPTH",
         "COMPUTE",

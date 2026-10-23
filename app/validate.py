@@ -98,9 +98,9 @@ def tune(days, get, cache):
     """Grid search: wind height factors (buoy, crib) and leftover-wave decay time, scored on both buoys
     by RMSE plus the bias on big-wave hours (what matters on a rough day)."""
     rows = []
-    for fb in (1.0, 1.1, 1.2, 1.3):
+    for fb in (1.0, 1.1, 1.2, 1.3, 1.4, 1.5):
         for fc in (0.9, 1.0, 1.1):
-            for dh in (3.0, 4.0, 6.0, 8.0):
+            for dh in (4.0, 6.0, 8.0, 12.0, 16.0):
                 sw.DECAY_H = dh
                 res = [run_buoy(b, days, get, cache, fb, fc, series=False) for b in BUOYS]
                 st = [r["stats"] for r in res if "stats" in r]
