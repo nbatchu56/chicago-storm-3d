@@ -48,6 +48,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .live { display: flex; align-items: center; gap: 7px; font: 12px/1.35 var(--font-data); color: var(--muted); }
 .live::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--obs); box-shadow: 0 0 0 3px rgba(92,200,232,.18); }
 .live.stale { color: var(--danger); } .live.stale::before { background: var(--danger); box-shadow: 0 0 0 3px rgba(242,112,90,.2); }
+.live[hidden] { display: none; }
 .live.wait::before { background: var(--accent); box-shadow: 0 0 0 3px rgba(240,180,76,.2); }
 .readouts { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 8px; }
 .readouts dt { color: var(--muted); }

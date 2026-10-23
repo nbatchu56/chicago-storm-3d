@@ -197,6 +197,14 @@ def forecast_volumes(times, vols, lead_min, step_min):
 # ---------------------------------------------------------------------------
 def infer_cloud(dbz, cloud_base_km=1.2):
     echo = np.isfinite(dbz)
+    # ignore shallow, weak echo columns (tops < 2 km and < 15 dBZ): near the radar these are
+    # almost always ground clutter, birds or insects, not cloud
+    colmax = np.nanmax(np.where(echo, dbz, -99.0), axis=0)
+    has = echo.any(axis=0)
+    top_i = np.where(has, NZ - 1 - np.argmax(echo[::-1], axis=0), -1)
+    nonmet = has & (Z_LEVELS[np.clip(top_i, 0, NZ - 1)] < 2.0) & (colmax < 15.0)
+    echo = echo & ~nonmet[None]
+    dbz = np.where(echo, dbz, np.nan)
     d = np.nan_to_num(dbz, nan=-10.0)
     z = Z_LEVELS[:, None, None]
     # 1) cloud wherever there is echo above cloud base, slightly grown
