@@ -1,0 +1,64 @@
+name: History snapshot
+
+# Builds the radar scene, station observations and lake temperature for a past time window and
+# publishes it to the `history` branch as history-<label>.json.
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Start, UTC (e.g. 2026-10-23T12:20)"
+        required: true
+      end:
+        description: "End, UTC (optional, default start + 30 min)"
+        required: false
+      label:
+        description: "File label (letters, digits, dashes)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: history
+  cancel-in-progress: false
+
+jobs:
+  history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Build history
+        env:
+          PYART_QUIET: "1"
+          MPLBACKEND: Agg
+          NWS_USER_AGENT: "chicago-storm-3d (github.com/${{ github.repository }})"
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
+          LABEL: ${{ inputs.label }}
+        run: |
+          case "$LABEL" in *[!A-Za-z0-9-]*|"") echo "bad label"; exit 1;; esac
+          mkdir -p "$RUNNER_TEMP/out"
+          if [ -n "$END" ]; then E="--end $END"; else E=""; fi
+          python -m app.history --start "$START" $E --out "$RUNNER_TEMP/out/history-$LABEL.json"
+      - name: Publish to the history branch
+        env:
+          LABEL: ${{ inputs.label }}
+        run: |
+          cd "$RUNNER_TEMP/out"
+          git init -q -b history
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch -q --depth 1 "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" history 2>/dev/null; then
+            git checkout -q FETCH_HEAD -- . 2>/dev/null || true
+            git reset -q --soft FETCH_HEAD
+          fi
+          git add -A
+          git commit -q -m "history $LABEL"
+          git push -q "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:history
