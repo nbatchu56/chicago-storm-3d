@@ -148,9 +148,14 @@ def collect(run, out_path, step=2):
     hs = hs[:, ::-1]
     frames = [_read(f, n, m)[:, ::-1][::step, ::step] for f in eta_files[-40:]]
     eta = np.stack(frames).astype(np.float16) if frames else np.zeros((0, 1, 1), np.float16)
+    # the oblique internal wavemaker in a 600 m wide domain with absorbing sides under-delivers energy:
+    # scale the run so the open-water band in front of the wavemaker carries the stated offshore height
+    off = hs[60:-60, -130:-80]
+    norm = float(meta["hs"] / max(off.mean(), 1e-3))
+    hs = hs * norm; eta = (eta.astype(np.float32) * norm).astype(np.float16)
     enc = lambda a: base64.b64encode(gzip.compress(a.tobytes(), 6)).decode()
     d = DOMAIN
-    out = {"version": 1, "model": "FUNWAVE-TVD", **{k: meta[k] for k in ("case", "hs", "tp", "dir", "label", "lidar_frac")},
+    out = {"version": 2, "model": "FUNWAVE-TVD", "scaled_by": round(norm, 3), **{k: meta[k] for k in ("case", "hs", "tp", "dir", "label", "lidar_frac")},
            "grid": {"x0": d["x_west"], "y0": d["y_south"], "dx": d["dx"], "nx": m, "ny": n},
            "hsig": enc(np.clip(np.round(hs * 100), 0, 65535).astype("<u2")), "hsig_units": "cm",
            "eta": {"dt": SNAP, "step": step, "nx": int(eta.shape[2]) if eta.size else 0, "ny": int(eta.shape[1]) if eta.size else 0,

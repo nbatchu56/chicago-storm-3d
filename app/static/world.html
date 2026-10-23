@@ -682,7 +682,9 @@ async function setFunwave(list) {
 }
 async function selectFunwave(i) {
   const r = FW.runs[i]; if (!r) { FW.cur = null; U.uFwOn.value = 0; WAVES.key = null; return; }
-  if (!r.tex) { const e = r.eta, raw = await gunzipB64(e.data), h = new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
+  if (!r.tex) { const e = r.eta, raw = await gunzipB64(e.data);
+    let h; if (e.format === "i8") { const q = new Int8Array(raw.buffer, raw.byteOffset, raw.byteLength); h = new Uint16Array(q.length); for (let k = 0; k < q.length; k++) h[k] = THREE.DataUtils.toHalfFloat(q[k] * e.scale); }
+    else h = new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
     r.tex = new THREE.Data3DTexture(h, e.nx, e.ny, e.frames); r.tex.format = THREE.RedFormat; r.tex.type = THREE.HalfFloatType; r.tex.minFilter = r.tex.magFilter = THREE.LinearFilter;
     r.tex.wrapR = THREE.RepeatWrapping; r.tex.needsUpdate = true;
     const hr = await gunzipB64(r.hsig), hu = new Uint16Array(hr.buffer, hr.byteOffset, hr.byteLength / 2), g = r.grid, hh = new Uint16Array(g.nx * g.ny);
@@ -692,8 +694,8 @@ async function selectFunwave(i) {
   const g = r.grid; U.uFw.value = r.tex; U.uFwHs.value = r.hsTex; U.uFwMin.value.set(g.x0 / 1000, g.y0 / 1000); U.uFwSize.value.set((g.nx - 1) * g.dx / 1000, (g.ny - 1) * g.dx / 1000);
   U.uFwOn.value = 1; FW.cur = r; WAVES.key = null;
   // fly to a view over the entrance
-  const cx = (g.x0 + g.nx * g.dx / 2) / 1000, cy = (g.y0 + g.ny * g.dx / 2) / 1000;
-  camTween = { p0: camera.position.clone(), t0: controls.target.clone(), p1: new THREE.Vector3(cx + 0.35, 0.16, -(cy - 0.32)), t1: new THREE.Vector3(cx - 0.05, 0, -cy), s: performance.now(), d: 1500 }; S.view = "fw";
+  // low over the water, east of the entrance, looking in (the entrance is at about -0.30, 5.59 km)
+  camTween = { p0: camera.position.clone(), t0: controls.target.clone(), p1: new THREE.Vector3(-0.02, 0.04, -5.52), t1: new THREE.Vector3(-0.30, 0, -5.59), s: performance.now(), d: 1500 }; S.view = "fw";
 }
 function funwaveHsKm(xk, yk) { const r = FW.cur; if (!r || !r.hsArr) return null; const g = r.grid, i = Math.round((xk * 1000 - g.x0) / g.dx), j = Math.round((yk * 1000 - g.y0) / g.dx);
   if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) return null; return r.hsArr[j * g.nx + i] / 100; }
