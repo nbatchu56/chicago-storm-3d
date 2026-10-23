@@ -661,16 +661,19 @@ function swanUpdate(xk, yk, off) {   // off: {hs, tp, dir} offshore; returns loc
   const key = `${D.name}|${off.hs.toFixed(2)}|${off.tp.toFixed(1)}|${Math.round(off.dir)}`;
   if (key !== SWAN.key) { const b = swanBlend(D, off.hs, off.tp, off.dir); SWAN.key = key;
     if (!b.ok) { U.uSwanOn.value = 0; SWAN.cur = { D, none: true }; return null; }
-    const half = new Uint16Array(D.n); for (let i = 0; i < D.n; i++) half[i] = THREE.DataUtils.toHalfFloat(b.ratio[i]);
+    // SWAN's opaque obstacles can seal small pockets (harbour basins, groyne pockets) completely; where it says
+    // exactly zero on wet water, fall back to the sheltered-water estimate instead (marked -1 = no SWAN value)
+    const half = new Uint16Array(D.n); for (let i = 0; i < D.n; i++) half[i] = THREE.DataUtils.toHalfFloat(b.ratio[i] > 0.005 ? b.ratio[i] : -1);
     if (SWAN.tex) SWAN.tex.dispose(); SWAN.tex = new THREE.DataTexture(half, D.g.nx, D.g.ny, THREE.RedFormat, THREE.HalfFloatType); SWAN.tex.minFilter = SWAN.tex.magFilter = THREE.LinearFilter; SWAN.tex.needsUpdate = true;
     U.uSwan.value = SWAN.tex; U.uSwanMin.value.set(D.x0, D.y0); U.uSwanSize.value.set(D.w, D.h); SWAN.cur = { D, ...b }; }
   if (!SWAN.cur || SWAN.cur.none) return null;
   U.uSwanOn.value = 1; U.uHsOff.value = off.hs;
   const C = SWAN.cur, g = D.g, i = clamp(Math.round((xk - D.x0) / D.w * (g.nx - 1)), 0, g.nx - 1), j = clamp(Math.round((yk - D.y0) / D.h * (g.ny - 1)), 0, g.ny - 1), k = j * g.nx + i;
+  if (!(C.ratio[k] > 0.005)) return null;
   return { ratio: C.ratio[k], dir: (Math.atan2(C.dir[2 * k], C.dir[2 * k + 1]) * 180 / Math.PI + 360) % 360, domain: D.name };
 }
 function swanRatioKm(xk, yk) { const C = SWAN.cur; if (!C || C.none || U.uSwanOn.value < 0.5) return null; const D = C.D, g = D.g;
-  const fx = (xk - D.x0) / D.w * (g.nx - 1), fy = (yk - D.y0) / D.h * (g.ny - 1); if (fx < 0 || fy < 0 || fx > g.nx - 1 || fy > g.ny - 1) return null; return C.ratio[Math.round(fy) * g.nx + Math.round(fx)]; }
+  const fx = (xk - D.x0) / D.w * (g.nx - 1), fy = (yk - D.y0) / D.h * (g.ny - 1); if (fx < 0 || fy < 0 || fx > g.nx - 1 || fy > g.ny - 1) return null; const v = C.ratio[Math.round(fy) * g.nx + Math.round(fx)]; return v > 0.005 ? v : null; }
 
 // ---------------------------------------------------------------- FUNWAVE runs (phase-resolved, harbour entrance)
 const FW = { runs: [], cur: null };
