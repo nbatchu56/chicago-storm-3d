@@ -279,17 +279,75 @@ def shelter_factor(spot, from_deg):
 _PROFILE = dean_profile(depth_offshore=10.0, A=0.10, dx=2.0)
 
 
-def nearshore(hs_off, tp, theta0):
+# ---------------------------------------------------------------------------- real cross-shore profiles
+SPOT_PROFILES = {}          # spot id -> (x, h) from the surveyed lake bottom (app.bathymetry), when loaded
+
+
+def load_spot_profiles(path=None):
+    """Cross-shore profiles along each spot's normal from the bathymetry grid (lidar/NCEI), out to 10 m depth.
+    Spots outside the surveyed grid keep the idealized Dean profile."""
+    import base64, gzip
+    path = path or os.environ.get("BATHY_PATH") or os.path.join(os.environ.get("DATA_DIR", "data"), "bathy.json")
+    if not os.path.exists(path):
+        return {}
+    b = json.load(open(path)); g = b["world"]; level = b["level"]["m_igld85"]
+    z = np.frombuffer(gzip.decompress(base64.b64decode(g["z_cm"])), "<i2").reshape(g["ny"], g["nx"]) / 100.0 + 176.0
+    depth = level - z
+    from .lakefront import xy
+    out = {}
+    for sp in SPOTS:
+        x0, y0 = xy(sp["lat"], sp["lon"]); b_ = math.radians(sp["normal"]); ux, uy = math.sin(b_), math.cos(b_)
+        ds, hs = [], []
+        for k in range(-60, 400):                  # 5 m steps, starting 300 m inland of the mapped point
+            px, py = x0 + ux * k * 5, y0 + uy * k * 5
+            i, j = int(round((px - g["x0"]) / g["dx"])), int(round((py - g["y0"]) / g["dx"]))
+            if not (0 <= i < g["nx"] and 0 <= j < g["ny"]):
+                break
+            ds.append(k * 5); hs.append(float(depth[j, i]))
+        if len(hs) < 40:
+            continue
+        hs = np.array(hs); ds = np.array(ds, float)
+        # the beach: the last dry->wet step within 200 m of the mapped point (skips harbour water inland)
+        k0 = int(np.searchsorted(ds, 200.0))
+        steps = [i for i in range(1, min(k0, len(hs))) if hs[i - 1] <= 0.05 < hs[i]]
+        if not steps:
+            wet = np.where(hs > 0.05)[0]
+            if not wet.size:
+                continue
+            steps = [int(wet[0])]
+        i0 = steps[-1]; hs, ds = hs[i0:], ds[i0:] - ds[i0]
+        # stop at 10 m depth, or where the line runs into land again (a pier or breakwater further out)
+        end = len(hs)
+        for i in range(len(hs)):
+            if hs[i] >= 10.0:
+                end = i + 1; break
+            if hs[i] <= 0.05 and i > 5:
+                end = i; break
+        hs, ds = hs[:end], ds[:end]
+        if len(hs) < 20 or hs[0] > 1.5:            # the line didn't start on a beach (wall, harbour): keep Dean
+            continue
+        if hs[-1] < 10.0:                          # extend to 10 m with the local offshore slope
+            slope = max((hs[-1] - hs[max(0, len(hs) - 40)]) / max(ds[-1] - ds[max(0, len(ds) - 40)], 1.0), 0.004)
+            extra = np.arange(ds[-1] + 5, ds[-1] + 5 + (10.0 - hs[-1]) / slope, 5.0)
+            ds = np.concatenate([ds, extra]); hs = np.concatenate([hs, hs[-1] + (extra - ds[-len(extra) - 1]) * slope])
+        xg = np.arange(0, ds[-1] + 2, 2.0)
+        out[sp["id"]] = (xg, np.maximum(np.interp(xg, ds, hs), 0.05))
+    SPOT_PROFILES.clear(); SPOT_PROFILES.update(out)
+    _nearshore_cached.cache_clear()
+    return out
+
+
+def nearshore(hs_off, tp, theta0, spot_id=None):
     """Offshore waves (10 m depth) -> Hs at the paddle zone, breaker depth and distance from shore,
     and the wave angle to the shore normal at the paddle zone."""
     if hs_off < 0.03 or abs(theta0) >= 85 or tp < 0.8:
         return 0.0, None, None, None
-    return _nearshore_cached(round(hs_off, 2), round(tp, 1), round(theta0 / 2) * 2)
+    return _nearshore_cached(round(hs_off, 2), round(tp, 1), round(theta0 / 2) * 2, spot_id if spot_id in SPOT_PROFILES else None)
 
 
 @functools.lru_cache(maxsize=20000)
-def _nearshore_cached(hs_off, tp, theta0):
-    x, h = _PROFILE
+def _nearshore_cached(hs_off, tp, theta0, spot_id=None):
+    x, h = SPOT_PROFILES[spot_id] if spot_id else _PROFILE
     res = transform(x, h, hs_off, tp, theta0)
     i = int(np.argmin(np.abs(res["h_still"] - PADDLE_DEPTH_M)))
     ang = float(res["theta"][i])
@@ -423,6 +481,11 @@ def rate(hs, wind, gust, offshore, onshore_angle):
 def build(now=None, hours=48, get=http_get):
     now = (now or dt.datetime.now(UTC)).replace(minute=0, second=0, microsecond=0)
     sources = {"buoys": [], "wind": None, "nws_grid": None, "errors": []}
+    try:
+        load_spot_profiles()
+    except Exception as e:  # noqa: BLE001
+        sources["errors"].append(f"bathymetry profiles: {e}")
+    sources["profiles"] = sorted(SPOT_PROFILES) or "idealized (no bathymetry file)"
 
     # observations (recent wind history + current waves + water temperature)
     obs = {st: fetch_ndbc_rows(st, get) for st in dict.fromkeys(WIND_STATIONS + [b[0] for b in WAVE_BUOYS])}
@@ -504,7 +567,7 @@ def build(now=None, hours=48, get=http_get):
                 hs_off = c["hs"] * c_t * shelter_factor(spot, c["dir"])
                 tp = c["tp"] * c_t ** (2 / 3)                        # growth laws: Tp ~ Hs^(2/3)
                 theta0 = angdiff(c["dir"], spot["normal"])
-                hs_pz, brk_depth, brk_dist, ang = nearshore(hs_off, tp, theta0)
+                hs_pz, brk_depth, brk_dist, ang = nearshore(hs_off, tp, theta0, spot["id"])
                 comps.append({"kind": c["kind"], "hs_off": hs_off, "tp": tp, "dir": c["dir"], "hs": hs_pz,
                               "ang": ang, "brk": (brk_depth, brk_dist), "left": c["kind"] == "swell" or c.get("left", False)})
             chop, chop_tp, _ = cem_wave_growth(s_["wind"], 300.0, 1)      # last ~300 m of water
