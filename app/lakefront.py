@@ -53,26 +53,23 @@ def http_get(url, data=None, timeout=90, accept="*/*"):
 
 
 # ---------------------------------------------------------------------------- OpenStreetMap
-def overpass_query(b):
+LAKE_MICHIGAN_REL = 1205149   # OSM multipolygon "Lake Michigan" (natural=water, water=lake)
+
+
+def overpass_queries(b):
+    """Small queries (one big one times out). The lake shore comes from the member ways of the
+    Lake Michigan multipolygon inside the map box; they are used as the shoreline."""
     s, w, n, e = b
     bb = f"{s},{w},{n},{e}"
-    tall = f"{s},{w},{n},{e}"
-    return f"""[out:json][timeout:90];
-(
-  way["natural"="coastline"]({bb});
-  way["natural"="water"]({bb});
-  relation["natural"="water"]({bb});
-  way["leisure"="marina"]({bb});
-  way["harbour"]({bb});
-  way["man_made"~"^(breakwater|pier|groyne)$"]({bb});
-  way["natural"="beach"]({bb});
-  way["leisure"="park"]({bb});
-  way["landuse"="grass"]({bb});
-  way["highway"~"^(motorway|trunk|primary)$"]({bb});
-  way["building"]["building:levels"~"^([2-9][0-9]|[1-9][0-9][0-9])$"]({tall});
-  way["building"]["height"~"^([6-9][0-9]|[1-9][0-9][0-9])"]({tall});
-);
-out geom tags;"""
+    head = "[out:json][timeout:120];"
+    return {
+        "shore": head + f"rel({LAKE_MICHIGAN_REL});way(r)({bb});out geom;",
+        "water": head + f'(way["natural"="water"]({bb});way["leisure"="marina"]({bb});way["harbour"]({bb}););out geom tags;',
+        "structures": head + f'way["man_made"~"^(breakwater|pier|groyne)$"]({bb});out geom tags;',
+        "land": head + f'(way["natural"="beach"]({bb});way["leisure"="park"]({bb});way["highway"~"^(motorway|trunk|primary)$"]({bb}););out geom tags;',
+        "buildings": head + f'(way["building"]["building:levels"~"^([2-9][0-9]|[1-9][0-9][0-9])$"]({bb});'
+                            f'way["building"]["height"~"^([6-9][0-9]|[1-9][0-9][0-9])"]({bb}););out geom tags;',
+    }
 
 
 def classify(tags):
@@ -106,32 +103,36 @@ def building_height(t):
         return None
 
 
-def fetch_osm(bbox=MAP_BBOX, get=http_get):
-    q = overpass_query(bbox).encode()
+def _overpass(q, get, probe=None, tag=""):
+    import time
     last = None
-    for url in OVERPASS:
+    for attempt in range(5):
+        url = OVERPASS[attempt % len(OVERPASS)]
         try:
-            js = json.loads(get(url, data=urllib.parse.urlencode({"data": q}).encode(), timeout=120))
-            break
+            return json.loads(get(url, data=urllib.parse.urlencode({"data": q}).encode(), timeout=150))
         except Exception as e:  # noqa: BLE001
             last = e
-            log.warning("Overpass %s failed: %s", url, e)
-    else:
-        raise RuntimeError(f"Overpass unavailable: {last}")
-    feats = []
-    for el in js.get("elements", []):
-        kind = classify(el.get("tags"))
-        if not kind:
+            log.warning("Overpass %s %s failed (%s), retrying", tag, url, e)
+            time.sleep(6 * (attempt + 1))
+    raise RuntimeError(f"Overpass {tag} unavailable: {last}")
+
+
+def fetch_osm(bbox=MAP_BBOX, get=http_get, probe=None):
+    import time
+    feats, errors = [], []
+    for tag, q in overpass_queries(bbox).items():
+        try:
+            js = _overpass(q, get, probe, tag)
+        except Exception as e:  # noqa: BLE001
+            errors.append(str(e))
             continue
-        rings = []
-        if el["type"] == "way" and "geometry" in el:
-            rings.append(el["geometry"])
-        elif el["type"] == "relation":
-            for m in el.get("members", []):
-                if m.get("role") in ("outer", "") and "geometry" in m:
-                    rings.append(m["geometry"])
-        for g in rings:
-            pts = [xy(p["lat"], p["lon"]) for p in g]
+        for el in js.get("elements", []):
+            if el.get("type") != "way" or "geometry" not in el:
+                continue
+            kind = "coastline" if tag == "shore" else classify(el.get("tags"))
+            if not kind:
+                continue
+            pts = [xy(p["lat"], p["lon"]) for p in el["geometry"]]
             if len(pts) < 2:
                 continue
             f = {"kind": kind, "pts": pts, "closed": pts[0] == pts[-1]}
@@ -141,7 +142,10 @@ def fetch_osm(bbox=MAP_BBOX, get=http_get):
             if kind == "building":
                 f["h"] = building_height(el.get("tags") or {})
             feats.append(f)
-    return feats
+        time.sleep(2)
+    if not any(f["kind"] == "coastline" for f in feats):
+        errors.append("lake shoreline missing from OpenStreetMap response")
+    return feats, errors
 
 
 # ---------------------------------------------------------------------------- water temperature
@@ -301,7 +305,8 @@ def build(get=http_get, probe=None):
     if os.environ.get("OSM_PROBE"):
         probe_osm(probe, get=get)
     try:
-        data["osm"] = fetch_osm(get=get)
+        data["osm"], errs = fetch_osm(get=get, probe=probe)
+        notes += [f"map: {e}" for e in errs]
         data["osm_attribution"] = "© OpenStreetMap contributors (ODbL)"
         probe["osm_counts"] = {k: sum(1 for f in data["osm"] if f["kind"] == k) for k in sorted({f["kind"] for f in data["osm"]})}
     except Exception as e:  # noqa: BLE001
