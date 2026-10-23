@@ -123,11 +123,15 @@ def station_window(start, end, get=lf.http_get):
 def lake_for_date(t, get=lf.http_get):
     """GLSEA temperature (and ice, if any) for the day of t."""
     out, probe = {}, {}
-    day = t.strftime("%Y-%m-%dT12:00:00Z")
     host = lf.ERDDAP_HOSTS[0]
-    for ds, var, key in (("GLSEA_ACSPO_GCS", "sst", "temp"), ("GLSEA_GCS", "sst", "temp"), ("GL_Ice_Concentration_GCS", "ice_concentration", "ice")):
+    # the analysis for a day appears about a day later: try that day, the day before, then the latest
+    days = [t.strftime("%Y-%m-%dT12:00:00Z"), (t - dt.timedelta(days=1)).strftime("%Y-%m-%dT12:00:00Z"), "last"]
+    for ds, var, key, day in [(a, b, c, d) for a, b, c in (("GLSEA_ACSPO_GCS", "sst", "temp"), ("GLSEA_GCS", "sst", "temp"),
+                                                             ("GL_Ice_Concentration_GCS", "ice_concentration", "ice")) for d in days]:
         if key in out:
             continue
+        if day == "last" and (dt.datetime.now(UTC) - t).days > 3:
+            continue                      # "latest" only stands in for very recent times
         s, w, n, e = lf.TEMP_BBOX
         url = f"{host}/griddap/{ds}.json?{var}%5B({day})%5D%5B({s}):1:({n})%5D%5B({w}):1:({e})%5D"
         try:
@@ -143,7 +147,10 @@ def lake_for_date(t, get=lf.http_get):
                 g["v"] = [None if v is None else round(v / 100.0, 3) for v in g["v"]]
             out[key] = g | {"time": rows[0][cols.index("time")], "source": f"{ds} ({host})", "var": var}
         except Exception as e:  # noqa: BLE001
-            probe[f"{ds}"] = str(e)
+            probe[f"{ds} {day}"] = str(e)
+    if "ice" in out and (abs((dt.datetime.fromisoformat(out["ice"]["time"].replace("Z", "+00:00")) - t).days) > 3):
+        out["ice_status"] = f"no ice analysis near that date (nearest {out['ice']['time'][:10]})"
+        del out["ice"]
     return out, probe
 
 
