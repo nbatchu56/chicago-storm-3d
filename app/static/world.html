@@ -1578,7 +1578,7 @@ function updateHud(rr, tp) {
   if (S.mode === "live" && SRC.live) { const lastObs = SRC.live.frames[SRC.live.nObs - 1].t, age = (Date.now() - lastObs) / 60000, el = $("#age");
     const gen = DATA.generated ? ` · page built ${fmtHM.format(new Date(DATA.generated))}` : "";
     el.textContent = age > 150 ? `Data is ${age > 2880 ? Math.round(age / 1440) + " days" : Math.round(age / 60) + " h"} old (radar ${fmtHM.format(new Date(lastObs))}); it refreshes hourly, or use Refresh now${gen}` :
-      `Radar ${fmtHM.format(new Date(lastObs))} (${Math.round(age)} min ago)${S.t > lastObs + 60e3 ? ", nowcast since" : ""}${gen}`;
+      `Radar ${fmtHM.format(new Date(lastObs))} (${Math.round(age)} min ago)${S.t > lastObs + 60e3 ? ", carried forward by the nowcast" : ""}${gen}`;
     el.className = "age" + (age > 75 ? " stale" : ""); } else $("#age").textContent = "";
   chip.textContent = { live: S.follow ? "Live" : "Live · paused", forecast: `Forecast${S.t > t0 ? " +" + Math.round((S.t - t0) / 3600e3 * 10) / 10 + " h" : ""}`, history: "Historical", exp: "Experimental" }[S.mode];
   const sc = $("#scrub"); if (document.activeElement !== sc) sc.value = Math.round((S.t - t0) / Math.max(t1 - t0, 1) * 1000);
@@ -1617,7 +1617,7 @@ const REFRESH = { server: "Claude Code Remote", tool: "fire_trigger", trigger: "
 function refreshUi() {
   let last = 0; try { last = +(localStorage.getItem("lakelocal-refresh") || 0); } catch (e) {}
   const btn = $("#refreshbtn"), wait = last + REFRESH.coolMs - Date.now();
-  if (wait > 0 && (!DATA.generated || new Date(DATA.generated).getTime() < last)) { btn.disabled = true; $("#refreshmsg").textContent = `Refresh started ${fmtHM.format(new Date(last))}: new data usually lands in 10–15 min and the page reloads itself.`; }
+  if (wait > 0 && (!DATA.generated || new Date(DATA.generated).getTime() < last)) { btn.disabled = true; $("#refreshmsg").textContent = `Refresh started ${fmtHM.format(new Date(last))}: new data usually lands in about 5 min and the page reloads itself.`; }
   else { btn.disabled = false; }
 }
 async function initRefresh() {
@@ -1636,7 +1636,7 @@ async function initRefresh() {
         : c === "needs_reauth" ? "Reconnect Claude Code Remote in claude.ai Settings → Connectors, then try again."
         : c === "not_in_manifest" || c === "approval_required" || c === "consent_required" ? "Refreshing needs your OK for this page to use Claude Code Remote; click again and allow it."
         : c === "tool_error" ? `The refresh task said no: ${(err.message || "").slice(0, 160)}`
-        : c === "server_unavailable" || c === "upstream_error" ? "No answer from Claude Code Remote; the refresh may still have started. Check back in 15 minutes before trying again."
+        : c === "server_unavailable" || c === "upstream_error" ? "No answer from Claude Code Remote; the refresh may still have started. Check back in 10 minutes before trying again."
         : "This view can't start a refresh (only the page's owner can). It also refreshes hourly on its own.";
     }
   };
