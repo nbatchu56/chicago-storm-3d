@@ -113,6 +113,9 @@ gcloud scheduler jobs create http storm-refresh --schedule "*/5 * * * *" \
 
 ## Tests
 
+Every push runs GitHub Actions (`.github/workflows/ci.yml`): the offline tests, a Docker build with an endpoint check, and a live smoke test that processes the real newest KLOT scans from AWS.
+
+
 ```bash
 pip install pytest httpx
 PYART_QUIET=1 pytest -q tests

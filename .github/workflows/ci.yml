@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest httpx
+      - name: Run tests
+        env:
+          PYART_QUIET: "1"
+          MPLBACKEND: Agg
+        run: pytest -q tests
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: chicago-storm-3d:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Start container (demo source) and check endpoints
+        run: |
+          docker run -d --name storm -p 8080:8080 -e SOURCE=demo chicago-storm-3d:ci
+          for i in $(seq 1 60); do
+            if curl -fs localhost:8080/readyz > /dev/null; then echo "ready after ${i}s"; break; fi
+            sleep 1
+          done
+          curl -fs localhost:8080/healthz
+          curl -fs localhost:8080/api/status | python3 -c "import json,sys; s=json.load(sys.stdin); print(s); assert s['ready'] and s['frames'] > 0"
+          curl -fs -H 'Accept-Encoding: gzip' -o /dev/null -w 'scene: %{http_code}, %{size_download} bytes\n' localhost:8080/api/scene.json
+          curl -fs localhost:8080/ | grep -q 'Chicago Storm 3D'
+      - name: Container logs
+        if: always()
+        run: docker logs storm 2>&1 | grep -v -i warning | tail -40
+
+      - name: Live radar smoke test (real KLOT scans from AWS)
+        run: |
+          docker run --rm -e SOURCE=aws -e RADAR_SITE=KLOT chicago-storm-3d:ci \
+            python -m app.pipeline --once | tee status.json
+          python3 - <<'EOF'
+          import json, re
+          txt = open("status.json").read()
+          s = json.loads(txt[txt.index("{"):])
+          print(f"newest KLOT scan {s['latest_scan']} ({s.get('scan_age_min')} min old), "
+                f"{s['frames']} frames, precip={s['has_precip']}, wind: {s['wind']['source']}, "
+                f"run took {s['last_run_seconds']} s")
+          assert s["ready"] and s["frames"] >= 6 and s["last_error"] is None
+          EOF
