@@ -79,6 +79,12 @@ main > * { min-width: 0; }
 .overlay { position: absolute; left: 12px; bottom: 12px; display: grid; gap: 4px; font: 12px/1.35 var(--font-data); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); pointer-events: none; }
 .overlay b { font-weight: 500; font-size: 13px; }
 .compass { position: absolute; right: 12px; top: 12px; font: 11px var(--font-data); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); text-align: right; pointer-events: none; }
+.radar-inset { position: absolute; right: 12px; bottom: 12px; width: min(34%, 210px); background: rgba(8, 20, 26, .78); border: 1px solid rgba(255,255,255,.18); border-radius: 6px; padding: 6px; display: grid; gap: 5px; color: #e8f1f5; font: 11px/1.3 var(--font-data); }
+.radar-inset canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 3px; }
+.radar-inset .row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.radar-inset button { font: 600 11px/1 var(--font-ui); padding: 5px 8px; border-radius: 3px; border: 1px solid rgba(255,255,255,.35); background: transparent; color: #fff; cursor: pointer; }
+.radar-inset button[aria-pressed="true"] { background: #fff; color: #0b1a20; }
+.radar-inset .src { color: #b9cbd3; }
 .simfail { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 20px; color: #fff; background: rgba(10,30,40,.65); }
 /* chart */
 .chart { padding: 14px 16px 10px; }
@@ -146,6 +152,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
           <canvas id="sim" aria-label="Animated water surface for the selected spot and hour"></canvas>
           <div class="compass" id="compass"></div>
           <div class="overlay" id="overlay"></div>
+          <div class="radar-inset" id="radar-inset" hidden>
+            <div class="row"><span id="radar-when">Radar</span><button id="radar-play" aria-pressed="false">Play</button></div>
+            <canvas id="radar-map" width="200" height="200" aria-label="KLOT radar reflectivity around Chicago with the selected spot marked"></canvas>
+            <span class="src" id="radar-src"></span>
+          </div>
         </div>
       </section>
 
@@ -180,6 +191,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
 <script id="sup-data" type="application/json"></script>
+<script id="scene-data" type="application/json"></script>
 <script>
 "use strict";
 (() => {
@@ -356,6 +368,148 @@ function renderFoot() {
   if ((src.errors || []).length) $("#foot").innerHTML += `<p>Data notes: ${src.errors.join("; ")}</p>`;
 }
 
+
+// ------------------------------------------------------------ radar sky (KLOT scene from radar_to_scene / the live service)
+const KXk = 111.32 * Math.cos(41.8820 * Math.PI / 180), KYk = 110.57;
+const llkm = (lat, lon) => [(lon + 87.6278) * KXk, (lat - 41.8820) * KYk];
+const SHORE_LL = [[42.58,-87.81],[42.49,-87.80],[42.36,-87.82],[42.25,-87.80],[42.16,-87.76],[42.07,-87.68],[42.02,-87.665],[41.97,-87.640],[41.92,-87.626],
+  [41.900,-87.619],[41.892,-87.598],[41.886,-87.611],[41.870,-87.611],[41.866,-87.608],[41.850,-87.609],[41.810,-87.580],[41.790,-87.572],[41.760,-87.550],
+  [41.735,-87.530],[41.710,-87.521],[41.680,-87.500],[41.660,-87.450],[41.620,-87.380],[41.610,-87.260],[41.630,-87.100],[41.680,-87.000],[41.720,-86.900],[41.770,-86.800],[41.850,-86.650],[41.950,-86.570],[42.100,-86.480],[42.400,-86.280],[42.780,-86.210]];
+const DBZ_STOPS = [[5,"#04e9e7"],[10,"#019ff4"],[15,"#0300f4"],[20,"#02fd02"],[25,"#01c501"],[30,"#008e00"],[35,"#fdf802"],[40,"#e5bc00"],[45,"#fd9500"],[50,"#fd0000"],[55,"#d40000"],[60,"#bc0000"],[65,"#f800fd"],[70,"#9854c6"]];
+const DBZ_RGB = (() => { const out = new Uint8ClampedArray(256 * 3); for (let b = 1; b < 256; b++) { const dbz = b / 3 - 10; let col = null; for (const [lv, c] of DBZ_STOPS) if (dbz >= lv) col = c;
+  if (col) { const n = parseInt(col.slice(1), 16); out.set([n >> 16, (n >> 8) & 255, n & 255], b * 3); } } return out; })();
+const RAD = { frames: [], meta: null, t: null, on: false, playing: false, rainNow: 0, flashT: -1e9, nextFlash: 0 };
+const EMPTY3 = !window.THREE ? null : (() => { const t = new THREE.Data3DTexture(new Uint8Array(8), 2, 2, 2); t.format = THREE.RedFormat; t.needsUpdate = true; return t; })();
+const NOISE3 = !window.THREE ? null : (() => {   // small tileable cellular + value noise for cloud detail
+  const N = 48, data = new Uint8Array(N * N * N), C = 5; let sd = 99; const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  const pts = new Float32Array(C * C * C * 3).map(() => rnd()), lat = new Float32Array(8 * 8 * 8).map(() => rnd()), sm = (t) => t * t * (3 - 2 * t);
+  const vn = (x, y, z) => { const fx = x * 8, fy = y * 8, fz = z * 8, ix = Math.floor(fx), iy = Math.floor(fy), iz = Math.floor(fz), tx = sm(fx - ix), ty = sm(fy - iy), tz = sm(fz - iz); let v = 0;
+    for (let c = 0; c < 8; c++) { const dx = c & 1, dy = (c >> 1) & 1, dz = (c >> 2) & 1; v += (dx ? tx : 1 - tx) * (dy ? ty : 1 - ty) * (dz ? tz : 1 - tz) * lat[(((iz + dz) % 8) * 8 + ((iy + dy) % 8)) * 8 + ((ix + dx) % 8)]; } return v; };
+  let i = 0;
+  for (let z = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++, i++) {
+    const px = (x + .5) / N * C, py = (y + .5) / N * C, pz = (z + .5) / N * C, cx = Math.floor(px), cy = Math.floor(py), cz = Math.floor(pz); let md = 9;
+    for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const gx = cx + dx, gy = cy + dy, gz = cz + dz;
+      const k = ((((gz % C) + C) % C) * C + (((gy % C) + C) % C)) * C + (((gx % C) + C) % C); const ex = gx + pts[k * 3] - px, ey = gy + pts[k * 3 + 1] - py, ez = gz + pts[k * 3 + 2] - pz; md = Math.min(md, ex * ex + ey * ey + ez * ez); }
+    data[i] = Math.max(0, Math.min(255, Math.round((0.6 * (1 - Math.min(Math.sqrt(md), 1)) + 0.4 * vn(x / N, y / N, z / N)) * 290 - 20)));
+  }
+  const t = new THREE.Data3DTexture(data, N, N, N); t.format = THREE.RedFormat; t.minFilter = t.magFilter = THREE.LinearFilter;
+  t.wrapS = t.wrapT = t.wrapR = THREE.RepeatWrapping; t.unpackAlignment = 1; t.needsUpdate = true; return t;
+})();
+async function gunzipB64(b64) {
+  const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const buf = await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+  return new Uint8Array(buf);
+}
+function tex3(data, g) { const t = new THREE.Data3DTexture(data, g.nx, g.ny, g.nz); t.format = THREE.RedFormat; t.minFilter = t.magFilter = THREE.LinearFilter;
+  t.wrapS = t.wrapT = t.wrapR = THREE.ClampToEdgeWrapping; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
+async function loadRadar(obj) {
+  if (!window.THREE || !obj || !obj.meta || !obj.frames || !obj.frames.length || !("DecompressionStream" in window)) return;
+  const g = obj.meta.grid, n = g.nx * g.ny * g.nz, frames = [];
+  for (const f of obj.frames) {
+    const raw = await gunzipB64(f.data); if (raw.length !== 2 * n) return;
+    const cloud = raw.subarray(0, n), dbz = raw.subarray(n), col = new Uint8Array(g.nx * g.ny), cand = [];
+    const kTop = Math.min(g.nz - 1, Math.round(6 / g.dz_km)), k2 = Math.round(2 / g.dz_km), k8 = Math.min(g.nz - 1, Math.round(8 / g.dz_km));
+    for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) { let m = 0, mm = 0;
+      for (let k = 0; k <= k8; k++) { const b = dbz[(k * g.ny + j) * g.nx + i]; if (k <= kTop && b > m) m = b; if (k >= k2 && b > mm) mm = b; }
+      col[j * g.nx + i] = m; if (mm / 3 - 10 >= 50) cand.push([g.x0_km + i * g.dx_km, g.y0_km + j * g.dx_km]); }
+    frames.push({ t: new Date(f.t).getTime(), kind: f.kind, lead: f.lead, cloud, dbz, col, cand, tc: tex3(cloud, g), td: tex3(dbz, g) });
+  }
+  RAD.frames.forEach((f) => { f.tc.dispose(); f.td.dispose(); });
+  RAD.frames = frames; RAD.meta = obj.meta; RAD.nObs = frames.filter((f) => f.kind === "obs").length;
+  if (SIM.ok) { const U = SIM.U; U.uGridMin.value.set(g.x0_km, g.y0_km, 0); U.uGridN.value.set(g.nx, g.ny, g.nz); U.uGridD.value.set(g.dx_km, g.dz_km); U.uCloudBase.value = obj.meta.cloud_base_km || 1.2; }
+  $("#radar-inset").hidden = false;
+  if (D) setSimHour();
+}
+async function loadRadarSource() {
+  try {
+    const txt = document.getElementById("scene-data").textContent.trim();
+    if (txt) return await loadRadar(JSON.parse(txt));
+    if (D && D.live) { const r = await fetch("api/scene.json", { cache: "no-store" }); if (r.ok) await loadRadar(await r.json());
+      setInterval(async () => { try { const r2 = await fetch("api/status", { cache: "no-store" }); const st = await r2.json();
+        if (st.updated && st.updated !== RAD.updated) { const r3 = await fetch("api/scene.json", { cache: "no-store" }); if (r3.ok) { await loadRadar(await r3.json()); RAD.updated = st.updated; } } } catch (e) {} }, 120000); }
+  } catch (e) { /* radar sky is optional; the NWS cloud-cover sky stays */ }
+}
+function radarFrameAt(tMs) {
+  const F = RAD.frames; let i = 0;
+  while (i < F.length - 2 && F[i + 1].t <= tMs) i++;
+  const j = Math.min(i + 1, F.length - 1), f = F.length > 1 ? Math.min(Math.max((tMs - F[i].t) / Math.max(F[j].t - F[i].t, 1), 0), 1) : 0;
+  return { i, j, f, dtm: (F[j].t - F[i].t) / 60000 };
+}
+function radarForHour(t, h) {
+  const U = SIM.U, F = RAD.frames; RAD.playing = false; $("#radar-play").setAttribute("aria-pressed", "false"); $("#radar-play").textContent = "Play";
+  const tm = t.getTime();
+  RAD.on = F.length > 1 && tm >= F[0].t - 20 * 60000 && tm <= F[F.length - 1].t + 20 * 60000;
+  RAD.t = RAD.on ? Math.min(Math.max(tm, F[0].t), F[F.length - 1].t) : (F.length ? F[F.length - 1].t : null);
+  U.uRadarOn.value = RAD.on ? 1 : 0;
+  U.uSynth.value = RAD.on ? 0 : Math.min(1, Math.max(0, ((h.sky ?? 30) - 10) / 90)) * 0.95;   // NWS sky cover beyond radar range
+  applyRadarTime();
+}
+function applyRadarTime() {
+  const U = SIM.U, F = RAD.frames;
+  if (!F.length || RAD.t == null) { drawRadarMap(); return; }
+  const st = radarFrameAt(RAD.t), A = F[st.i], B = F[st.j], mot = (RAD.meta && RAD.meta.motion_km_per_min) || [0, 0];
+  U.uCloudA.value = A.tc; U.uCloudB.value = B.tc; U.uDbzA.value = A.td; U.uDbzB.value = B.td; U.uMix.value = st.f;
+  U.uShiftA.value.set(mot[0] * st.f * st.dtm, mot[1] * st.f * st.dtm); U.uShiftB.value.set(-mot[0] * (1 - st.f) * st.dtm, -mot[1] * (1 - st.f) * st.dtm);
+  // conditions over the board: rain rate and cloud overhead
+  const g = RAD.meta.grid, sk = SIM.spotKm || [0, 0];
+  const at = (fr, arr, k, sx, sy) => { const i = Math.round((sk[0] - sx - g.x0_km) / g.dx_km), j = Math.round((sk[1] - sy - g.y0_km) / g.dx_km);
+    return i < 0 || j < 0 || i >= g.nx || j >= g.ny ? 0 : fr[arr][(k * g.ny + j) * g.nx + i]; };
+  const sA = [U.uShiftA.value.x, U.uShiftA.value.y], sB = [U.uShiftB.value.x, U.uShiftB.value.y];
+  const db = (1 - st.f) * at(A, "dbz", 1, ...sA) + st.f * at(B, "dbz", 1, ...sB);
+  let cl = 0; for (let k = 2; k < g.nz; k += 2) cl = Math.max(cl, (1 - st.f) * at(A, "cloud", k, ...sA) + st.f * at(B, "cloud", k, ...sB));
+  const dbz = db / 3 - 10; RAD.rainNow = RAD.on && db > 1 && dbz > 5 ? Math.pow(Math.pow(10, dbz / 10) / 200, 1 / 1.6) : 0;
+  U.uRain.value = RAD.rainNow; SIM.rain.visible = RAD.rainNow > 0.2;
+  U.uOvercast.value = RAD.on ? Math.max((SIM.baseOvercast ?? 0.3) * 0.3, Math.min(1, cl / 255 * 1.3)) : (SIM.baseOvercast ?? 0.3);
+  RAD.cand = RAD.on ? (st.f < 0.5 ? A : B).cand.filter(([x, y]) => Math.hypot(x - sk[0], y - sk[1]) < 60) : [];
+  drawRadarMap(st);
+}
+function radarTick(now, dt) {
+  if (!RAD.frames.length) return;
+  const F = RAD.frames;
+  if (RAD.playing) { RAD.t += dt * 1000 * 60 * 8; if (RAD.t > F[F.length - 1].t) RAD.t = F[0].t; RAD.on = true; SIM.U.uRadarOn.value = 1; SIM.U.uSynth.value = 0; applyRadarTime(); }
+  // lightning near strong cores (kept under ~0.5 flashes per second; off with reduced motion)
+  let flash = 0;
+  if (!RM && RAD.cand && RAD.cand.length) {
+    if (now > RAD.nextFlash) { const c = RAD.cand[Math.floor(Math.random() * RAD.cand.length)]; SIM.U.uFlashKm.value.set(c[0], c[1], 4 + Math.random() * 3); RAD.flashT = now;
+      RAD.nextFlash = now + (-Math.log(1 - Math.random()) / Math.min(0.5, 0.1 + RAD.cand.length * 0.002)) * 1000 + 300; }
+    const age = (now - RAD.flashT) / 1000; if (age < 0.45) flash = age < 0.06 ? 1 : age < 0.11 ? 0.25 : age < 0.18 ? 0.8 : Math.max(0, 0.5 * (1 - (age - 0.18) / 0.27));
+  }
+  SIM.U.uFlash.value = flash * 0.5;
+}
+$("#radar-play").onclick = () => { if (!RAD.frames.length) return; RAD.playing = !RAD.playing; const b = $("#radar-play"); b.setAttribute("aria-pressed", String(RAD.playing)); b.textContent = RAD.playing ? "Pause" : "Play";
+  if (!RAD.playing) setSimHour(); };
+function drawRadarMap(st) {
+  const cv = $("#radar-map"); if (!cv || !RAD.meta) return; const c = cv.getContext("2d"), W = cv.width, Hc = cv.height, g = RAD.meta.grid;
+  const half = 55, sk = SIM.spotKm || [0, 0], cxk = Math.min(Math.max(sk[0], -10), 10) + 12, cyk = sk[1];   // centre a little offshore of the spot
+  const X = (x) => (x - (cxk - half)) / (2 * half) * W, Y = (y) => Hc - (y - (cyk - half)) / (2 * half) * Hc;
+  c.fillStyle = "#2b3a2c"; c.fillRect(0, 0, W, Hc);
+  // lake
+  c.fillStyle = "#16384a"; c.beginPath(); SHORE_LL.forEach(([la, lo], i) => { const [x, y] = llkm(la, lo); i ? c.lineTo(X(x), Y(y)) : c.moveTo(X(x), Y(y)); });
+  c.lineTo(X(400), Y(400)); c.lineTo(X(-30), Y(400)); c.closePath(); c.fill();
+  if (st && RAD.on) {
+    const fr = RAD.frames[st.f < 0.5 ? st.i : st.j], img = c.createImageData(W, Hc), mot = RAD.meta.motion_km_per_min || [0, 0];
+    const sh = st.f < 0.5 ? [mot[0] * st.f * st.dtm, mot[1] * st.f * st.dtm] : [-mot[0] * (1 - st.f) * st.dtm, -mot[1] * (1 - st.f) * st.dtm];
+    for (let py = 0; py < Hc; py++) for (let px = 0; px < W; px++) {
+      const xk = (cxk - half) + (px + 0.5) / W * 2 * half - sh[0], yk = (cyk - half) + (Hc - py - 0.5) / Hc * 2 * half - sh[1];
+      const i = Math.round((xk - g.x0_km) / g.dx_km), j = Math.round((yk - g.y0_km) / g.dx_km);
+      if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) continue; const b = fr.col[j * g.nx + i]; if (!b || b / 3 - 10 < 8) continue;
+      const o = (py * W + px) * 4; img.data[o] = DBZ_RGB[b * 3]; img.data[o + 1] = DBZ_RGB[b * 3 + 1]; img.data[o + 2] = DBZ_RGB[b * 3 + 2]; img.data[o + 3] = 230; }
+    const tmp = document.createElement("canvas"); tmp.width = W; tmp.height = Hc; tmp.getContext("2d").putImageData(img, 0, 0); c.drawImage(tmp, 0, 0);
+  }
+  c.strokeStyle = "rgba(220,235,240,.7)"; c.lineWidth = 1; c.beginPath(); SHORE_LL.forEach(([la, lo], i) => { const [x, y] = llkm(la, lo); i ? c.lineTo(X(x), Y(y)) : c.moveTo(X(x), Y(y)); }); c.stroke();
+  const r = RAD.meta.radar_xy_km; if (r) { c.fillStyle = "#f0b44c"; c.fillRect(X(r[0]) - 2, Y(r[1]) - 2, 4, 4); }
+  c.fillStyle = "#fff"; c.strokeStyle = "#0b1a20"; c.lineWidth = 2; c.beginPath(); c.arc(X(sk[0]), Y(sk[1]), 4, 0, 7); c.stroke(); c.fill();
+  const F = RAD.frames, last = F[F.length - 1], obsEnd = F[RAD.nObs - 1];
+  if (RAD.on && RAD.t != null) {
+    const lead = Math.round((RAD.t - obsEnd.t) / 60000);
+    $("#radar-when").textContent = `${lead <= 0 ? "Radar" : "Radar forecast +" + lead + " min"} · ${fmtHM.format(new Date(RAD.t))}`;
+    $("#radar-src").textContent = `KLOT · sky built from these echoes`;
+  } else {
+    $("#radar-when").textContent = `Radar ends ${fmtHM.format(new Date(last.t))}`;
+    $("#radar-src").textContent = `Sky from NWS cloud cover for this hour`;
+  }
+}
+
 // ------------------------------------------------------------ wave simulation (three.js, metres)
 const SIM = { ok: false, view: RM ? "beside" : "beside", t: 0 };
 function initSim() {
@@ -369,7 +523,13 @@ function initSim() {
     uDx: { value: new Float32Array(N) }, uDz: { value: new Float32Array(N) }, uP: { value: new Float32Array(N) }, uQ: { value: 0.6 },
     uShoreN: { value: new THREE.Vector2(1, 0) }, uShoreD: { value: 150 }, uHs: { value: 0.3 }, uSun: { value: new THREE.Vector3(0.3, 0.5, 0.2).normalize() },
     uSunCol: { value: new THREE.Vector3(1, 0.95, 0.85) }, uSkyTop: { value: new THREE.Vector3(0.3, 0.5, 0.8) }, uSkyHor: { value: new THREE.Vector3(0.75, 0.82, 0.88) },
-    uWind: { value: 4 }, uWindDir: { value: new THREE.Vector2(1, 0) }, uCam: { value: new THREE.Vector3() }, uOvercast: { value: 0.3 }, uCity: { value: 0 } };
+    uWind: { value: 4 }, uWindDir: { value: new THREE.Vector2(1, 0) }, uCam: { value: new THREE.Vector3() }, uOvercast: { value: 0.3 }, uCity: { value: 0 },
+    // radar sky
+    uCloudA: { value: EMPTY3 }, uCloudB: { value: EMPTY3 }, uDbzA: { value: EMPTY3 }, uDbzB: { value: EMPTY3 }, uNoise3: { value: NOISE3 },
+    uMix: { value: 0 }, uShiftA: { value: new THREE.Vector2() }, uShiftB: { value: new THREE.Vector2() },
+    uGridMin: { value: new THREE.Vector3(-100, -100, 0) }, uGridN: { value: new THREE.Vector3(2, 2, 2) }, uGridD: { value: new THREE.Vector2(2, 0.5) },
+    uCamKm: { value: new THREE.Vector3() }, uRadarOn: { value: 0 }, uSynth: { value: 0 }, uCloudBase: { value: 1.2 },
+    uFlash: { value: 0 }, uFlashKm: { value: new THREE.Vector3() }, uRain: { value: 0 } };
   const WAVE = `
     #define N ${N}
     uniform float uTime, uQ, uA[N], uK[N], uW[N], uDx[N], uDz[N], uP[N], uShoreD, uHs; uniform vec2 uShoreN;
@@ -437,11 +597,66 @@ function initSim() {
   // sky dome
   const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: U,
     vertexShader: `varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `uniform vec3 uSun, uSunCol, uSkyTop, uSkyHor; uniform float uOvercast; varying vec3 vD;
-      void main(){ vec3 d = normalize(vD); float h = clamp(d.y, 0.0, 1.0); vec3 c = mix(uSkyHor, uSkyTop, pow(h, 0.5));
-        c = mix(c, vec3(dot(c, vec3(0.33))) * 0.9, uOvercast * 0.6);
-        float mu = max(dot(d, uSun), 0.0); c += uSunCol * (pow(mu, 900.0) * 6.0 * (1.0 - uOvercast) + pow(mu, 8.0) * 0.15);
-        gl_FragColor = vec4(pow(c, vec3(1.0/2.2)), 1.0); }` });
+    fragmentShader: `precision highp sampler3D;
+      uniform vec3 uSun, uSunCol, uSkyTop, uSkyHor, uCamKm, uFlashKm, uGridMin, uGridN; uniform vec2 uGridD, uShiftA, uShiftB;
+      uniform float uOvercast, uFlash, uRadarOn, uSynth, uCloudBase, uMix, uTime;
+      uniform sampler3D uCloudA, uCloudB, uDbzA, uDbzB, uNoise3;
+      varying vec3 vD;
+      vec3 tc(vec3 pk) { return vec3(((pk.x - uGridMin.x) / uGridD.x + 0.5) / uGridN.x, ((pk.y - uGridMin.y) / uGridD.x + 0.5) / uGridN.y, pk.z / (uGridD.y * uGridN.z)); }
+      float edgeF(vec3 pk) { vec2 lo = pk.xy - uGridMin.xy, hi = uGridMin.xy + (uGridN.xy - 1.0) * uGridD.x - pk.xy; return smoothstep(0.0, 8.0, min(min(lo.x, lo.y), min(hi.x, hi.y))); }
+      float synth(vec3 pk) {   // NWS sky cover when no radar: a broken layer above the cloud base
+        if (uSynth <= 0.0) return 0.0;
+        float hump = smoothstep(uCloudBase, uCloudBase + 0.5, pk.z) * (1.0 - smoothstep(uCloudBase + 1.0, uCloudBase + 2.6, pk.z));
+        if (hump <= 0.0) return 0.0;
+        float cov = texture(uNoise3, pk / vec3(16.0, 16.0, 5.0) + vec3(uTime * 0.0005, 0.0, 0.0)).r;
+        return clamp((cov - (1.0 - uSynth)) * 2.2, 0.0, 1.0) * hump;
+      }
+      float cloudRaw(vec3 pk) { float r = 0.0;
+        if (uRadarOn > 0.5) r = mix(texture(uCloudA, tc(pk - vec3(uShiftA, 0.0))).r, texture(uCloudB, tc(pk - vec3(uShiftB, 0.0))).r, uMix) * edgeF(pk);
+        return max(r, synth(pk)); }
+      float dbzB(vec3 pk) { if (uRadarOn < 0.5) return 0.0;
+        return mix(texture(uDbzA, tc(pk - vec3(uShiftA, 0.0))).r, texture(uDbzB, tc(pk - vec3(uShiftB, 0.0))).r, uMix) * edgeF(pk) * 255.0; }
+      float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566 * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
+      void main() {
+        vec3 d = normalize(vD); float h = clamp(d.y, 0.0, 1.0);
+        vec3 c = mix(uSkyHor, uSkyTop, pow(h, 0.5));
+        c = mix(c, vec3(dot(c, vec3(0.33))) * 0.9, uOvercast * 0.35);
+        float mu = max(dot(d, uSun), 0.0);
+        vec3 sunDisk = uSunCol * (pow(mu, 900.0) * 6.0 + pow(mu, 8.0) * 0.15);
+        vec3 dk = vec3(d.x, -d.z, d.y), sk = vec3(uSun.x, -uSun.z, uSun.y);   // km space: east, north, up (true vertical scale)
+        float T = 1.0; vec3 L = vec3(0.0);
+        if ((uRadarOn > 0.5 || uSynth > 0.0) && dk.z > -0.05) {
+          float phase = mix(hg(dot(d, uSun), 0.6), hg(dot(d, uSun), -0.2), 0.35) * 12.566;
+          float sunUp = smoothstep(-0.03, 0.05, uSun.y);
+          float t = 0.05;
+          for (int i = 0; i < 90; i++) {
+            vec3 pk = uCamKm + dk * t;
+            if (pk.z > 15.0 || T < 0.02 || t > 140.0) break;
+            float dt = 0.12 + t * 0.03;
+            float raw = cloudRaw(pk); float db = dbzB(pk);
+            if (raw < 0.004 && db < 1.0) { t += dt * 1.6; continue; }
+            float n1 = texture(uNoise3, pk / vec3(10.0, 10.0, 3.5) + vec3(uTime * 0.002, 0.0, 0.0)).r;
+            float n2 = texture(uNoise3, pk / vec3(3.0, 3.0, 1.2)).r;
+            float dens = clamp((raw * 1.35 - (1.0 - n1) * 0.55 - (1.0 - n2) * 0.18) * 1.9, 0.0, 1.0);
+            float sc = dens * 6.0;
+            float dbz = db / 3.0 - 10.0; float rr = db > 1.0 ? pow(pow(10.0, dbz / 10.0) / 200.0, 0.625) : 0.0;
+            float sr = rr > 0.05 ? 0.33 * pow(rr, 0.63) * (1.0 - smoothstep(0.0, 1.0, dens) * 0.6) : 0.0;   // rain shafts
+            float sig = sc + sr;
+            if (sig < 1e-4) { t += dt; continue; }
+            float od = cloudRaw(pk + sk * 0.5) * 0.5 + cloudRaw(pk + sk * 1.5) + cloudRaw(pk + sk * 3.5) * 2.0;
+            float Tsun = exp(-od * 3.2) * sunUp;
+            float occ = cloudRaw(pk + vec3(0.0, 0.0, 1.0)) + cloudRaw(pk + vec3(0.0, 0.0, 2.5));
+            vec3 amb = mix(uSkyHor * 0.55, uSkyTop * 0.9 + 0.06, clamp(pk.z / 10.0, 0.0, 1.0)) * exp(-occ * 1.1);
+            vec3 cl = uSunCol * Tsun * phase * mix(0.4, 1.0, 1.0 - exp(-sc * 0.9)) + amb;
+            vec3 rc = (uSunCol * Tsun * 0.15 + amb * 0.8) * vec3(0.8, 0.83, 0.9);
+            vec3 S = (cl * sc + rc * sr) / sig + vec3(0.7, 0.72, 1.0) * uFlash * 14.0 * exp(-length(pk - uFlashKm) / 5.0);
+            float tr = exp(-sig * dt);
+            L += T * S * (1.0 - tr); T *= tr; t += dt;
+          }
+        }
+        c = (c + sunDisk) * T + L + uFlash * vec3(0.25, 0.26, 0.35);
+        gl_FragColor = vec4(pow(max(c, 0.0), vec3(1.0 / 2.2)), 1.0);
+      }` });
   const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(5000, 32, 16), skyMat); scene.add(skyMesh);
   // beach + shoreline buildings (generic)
   const shore = new THREE.Group(); scene.add(shore);
@@ -468,7 +683,22 @@ function initSim() {
   const pad = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.02, 0.6), new THREE.MeshLambertMaterial({ color: 0x2b3a40 })); pad.position.y = 0.14; board.add(pad);
   const paddle = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 2.0, 8), new THREE.MeshLambertMaterial({ color: 0x1d2a30 })); paddle.position.set(0.1, 1.05, 0.35); paddle.rotation.z = 0.25; board.add(paddle);
 
-  SIM.ok = true; Object.assign(SIM, { r, scene, cam, U, board, shore, towers, sunLight, N });
+  const RAIN_N = 5000, rainGeo = new THREE.BufferGeometry();
+  { const pos = new Float32Array(RAIN_N * 6), seed = new Float32Array(RAIN_N * 8); let sd = 3; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < RAIN_N; i++) { const a = [rr(), rr(), rr(), rr()]; for (let k = 0; k < 2; k++) { pos.set([0, k, 0], (i * 2 + k) * 3); seed.set(a, (i * 2 + k) * 4); } }
+    rainGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3)); rainGeo.setAttribute("seed", new THREE.BufferAttribute(seed, 4)); }
+  const rainMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: U,
+    vertexShader: `attribute vec4 seed; uniform float uTime, uRain, uWind; uniform vec3 uCam; uniform vec2 uWindDir; varying float vA;
+      void main(){ vec3 box = vec3(36.0, 24.0, 36.0); float fall = 7.0 * (0.8 + 0.4 * seed.w);
+        vec3 v = vec3(uWindDir.x * uWind * 0.6, -fall, uWindDir.y * uWind * 0.6);
+        vec3 p = seed.xyz * box + v * uTime; p = mod(p - (uCam - box * 0.5), box) + (uCam - box * 0.5); p.y = max(p.y, -0.2);
+        p += normalize(v) * 0.9 * position.y;
+        vA = step(seed.w, clamp(uRain / 20.0, 0.06, 1.0)) * (1.0 - position.y * 0.7);
+        gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0); }`,
+    fragmentShader: `uniform float uRain; uniform vec3 uSkyHor; varying float vA; void main(){ gl_FragColor = vec4(pow(uSkyHor, vec3(1.0/2.2)) * 0.95, vA * clamp(uRain / 6.0, 0.25, 0.7)); }` });
+  const rain = new THREE.LineSegments(rainGeo, rainMat); rain.frustumCulled = false; rain.visible = false; scene.add(rain);
+
+  SIM.ok = true; Object.assign(SIM, { r, scene, cam, U, board, shore, towers, sunLight, N, rain });
   const resize = () => { const w = canvas.clientWidth, h = canvas.clientHeight; r.setSize(w, h, false); cam.aspect = w / Math.max(h, 1); cam.updateProjectionMatrix(); };
   new ResizeObserver(resize).observe(canvas); resize();
   // CPU copy of the wave field for board motion
@@ -498,6 +728,8 @@ function initSim() {
     paddle.visible = SIM.view !== "rider";
     SIM.U.uCam.value.copy(cam.position);
     skyMesh.position.copy(cam.position);
+    const sk = SIM.spotKm || [0, 0]; SIM.U.uCamKm.value.set(sk[0] + cam.position.x / 1000, sk[1] - cam.position.z / 1000, Math.max(cam.position.y, 0.5) / 1000);
+    radarTick(now, dt);
     r.render(scene, cam);
     if (now - (SIM.lastHud || 0) > 500) { SIM.lastHud = now; simHud(); }
   };
@@ -544,7 +776,9 @@ function setSimHour() {
   U.uSkyTop.value.set(0.04 + 0.22 * day, 0.06 + 0.36 * day, 0.12 + 0.6 * day);
   U.uSkyHor.value.set(0.08 + 0.62 * day + 0.25 * golden, 0.09 + 0.66 * day + 0.05 * golden, 0.12 + 0.7 * day - 0.15 * golden);
   U.uSunCol.value.set(1, 0.92 - 0.35 * golden, 0.82 - 0.55 * golden).multiplyScalar(day);
-  U.uOvercast.value = (h.sky ?? 30) / 100; U.uCity.value = 1 - day;
+  U.uOvercast.value = SIM.baseOvercast = (h.sky ?? 30) / 100; U.uCity.value = 1 - day;
+  SIM.spotKm = llkm(s.lat, s.lon);
+  radarForHour(t, h);
   SIM.sunLight.position.copy(U.uSun.value).multiplyScalar(100); SIM.sunLight.intensity = 0.2 + 0.8 * day * (1 - 0.6 * U.uOvercast.value);
   $("#sim-title").textContent = `Wave simulation · ${s.name}`;
   $("#sim-sub").textContent = `${fmtFull.format(t)} · ${ft(h.hs_paddle)} ft, ${h.tp.toFixed(1)} s, from ${compass(h.wave_dir)} · wind ${mph(h.wind)} mph ${compass(h.dir)}`;
@@ -552,7 +786,8 @@ function setSimHour() {
 }
 function simHud() {
   const h = H();
-  $("#overlay").innerHTML = `<b>Board rises and falls ${ft(SIM.range || 0)} ft</b><span>${(SIM.range || 0).toFixed(2)} m over the last 30 s · waves ${h.tp.toFixed(1)} s apart</span><span>${LABEL[h.rating]} · ${h.reasons[0]}</span>`;
+  const rainTxt = RAD.rainNow > 0.2 ? `<span>Rain overhead: ${RAD.rainNow.toFixed(1)} mm/h from radar</span>` : "";
+  $("#overlay").innerHTML = `<b>Board rises and falls ${ft(SIM.range || 0)} ft</b><span>${(SIM.range || 0).toFixed(2)} m over the last 30 s · waves ${h.tp.toFixed(1)} s apart</span>${rainTxt}<span>${LABEL[h.rating]} · ${h.reasons[0]}</span>`;
 }
 document.querySelectorAll("[data-view]").forEach((b) => b.onclick = () => { SIM.view = b.dataset.view; document.querySelectorAll("[data-view]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); });
 
@@ -576,6 +811,7 @@ async function boot() {
       setInterval(async () => { try { const r2 = await fetch("api/sup.json", { cache: "no-store" }); if (r2.ok) { const nd = await r2.json(); if (nd.generated !== D.generated) { D = Object.assign(nd, { live: true }); renderAll(); } } } catch (e) {} }, 300000); }
     if (!D.spots || !D.spots.length || !D.spots[0].hourly.length) throw new Error("The forecast file has no hours in it.");
     renderAll();
+    loadRadarSource();
   } catch (e) {
     $("#verdict").innerHTML = `<div class="empty" style="grid-column:1/-1"><strong>No forecast loaded.</strong><br>${e.message}</div>`;
   }

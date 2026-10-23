@@ -143,7 +143,9 @@ def test_http(env, monkeypatch):
         html = c.get("/").text
         assert "Chicago Storm 3D" in html and "pollLive" in html
         # SUP forecast: page always served; data once built (stubbed here, no network in tests)
-        assert "Chicago SUP Waves" in c.get("/sup").text
+        sup_page = c.get("/sup")
+        assert "Chicago SUP Waves" in sup_page.text and sup_page.text.startswith("<!doctype html>")
+        assert 'charset="utf-8"' in sup_page.text and "utf-8" in sup_page.headers["content-type"]
         assert c.get("/api/sup.json").status_code == 503
         monkeypatch.setattr(main.sup_waves_mod, "build", lambda: {"generated": "2026-10-23T18:00:00+00:00", "sources": {"errors": []}, "spots": [{"id": "x", "hourly": []}]})
         assert main.sup.run_once()

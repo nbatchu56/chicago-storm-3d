@@ -59,10 +59,23 @@ if origins:
     app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET"], allow_headers=["*"])
 
 
+SKELETON = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
+            '<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}'
+            'body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>\n</head>\n<body>\n')
+
+
+def page(name):
+    """Static pages are authored as fragments; wrap them in a proper HTML document."""
+    with open(os.path.join(STATIC, name), encoding="utf-8") as fh:
+        body = fh.read()
+    html = body if body.lstrip().lower().startswith("<!doctype") else SKELETON + body + "\n</body>\n</html>\n"
+    return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(os.path.join(STATIC, "index.html"), media_type="text/html",
-                        headers={"Cache-Control": "no-cache"})
+    return page("index.html")
 
 
 @app.get("/api/scene.json")
@@ -82,7 +95,7 @@ def scene(request: Request):
 
 @app.get("/sup", include_in_schema=False)
 def sup_page():
-    return FileResponse(os.path.join(STATIC, "sup.html"), media_type="text/html", headers={"Cache-Control": "no-cache"})
+    return page("sup.html")
 
 
 @app.get("/api/sup.json")
