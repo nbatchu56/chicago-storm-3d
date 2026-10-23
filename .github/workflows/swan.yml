@@ -72,7 +72,10 @@ jobs:
           echo "SWAN: $EXE"
           export OMP_NUM_THREADS=2
           ls -d runs/*/d* | xargs -P 1 -I{} sh -c "cd {} && timeout 3000 $EXE > swan.log 2>&1; tail -3 PRINT 2>/dev/null | tr '\n' ' '; ls out.mat >/dev/null 2>&1 && echo ' ok {}' || echo ' FAILED {}'"
-          for f in runs/*/d*/PRINT; do grep -i -m3 "error\|severe" $f && echo "^ in $f"; done | head -40 || true
+          first=$(ls -d runs/*/d* | head -1)
+          msg="exe=$EXE | $(ls $first | tr '\n' ' ') | log: $(tail -c 800 $first/swan.log 2>/dev/null) | PRINT: $(grep -i -B2 -A3 'error\|severe\|warning' $first/PRINT 2>/dev/null | head -40) | tail: $(tail -c 1200 $first/PRINT 2>/dev/null)"
+          echo "::warning title=SWAN ${{ matrix.dir }}::$(echo "$msg" | tr '\n' '|' | sed 's/%/%25/g' | cut -c1-3800)"
+          echo "outputs: $(ls runs/*/d*/out.mat 2>/dev/null | wc -l)"
           find runs -name 'bottom.txt' -delete
       - uses: actions/upload-artifact@v4
         with:
