@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install numpy scipy
+      - run: pip install numpy scipy matplotlib
       - name: Hindcast at buoy 45198
         run: |
           mkdir -p out && { python -m app.validate --days ${{ inputs.days }} --out out/validate.json > out/stats.txt 2>&1 || echo "failed" >> out/stats.txt; }
