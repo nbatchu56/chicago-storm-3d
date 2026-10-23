@@ -177,7 +177,7 @@ def test_world_and_history(env, monkeypatch):
     monkeypatch.setattr(main.history_mod, "build", fake_build)
     with TestClient(main.app) as c:
         r = c.get("/world")
-        assert r.status_code == 200 and "Chicago Lake World" in r.text and r.text.startswith("<!doctype html>")
+        assert r.status_code == 200 and "Lakefront Local" in r.text and r.text.startswith("<!doctype html>")
         assert c.get("/api/history", params={"start": "2026-10-23T12:20Z", "end": "2026-10-24T12:20Z"}).status_code == 400   # too long
         assert c.get("/api/history", params={"start": "nonsense"}).status_code == 400
         q = {"start": "2026-10-23T12:20:00Z", "end": "2026-10-23T12:51:00Z"}

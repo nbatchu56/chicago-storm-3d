@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Chicago Lake World</title>
+<title>Lakefront Local</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
@@ -82,6 +82,45 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #msg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: min(460px, calc(100vw - 32px)); padding: 16px 18px; text-align: center; }
 #msg p { margin: 6px 0 0; color: var(--muted); }
 [hidden] { display: none !important; }
+/* navigation */
+#goto { position: absolute; bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); left: calc(var(--gut) + 196px + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + 236px + env(safe-area-inset-right, 0px)); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 6px; width: max-content; max-width: calc(100vw - 2 * var(--gut) - 432px); margin: 0 auto; }
+#goto::-webkit-scrollbar { display: none; }
+#goto button { white-space: nowrap; font-size: 12.5px; padding: 7px 10px; border-color: transparent; background: rgba(255,255,255,.04); }
+#goto button:hover { border-color: var(--line); }
+#goto .lbl0 { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; align-self: center; padding: 0 4px; white-space: nowrap; }
+#nav { position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: auto auto; gap: 6px 8px; align-items: end; }
+#nav > #modeseg { grid-column: 1; grid-row: 1; } #nav > #compass { grid-column: 1; grid-row: 2; justify-self: center; } #nav > .grp { grid-column: 2; grid-row: 1 / span 3; } #nav > .row2 { grid-column: 1; grid-row: 3; justify-self: center; }
+#nav .grp { display: grid; grid-template-columns: repeat(3, 38px); gap: 4px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+#nav .grp button, #nav .solo { width: 38px; height: 38px; padding: 0; display: grid; place-items: center; font-size: 16px; line-height: 1; background: var(--panel-solid); }
+#nav .grp button svg, #nav .solo svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#compass { width: 52px; height: 52px; border-radius: 50%; padding: 0; background: var(--panel-solid); position: relative; }
+#compass svg { width: 100%; height: 100%; }
+#modeseg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--panel-solid); }
+#modeseg button { border: 0; border-radius: 0; padding: 8px 12px; font-size: 12.5px; }
+#minimap { position: absolute; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); padding: 6px; }
+#minimap canvas { display: block; width: 168px; height: 190px; border-radius: 3px; cursor: crosshair; }
+#minimap .cap { font: 10.5px var(--font-ui); color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; }
+#legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; bottom: calc(var(--gut) + 300px + env(safe-area-inset-bottom, 0px)) !important; }
+#help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 32px)); padding: 16px 18px; z-index: 5; }
+#help h2 { margin: 0 0 8px; font-size: 16px; }
+#help table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#help td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+#help td:first-child { color: var(--accent); font-family: var(--font-data); font-size: 12px; white-space: nowrap; width: 38%; }
+#help .x { position: absolute; right: 10px; top: 10px; }
+#hint { position: absolute; left: 50%; bottom: calc(var(--gut) + 140px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); padding: 8px 12px; font-size: 13px; color: var(--fg); white-space: nowrap; transition: opacity .6s; }
+#toggle { display: block !important; position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); top: calc(var(--gut) + env(safe-area-inset-top, 0px)); background: var(--panel); z-index: 2; }
+#controls { top: calc(var(--gut) + 46px + env(safe-area-inset-top, 0px)) !important; max-height: calc(100% - 2 * var(--gut) - 46px - 270px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important; }
+.age { font: 11.5px var(--font-data); color: var(--muted); }
+.age.stale { color: var(--danger); }
+@media (max-width: 1000px) { #goto { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; scrollbar-width: none; } }
+@media (max-width: 760px) {
+  #goto { left: var(--gut); right: var(--gut); bottom: calc(var(--gut) + 74px + 190px); max-width: none; width: auto; }
+  #minimap { display: none; }
+  #nav { bottom: calc(var(--gut) + 74px + env(safe-area-inset-bottom, 0px)); }
+  #controls { top: auto !important; max-height: 55% !important; }
+  #hint { white-space: normal; width: calc(100vw - 32px); text-align: center; }
+}
+
 @media (max-width: 760px) {
   #hud { padding: 10px 12px; gap: 6px; width: calc(100vw - 2 * var(--gut) - 100px); }
   #hud .src { display: none; }
@@ -95,12 +134,50 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
   <canvas id="gl" tabindex="0" aria-label="3D Chicago lakefront world: radar weather, lake waves and your paddle track. Drag to orbit, scroll to zoom, right-drag to pan."></canvas>
   <div id="labels"></div>
   <div id="hud" class="panel" aria-live="polite">
-    <h1>Chicago Lake World</h1>
+    <h1>Lakefront Local</h1>
     <div class="src" id="source">Loading…</div>
-    <div class="timebox"><span id="clock">--:--</span><span class="chip live" id="status">Live</span></div>
+    <div class="timebox"><span id="clock">--:--</span><span class="chip live" id="status">Live</span><button id="nowbtn" hidden style="padding:4px 8px;font-size:11px">Back to now</button></div>
+    <div class="age" id="age"></div>
     <dl class="readouts" id="readouts"></dl>
   </div>
-  <button id="toggle" aria-expanded="false" aria-controls="controls">Controls</button>
+  <button id="toggle" aria-expanded="true" aria-controls="controls">Settings</button>
+  <div id="goto" class="panel" role="group" aria-label="Go to a place"><span class="lbl0">Go to</span></div>
+  <div id="nav" aria-label="Navigation">
+    <div id="modeseg" role="group" aria-label="Movement mode"><button data-move="fly" aria-pressed="true" title="Fly: drag to orbit, scroll to zoom">Fly</button><button data-move="paddle" aria-pressed="false" title="Paddle: first person on the water">Paddle</button></div>
+    <button id="compass" title="Face north" aria-label="Face north"><svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24" fill="none" stroke="#24384a"/><g id="needle"><path d="M26 6 L31 26 L26 23 L21 26 Z" fill="#f2705a"/><path d="M26 46 L21 26 L26 29 L31 26 Z" fill="#8ea2b4"/></g><text id="ndir" x="26" y="30" text-anchor="middle" font-size="0"></text></svg></button>
+    <div class="grp" role="group" aria-label="Camera">
+      <button data-nav="rotl" title="Rotate left (Q)" aria-label="Rotate left"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v4h4"/></svg></button>
+      <button data-nav="fwd" title="Forward (W / ↑)" aria-label="Move forward"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+      <button data-nav="rotr" title="Rotate right (E)" aria-label="Rotate right"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/></svg></button>
+      <button data-nav="left" title="Left (A / ←)" aria-label="Move left"><svg viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
+      <button data-nav="home" title="Reset view (H)" aria-label="Reset view"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button>
+      <button data-nav="right" title="Right (D / →)" aria-label="Move right"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      <button data-nav="in" title="Closer (R / +)" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button data-nav="back" title="Back (S / ↓)" aria-label="Move back"><svg viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></button>
+      <button data-nav="out" title="Farther (F / −)" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+    </div>
+    <div class="row2" style="display:flex;gap:6px"><button class="solo" data-nav="tilt" title="Top-down / back to angled (T)" aria-label="Toggle top-down view"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M5 12h14M12 5v14"/></svg></button><button class="solo" id="helpbtn" title="Controls help (?)" aria-label="Controls help">?</button></div>
+  </div>
+  <div id="minimap" class="panel"><canvas id="mm" width="336" height="380" aria-label="Map: click to go there"></canvas><div class="cap"><span>Click to go there</span><span id="mmscale"></span></div></div>
+  <div id="help" class="panel" hidden role="dialog" aria-label="Controls">
+    <button class="x" id="helpx" aria-label="Close">×</button>
+    <h2>Getting around</h2>
+    <table>
+      <tr><td>Drag</td><td>Look around / orbit (Fly) · turn your head (Paddle)</td></tr>
+      <tr><td>Right-drag · two fingers</td><td>Slide the view</td></tr>
+      <tr><td>Scroll · pinch</td><td>Closer / farther</td></tr>
+      <tr><td>Double-click</td><td>Go to that spot</td></tr>
+      <tr><td>W A S D · arrows</td><td>Move (Paddle: paddle forward/back, turn)</td></tr>
+      <tr><td>Q / E</td><td>Rotate</td></tr>
+      <tr><td>R / F · + / −</td><td>Closer / farther</td></tr>
+      <tr><td>T</td><td>Top-down view and back</td></tr>
+      <tr><td>H</td><td>Reset the view</td></tr>
+      <tr><td>Shift</td><td>Move faster</td></tr>
+      <tr><td>Space</td><td>Play / pause time</td></tr>
+      <tr><td>P</td><td>Switch Fly / Paddle</td></tr>
+    </table>
+  </div>
+  <div id="hint" class="panel" hidden>Drag to look around · scroll to zoom · double-click to go somewhere · press ? for all controls</div>
   <aside id="controls" class="panel" aria-label="World controls">
     <section>
       <h2>Conditions from</h2>
@@ -146,17 +223,14 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
       <h2>View</h2>
       <div class="seg" role="group" aria-label="Overlay"><button data-ov="natural" aria-pressed="true">Natural</button><button data-ov="temp" aria-pressed="false">Water temp</button><button data-ov="radar" aria-pressed="false">Radar</button></div>
       <div class="seg" role="group" aria-label="Lake overlay"><button data-ov="depth" aria-pressed="false">Depth</button><button data-ov="hs" aria-pressed="false">Wave height</button></div>
-      <div class="cams" role="group" aria-label="Camera">
-        <button data-cam="overview">Overview</button><button data-cam="birdseye">Bird's eye route</button>
-        <button data-cam="ride">Ride along</button><button data-cam="rider">On the board</button>
-        <button data-cam="lake">From the lake</button><button data-cam="above">Above the storm</button>
-      </div>
-      <div class="row"><label for="exag">Cloud height scale</label><output id="exag-o">×1</output></div>
-      <input type="range" id="exag" min="1" max="5" step="0.5" value="1">
+      <div class="row" hidden><label for="exag">Cloud height scale</label><output id="exag-o">×1</output></div>
+      <input type="range" id="exag" min="1" max="5" step="0.5" value="1" hidden>
       <label class="check"><input type="checkbox" id="bolts" checked> Lightning flashes</label>
     </section>
     <section>
-      <h2>Your data</h2>
+      <h2>Your paddle (optional)</h2>
+      <label class="check"><input type="checkbox" id="showtrack"> Show my track on the water</label>
+      <div class="cams" role="group" aria-label="Track views"><button data-cam="birdseye">Track from above</button><button data-cam="ride">Replay the paddle</button></div>
       <label class="file"><input type="file" id="gpx-file" accept=".gpx,application/gpx+xml"><span>Load a GPX track</span></label>
       <p class="note" id="track-note"></p>
     </section>
@@ -197,6 +271,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 <script id="swan-data" type="application/json"></script>
 <script id="funwave-data" type="application/json"></script>
 <script id="validate-data" type="application/json"></script>
+<script id="meta-data" type="application/json"></script>
 <script>
 "use strict";
 (() => {
@@ -224,8 +299,20 @@ const SHORE_LL = [[45.0,-87.42],[44.40,-87.50],[43.75,-87.70],[43.04,-87.88],[42
   [41.770,-86.800],[41.850,-86.650],[41.950,-86.570],[42.100,-86.480],[42.400,-86.280],[42.780,-86.210],[43.230,-86.340],[43.950,-86.450],[44.630,-86.240],[45.300,-85.600]];
 const SHORE = SHORE_LL.map(([a, b]) => ll(a, b));
 const LAKE = SHORE.concat([ll(46.2, -85.4), ll(46.2, -87.3)]);
-const PLACES = [["Chicago Loop", 41.8820, -87.6278, 0.3], ["Navy Pier", 41.8917, -87.6043, 0.03], ["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Diversey Harbor", 41.9310, -87.6345, 0.02],
-  ["Montrose Harbor", 41.9620, -87.6345, 0.02], ["O'Hare", 41.9786, -87.9048, 0.12], ["Midway", 41.7868, -87.7522, 0.12], ["Evanston", 42.0451, -87.6877, 0.12], ["Gary", 41.6020, -87.3372, 0.12]];
+const PLACES = [["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Theater on the Lake", 41.9262, -87.6318, 0.02], ["Diversey Harbor", 41.9300, -87.6385, 0.02],
+  ["Lincoln Park", 41.9215, -87.6370, 0.02], ["Fullerton Ave", 41.9255, -87.6400, 0.015], ["Downtown", 41.8820, -87.6278, 0.25], ["Navy Pier", 41.8917, -87.6043, 0.03]];
+// the local world: North Avenue Beach to past Diversey Harbor, with a margin of lake
+const LB = (() => { const [x0, y0] = ll(41.902, -87.660), [x1, y1] = ll(41.945, -87.590); return { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; })();
+// camera presets: target (lat, lon), distance km, view heading (deg, compass), pitch (deg below horizontal)
+const GOTO = [
+  ["Whole route", 41.9235, -87.6290, 2.4, 285, 34],
+  ["North Ave Beach", 41.9140, -87.6225, 0.32, 255, 16],
+  ["Fullerton revetment", 41.9258, -87.6312, 0.28, 300, 14],
+  ["Diversey Harbor mouth", 41.9325, -87.6376, 0.26, 245, 15],
+  ["Inside the harbor", 41.9290, -87.6382, 0.20, 190, 22],
+  ["Out on the lake", 41.9220, -87.6150, 0.05, 265, 4],
+  ["Skyline", 41.9050, -87.6200, 1.3, 215, 7],
+];
 function inLakeCoarse(x, y) { let c = false; for (let i = 0, j = LAKE.length - 1; i < LAKE.length; j = i++) { const [ax, ay] = LAKE[i], [bx, by] = LAKE[j]; if ((ay > y) !== (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax) c = !c; } return c; }
 function rayFetchKm(x, y, fromDeg) { const b = fromDeg * Math.PI / 180, dx = Math.sin(b), dy = Math.cos(b); let d = 0; while (d < 500 && inLakeCoarse(x + dx * d, y + dy * d)) d += d < 5 ? 0.25 : 1; return d; }
 
@@ -252,7 +339,7 @@ function solar(date, lat = 41.88, lon = -87.63) {
 }
 
 // ---------------------------------------------------------------- data
-const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data") };
+const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), generated: (parseJSON("meta-data") || {}).generated };
 { const h = parseJSON("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
 const S = { mode: "live", t: 0, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, view: "overview", histIdx: 0,
   x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, hour: 14, seed: 7 } };
@@ -270,7 +357,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 // far well beyond the sky dome: with a 0.3 m near plane, clip-space z for distant points rounds past 1 and gets clipped
 const camera = new THREE.PerspectiveCamera(50, 1, 0.0003, 50000);
 const controls = new THREE.OrbitControls(camera, canvas);
-controls.enableDamping = true; controls.dampingFactor = 0.08; controls.maxPolarAngle = Math.PI - 0.05; controls.minDistance = 0.004; controls.maxDistance = 900; controls.screenSpacePanning = false;
+controls.enableDamping = true; controls.dampingFactor = 0.1; controls.maxPolarAngle = Math.PI / 2 - 0.004; controls.minDistance = 0.003; controls.maxDistance = 6; controls.screenSpacePanning = false; controls.zoomSpeed = 1.2; controls.rotateSpeed = 0.6;
 const scene = new THREE.Scene();
 const rtScene = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType });
 rtScene.depthTexture = new THREE.DepthTexture(4, 4); rtScene.depthTexture.type = THREE.UnsignedIntType;
@@ -329,7 +416,7 @@ const U = {
   uSwan: { value: blank2D }, uSwanMin: { value: new THREE.Vector2() }, uSwanSize: { value: new THREE.Vector2(1, 1) }, uSwanOn: { value: 0 }, uSwanRef: { value: 1 }, uHsOff: { value: 0 },
   uDepthOn: { value: 0 }, uHsOn: { value: 0 },
   uFw: { value: null }, uFwHs: { value: blank2D }, uFwMin: { value: new THREE.Vector2() }, uFwSize: { value: new THREE.Vector2(1, 1) }, uFwOn: { value: 0 }, uFwT: { value: 0 },
-  uTempOn: { value: 0 }, uTRamp: { value: tRamp }, uWaterC: { value: 15 }, uIceExp: { value: 0 }, uSnowCover: { value: 0 },
+  uTempOn: { value: 0 }, uTRamp: { value: tRamp }, uLocalC: { value: new THREE.Vector2() }, uWaterC: { value: 15 }, uIceExp: { value: 0 }, uSnowCover: { value: 0 },
 };
 
 // ---------------------------------------------------------------- shared GLSL
@@ -405,7 +492,7 @@ U.uShore = { value: SHORE.map(([x, y]) => new THREE.Vector2(x, y)).concat(Array(
 const groundMat = new THREE.ShaderMaterial({ uniforms: U, extensions: { derivatives: true },
   vertexShader: `${LOGV[0]} varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
   fragmentShader: `${LOGF[0]} ${GRID_GLSL} ${SKY_FN} ${TEMP_GLSL}
-uniform vec3 uCamPos, uAmbTop, uAmbBot, uFlashPos, uLand; uniform float uCity, uHaze, uTempOn, uSnowCover, uHasMap;
+uniform vec3 uCamPos, uAmbTop, uAmbBot, uFlashPos, uLand; uniform float uCity, uHaze, uTempOn, uSnowCover, uHasMap; uniform vec2 uLocalC;
 uniform vec2 uLake[${MAXP}]; uniform int uLakeN; uniform vec2 uShore[${MAXP}]; uniform int uShoreN;
 uniform float uHs, uTp, uWhitecap, uWindSpd; uniform vec2 uWaveDir;
 uniform sampler2D uMapCol, uMapMask; uniform vec2 uMapMin, uMapSize;
@@ -421,6 +508,8 @@ float cloudShadow(vec3 pk){ vec3 sd = vec3(uSunDir.x, -uSunDir.z, uSunDir.y); fl
 void main(){
   ${LOGF[1]}
   vec2 p = vec2(vW.x, -vW.z); vec3 V = normalize(uCamPos - vW); float dist = length(uCamPos - vW);
+  // hyperlocal: far outside the lakefront area just fade into haze (no waves, no shoreline search)
+  if (length(p - uLocalC) > 14.0) { gl_FragColor = vec4(skyColor(normalize(vec3(-V.x, 0.02, -V.z)), false) * 0.85, 1.0); return; }
   float shadow = cloudShadow(vec3(p, 0.0)), sunUp = smoothstep(-0.02, 0.06, uSunDir.y);
   vec3 sunL = uSunCol * max(uSunDir.y, 0.0) * shadow * sunUp, amb = mix(uAmbBot, uAmbTop, 0.7) * (1.0 - 0.45 * uOvercast);
   float flash = uFlash * 2.5 * exp(-length(vec3(p, 0.0) - uFlashPos) / 9.0);
@@ -456,8 +545,8 @@ void main(){
     vec3 body = bodyTint * (sunL + amb * 2.0) + vec3(0.0, 0.01, 0.012) * uCity;
     vec3 H = normalize(uSunDir + V); float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
     col = mix(body, refl, uTempOn > 0.5 ? F * 0.45 : F) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice);
-    float hsHere = (kr >= 0.0 ? uHsOff * kr : uHs) * calm, brk = inBathy(p) && cls < 1.5 ? smoothstep(0.5, 0.9, hsHere / max(dep, 0.05)) * step(0.05, hsHere) : 0.0;
-    float wc = vnoise(p * 900.0 + uTime * 0.6) * vnoise(p * 310.0 - uTime * 0.3), cover = max(clamp(uWhitecap, 0.0, 0.3) * calm, brk * 0.6 * (0.5 + 0.5 * vnoise(p * 400.0 - uTime * 0.4)));
+    float hsHere = (kr >= 0.0 ? uHsOff * kr : uHs) * calm, brk = inBathy(p) && cls < 1.5 ? smoothstep(0.6, 1.0, hsHere / max(dep, 0.05)) * step(0.08, hsHere) : 0.0;
+    float wc = vnoise(p * 900.0 + uTime * 0.6) * vnoise(p * 310.0 - uTime * 0.3), cover = max(clamp(uWhitecap, 0.0, 0.3) * calm, brk * 0.3 * (0.4 + 0.6 * vnoise(p * 400.0 - uTime * 0.4)));
     float foam = mix(smoothstep(1.0 - cover * 4.0, 1.0 - cover * 3.0, wc), cover, clamp(foot * 60.0, 0.0, 1.0));
     col = mix(col, (sunL + amb * 2.2) * 0.75, foam * 0.85);
     if (ice > 0.02) { float cr = smoothstep(0.02, 0.0, abs(vnoise(p * 40.0) - 0.5)) * 0.25;
@@ -533,6 +622,9 @@ function buildMap(LF) {
         const i0 = py * WPX + px; if (mask[i0] !== 0) continue;
         const xk = x0 + (px + 0.5) / WPX * (x1 - x0), i = Math.round((xk * 1000 - G.x0) / G.dx); if (i < 0 || i >= G.nx) continue;
         const k = j * G.nx + i, sk = BATHY.src[k];
+        // skip the open lake's beach edge (survey vs map shoreline differ by a few metres): only enclosed water
+        let nearLake = false; for (const [dx, dy] of [[9, 0], [-9, 0], [0, 9], [0, -9], [6, 6], [-6, 6], [6, -6], [-6, -6]]) { const qx = px + dx, qy = py + dy; if (qx >= 0 && qy >= 0 && qx < WPX && qy < HPX && mask[qy * WPX + qx] === 1) { nearLake = true; break; } }
+        if (nearLake) continue;
         if ((sk === 1 && BATHY.dep[k] > 0.4) || (sk === 2 && BATHY.dep[k] > 0.05)) {
           mask[i0] = 2; fixed++;
           if (sk === 2 && BATHY.dep[k] < 2.0) { BATHY.dep[k] = 2.0; BATHY.assumed = (BATHY.assumed || 0) + 1; }   // unsurveyed boat harbour: ~2 m assumed
@@ -1065,7 +1157,7 @@ function stationAt(stations, field, tMs, xk, yk) {
 }
 function range() {   // [t0, t1] ms for the current mode
   const L = SRC.live, now = Date.now();
-  if (S.mode === "live") return L ? [L.frames[0].t, L.frames[L.nObs - 1].t] : [now - 1800e3, now];
+  if (S.mode === "live") return L ? [L.frames[0].t, Math.max(L.frames[L.frames.length - 1].t, now)] : [now - 1800e3, now];
   if (S.mode === "forecast") { const t0 = L ? L.frames[L.nObs - 1].t : now; return [t0, t0 + 48 * 3600e3]; }
   if (S.mode === "history") { const H = SRC.hist[S.histIdx]; if (!H) return [now - 3600e3, now]; const w = H.raw.window; return [new Date(w.start).getTime() - 10 * 60e3, new Date(w.end).getTime() + 5 * 60e3]; }
   const base = new Date(); base.setHours(0, 0, 0, 0); const t0 = base.getTime() + S.x.hour * 3600e3; return [t0, t0 + 120 * 60e3];
@@ -1074,7 +1166,8 @@ function radarState(tMs) {   // which frames to show, blend and motion shift
   if (S.mode === "exp") { if (S.x.type === "clear" || S.x.type === "cumulus") return null; const [t0] = range(), tm = (tMs - t0) / 60000, i = Math.floor(tm / 5) * 5, f = (tm - i) / 5;
     const p = { ...S.x }; delete p.hour; return { A: synthFrame({ ...p }, i), B: synthFrame({ ...p }, i + 5), f, shiftA: [0, 0], shiftB: [0, 0], grid: XG, label: "Experimental storm" }; }
   const src = S.mode === "history" ? (SRC.hist[S.histIdx] && SRC.hist[S.histIdx].scene) : SRC.live; if (!src) return null;
-  const F = S.mode === "forecast" ? src.frames : S.mode === "live" ? src.frames.slice(0, src.nObs) : src.frames.slice(0, Math.max(src.nObs, 1));
+  // live: the latest scans, then the radar nowcast carries the picture forward to the present minute
+  const F = S.mode === "forecast" || S.mode === "live" ? src.frames : src.frames.slice(0, Math.max(src.nObs, 1));
   if (!F.length) return null; if (tMs > F[F.length - 1].t + 15 * 60e3 || tMs < F[0].t - 30 * 60e3) return null;
   let i = 0; while (i < F.length - 2 && F[i + 1].t <= tMs) i++; const j = Math.min(i + 1, F.length - 1), f = j > i ? clamp((tMs - F[i].t) / (F[j].t - F[i].t), 0, 1) : 0;
   const mot = src.meta.motion_km_per_min || [0, 0], dtm = (F[j].t - F[i].t) / 60000;
@@ -1137,33 +1230,156 @@ function setLight(date) {
   return sun;
 }
 
-// ---------------------------------------------------------------- cameras
-const CAMS = {
-  overview: { p: [60, 38, 22], t: [-20, 2, -4], exag: 3 },
-  above: { p: [-2, 38, 34], t: [-42, 10, 0], exag: 2 },
-  lake: { p: [4.5, 0.035, 0.8], t: [-30, 2.2, 0], exag: 1 },
-  birdseye: null, ride: null, rider: null,
-};
+// ---------------------------------------------------------------- cameras + navigation
 let camTween = null;
+const NAV = { move: "fly", keys: new Set(), pad: { x: 0, y: 0, yaw: 270, pitch: -4 }, topSaved: null, lastInteract: 0 };
 function routeBounds() { const P = DATA.track ? DATA.track.pts : [[0, 232, 3737], [0, -411, 5100]]; const xs = P.map((p) => p[1] / 1000), ys = P.map((p) => p[2] / 1000);
   return { cx: (Math.min(...xs) + Math.max(...xs)) / 2, cy: (Math.min(...ys) + Math.max(...ys)) / 2, span: Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1.2) }; }
-function goCam(name, instant) {
-  S.view = name; let p, t, exag = 1;
-  if (name === "birdseye") { const b = routeBounds(); p = [b.cx + 0.25, b.span * 1.5, -b.cy + 0.001]; t = [b.cx + 0.25, 0, -b.cy]; }
-  else if (name === "ride" || name === "rider") { setExag(1); camTween = null; return; }
-  else { const c = CAMS[name]; p = c.p; t = c.t; exag = c.exag; }
-  setExag(exag);
-  const p1 = new THREE.Vector3(...p), t1 = new THREE.Vector3(...t);
-  if (instant || RM) { camera.position.copy(p1); controls.target.copy(t1); controls.update(); camTween = null; return; }
-  camTween = { p0: camera.position.clone(), t0: controls.target.clone(), p1, t1, s: performance.now(), d: 1500 };
+// camera position for a target (km, x east / y north), distance (km), view heading (deg) and pitch (deg below horizontal)
+function camFor(tx, ty, dist, hdg, pitch) { const h = hdg * Math.PI / 180, p = pitch * Math.PI / 180;
+  return { p: new THREE.Vector3(tx - Math.sin(h) * Math.cos(p) * dist, Math.max(0.002, Math.sin(p) * dist), -(ty - Math.cos(h) * Math.cos(p) * dist)), t: new THREE.Vector3(tx, 0, -ty) }; }
+function viewState() { const t = controls.target, c = camera.position, dx = t.x - c.x, dn = -(t.z - c.z), dy = c.y - t.y, horiz = Math.hypot(dx, dn);
+  return { hdg: (Math.atan2(dx, dn) * 180 / Math.PI + 360) % 360, pitch: Math.atan2(dy, horiz) * 180 / Math.PI, dist: Math.hypot(horiz, dy), tx: t.x, ty: -t.z }; }
+function flyTo(tx, ty, dist, hdg, pitch, instant) {
+  if (NAV.move === "paddle") setMove("fly");
+  const v = camFor(tx, ty, dist, hdg, pitch);
+  if (instant || RM) { camera.position.copy(v.p); controls.target.copy(v.t); controls.update(); camTween = null; return; }
+  camTween = { p0: camera.position.clone(), t0: controls.target.clone(), p1: v.p, t1: v.t, s: performance.now(), d: 1400 };
+}
+function gotoPreset(i, instant) { const g = GOTO[i], [x, y] = ll(g[1], g[2]); S.view = "free"; flyTo(x, y, g[3], g[4], g[5], instant); }
+function goCam(name, instant) {     // track views (optional)
+  S.view = name; setExag(1);
+  if (name === "birdseye") { S.showTrack = true; $("#showtrack").checked = true; const b = routeBounds(); flyTo(b.cx + 0.25, b.cy, b.span * 1.5, 0, 88, instant); S.view = "birdseye"; return; }
+  if (name === "ride") { S.showTrack = true; $("#showtrack").checked = true; if (S.mode !== "history" && SRC.hist.length) setMode("history"); if (NAV.move === "paddle") setMove("fly"); camTween = null; S.view = "ride"; }
 }
 function setExag(v) { S.exag = v; U.uExag.value = v; $("#exag").value = v; $("#exag-o").textContent = `×${v}`; }
+function setMove(m) {
+  if (m === NAV.move) return;
+  NAV.move = m; document.querySelectorAll("[data-move]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.move === m)));
+  if (S.view === "ride") S.view = "free";
+  if (m === "paddle") {
+    const v = viewState(); let x = v.tx, y = v.ty;
+    if (maskAt(x, y) === 0) { const c = nearestShore(x, y); x += c.nx * (c.d + 0.06); y += c.ny * (c.d + 0.06); }
+    if (maskAt(x, y) === 0) { [x, y] = ll(41.9175, -87.6205); }
+    Object.assign(NAV.pad, { x, y, yaw: v.hdg, pitch: -4 }); controls.enabled = false; camTween = null;
+  } else {
+    const P = NAV.pad, h = P.yaw * Math.PI / 180; controls.enabled = true;
+    const v = camFor(P.x + Math.sin(h) * 0.06, P.y + Math.cos(h) * 0.06, 0.12, P.yaw, 18); camera.position.copy(v.p); controls.target.copy(v.t); controls.update();
+  }
+  hideHint();
+}
+document.querySelectorAll("[data-move]").forEach((b) => b.onclick = () => setMove(b.dataset.move));
+// --- input: keyboard, on-screen buttons, double-click, paddle look
+const KEYMAP = { KeyW: "fwd", ArrowUp: "fwd", KeyS: "back", ArrowDown: "back", KeyA: "left", ArrowLeft: "left", KeyD: "right", ArrowRight: "right", KeyQ: "rotl", KeyE: "rotr", KeyR: "in", Equal: "in", NumpadAdd: "in", KeyF: "out", Minus: "out", NumpadSubtract: "out" };
+const typing = (e) => /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || "") && e.target.type !== "range" && e.target.type !== "checkbox";
+window.addEventListener("keydown", (e) => {
+  if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+  const a = KEYMAP[e.code];
+  if (a) { NAV.keys.add(a); NAV.shift = e.shiftKey; e.preventDefault(); hideHint(); return; }
+  if (e.code === "KeyH") { gotoPreset(0); } else if (e.code === "KeyT") { toggleTop(); } else if (e.code === "KeyP") { setMove(NAV.move === "fly" ? "paddle" : "fly"); }
+  else if (e.code === "Space" && e.target === document.body || e.code === "Space" && e.target === canvas) { setPlaying(!S.playing); e.preventDefault(); }
+  else if (e.key === "?" || e.code === "Slash") { toggleHelp(); } else if (e.code === "Escape") { $("#help").hidden = true; }
+});
+window.addEventListener("keyup", (e) => { const a = KEYMAP[e.code]; if (a) NAV.keys.delete(a); NAV.shift = e.shiftKey; });
+window.addEventListener("blur", () => NAV.keys.clear());
+document.querySelectorAll("[data-nav]").forEach((b) => {
+  const a = b.dataset.nav;
+  if (a === "home") { b.onclick = () => gotoPreset(0); return; }
+  if (a === "tilt") { b.onclick = () => toggleTop(); return; }
+  const on = (e) => { e.preventDefault(); NAV.keys.add(a); hideHint(); b.setPointerCapture && e.pointerId != null && b.setPointerCapture(e.pointerId); };
+  const off = () => NAV.keys.delete(a);
+  b.addEventListener("pointerdown", on); b.addEventListener("pointerup", off); b.addEventListener("pointercancel", off); b.addEventListener("pointerleave", off);
+  b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); NAV.keys.add(a); setTimeout(off, 250); } });
+});
+function toggleTop() {
+  if (NAV.move === "paddle") setMove("fly");
+  const v = viewState();
+  if (v.pitch < 80) { NAV.topSaved = v; flyTo(v.tx, v.ty, Math.max(v.dist, 0.4), 0, 89); }
+  else { const s0 = NAV.topSaved || { hdg: 285, dist: v.dist }; flyTo(v.tx, v.ty, Math.min(v.dist, 2.5), s0.hdg, 32); }
+}
+$("#compass").onclick = () => { if (NAV.move === "paddle") { NAV.pad.yaw = 0; return; } const v = viewState(); flyTo(v.tx, v.ty, v.dist, 0, v.pitch); };
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitP = new THREE.Vector3();
+function groundAt(ev) { const r = canvas.getBoundingClientRect(); ndc.set((ev.clientX - r.left) / r.width * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(ndc, camera);
+  return ray.ray.intersectPlane(waterPlane, hitP) ? { x: hitP.x, y: -hitP.z } : null; }
+canvas.addEventListener("dblclick", (ev) => { const g = groundAt(ev); if (!g) return; hideHint();
+  if (NAV.move === "paddle") { NAV.pad.yaw = (Math.atan2(g.x - NAV.pad.x, g.y - NAV.pad.y) * 180 / Math.PI + 360) % 360; return; }
+  const v = viewState(); S.view = "free"; flyTo(g.x, g.y, clamp(v.dist * 0.6, 0.05, 1.5), v.hdg, Math.max(v.pitch, 12)); });
+let drag = null;
+canvas.addEventListener("pointerdown", (ev) => { NAV.lastInteract = performance.now(); hideHint(); if (NAV.move !== "paddle") { if (camTween) camTween = null; if (S.view === "ride") S.view = "free"; return; } drag = { x: ev.clientX, y: ev.clientY }; canvas.setPointerCapture(ev.pointerId); });
+canvas.addEventListener("pointermove", (ev) => { if (!drag || NAV.move !== "paddle") return; const P = NAV.pad;
+  P.yaw = (P.yaw - (ev.clientX - drag.x) * 0.25 + 360) % 360; P.pitch = clamp(P.pitch + (ev.clientY - drag.y) * 0.2, -60, 45); drag = { x: ev.clientX, y: ev.clientY }; });
+canvas.addEventListener("pointerup", () => { drag = null; });
+canvas.addEventListener("wheel", (ev) => { if (NAV.move === "paddle") { ev.preventDefault(); camera.fov = clamp(camera.fov + ev.deltaY * 0.03, 20, 75); camera.updateProjectionMatrix(); } }, { passive: false });
+// per-frame movement from held keys / buttons
+function navStep(dt) {
+  const K = NAV.keys, fast = NAV.shift ? 3 : 1;
+  if (NAV.move === "paddle") {
+    const P = NAV.pad, sp = 0.0025 * fast;    // km/s: ~2.5 m/s paddling, 7.5 m/s with shift
+    if (K.has("left") || K.has("rotl")) P.yaw = (P.yaw - 50 * dt + 360) % 360;
+    if (K.has("right") || K.has("rotr")) P.yaw = (P.yaw + 50 * dt) % 360;
+    const f = (K.has("fwd") ? 1 : 0) - (K.has("back") ? 1 : 0);
+    if (f) { const h = P.yaw * Math.PI / 180, nx = P.x + Math.sin(h) * sp * f * dt, ny = P.y + Math.cos(h) * sp * f * dt;
+      if (maskAt(nx, ny) !== 0) { P.x = nx; P.y = ny; } }
+    if (K.has("in")) { camera.fov = clamp(camera.fov - 30 * dt, 20, 75); camera.updateProjectionMatrix(); }
+    if (K.has("out")) { camera.fov = clamp(camera.fov + 30 * dt, 20, 75); camera.updateProjectionMatrix(); }
+    P.x = clamp(P.x, LB.x0 - 2, LB.x1 + 3); P.y = clamp(P.y, LB.y0 - 2, LB.y1 + 2);
+    return;
+  }
+  if (camera.fov !== 50) { camera.fov = 50; camera.updateProjectionMatrix(); }
+  if (!K.size) return;
+  camTween = null; if (S.view === "ride") S.view = "free";
+  const v = viewState(), t = controls.target, c = camera.position, sp = Math.max(0.03, v.dist * 0.7) * fast * dt, h = v.hdg * Math.PI / 180;
+  const fx = Math.sin(h), fn = Math.cos(h), mv = new THREE.Vector3();
+  if (K.has("fwd")) mv.add(new THREE.Vector3(fx, 0, -fn)); if (K.has("back")) mv.add(new THREE.Vector3(-fx, 0, fn));
+  if (K.has("right")) mv.add(new THREE.Vector3(fn, 0, fx)); if (K.has("left")) mv.add(new THREE.Vector3(-fn, 0, -fx));
+  if (mv.lengthSq()) { mv.normalize().multiplyScalar(sp); t.add(mv); c.add(mv); }
+  const rot = (K.has("rotr") ? 1 : 0) - (K.has("rotl") ? 1 : 0);
+  if (rot) { const off = c.clone().sub(t); off.applyAxisAngle(new THREE.Vector3(0, 1, 0), -rot * 0.9 * dt); c.copy(t).add(off); }
+  const z = (K.has("out") ? 1 : 0) - (K.has("in") ? 1 : 0);
+  if (z) { const off = c.clone().sub(t), L = clamp(off.length() * Math.exp(z * 1.3 * dt), controls.minDistance, controls.maxDistance); c.copy(t).add(off.setLength(L)); }
+}
+function clampView() {    // keep the camera in the local world and above the water
+  const t = controls.target, c = camera.position, ox = clamp(t.x, LB.x0 - 1.5, LB.x1 + 3) - t.x, oz = clamp(-t.z, LB.y0 - 1.5, LB.y1 + 1.5) + t.z;
+  if (ox || oz) { t.x += ox; t.z -= oz; c.x += ox; c.z -= oz; }
+  if (t.y !== 0 && NAV.move === "fly" && S.view !== "ride") { c.y -= t.y; t.y = 0; }
+  if (c.y < 0.0018) c.y = 0.0018;
+}
+// --- compass, mini-map, hint, help
+function updateCompass() { const hdg = NAV.move === "paddle" ? NAV.pad.yaw : viewState().hdg; $("#needle").setAttribute("transform", `rotate(${-hdg} 26 26)`); }
+const MM = { el: $("#mm"), base: null };
+function mmXY(x, y) { const W = MM.el.width, H = MM.el.height; return [(x - LB.x0) / (LB.x1 - LB.x0) * W, (LB.y1 - y) / (LB.y1 - LB.y0) * H]; }
+function buildMinimap() {
+  const W = MM.el.width, H = MM.el.height, c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d"), img = g.createImageData(W, H);
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) { const x = LB.x0 + (px + 0.5) / W * (LB.x1 - LB.x0), y = LB.y1 - (py + 0.5) / H * (LB.y1 - LB.y0), m = maskAt(x, y), o = (py * W + px) * 4;
+    let col; if (m === 0) col = [52, 58, 62]; else { const d = depthAtKm(x, y), k = d == null ? 0.6 : clamp(d / 9, 0, 1); col = m === 1 ? [20 + 30 * (1 - k), 70 + 60 * (1 - k), 110 + 50 * (1 - k)] : [40, 95, 120]; }
+    img.data.set([...col, 255], o); }
+  g.putImageData(img, 0, 0);
+  g.fillStyle = "rgba(220,230,238,.9)"; g.font = "600 17px IBM Plex Sans Condensed, sans-serif";
+  for (const [n, la, lo] of [["North Ave", 41.9145, -87.6235], ["Diversey Hbr", 41.9310, -87.6385], ["Fullerton", 41.9255, -87.6400]]) { const [x, y] = mmXY(...ll(la, lo)); g.fillText(n, x - 70, y); }
+  MM.base = c; const km = (LB.x1 - LB.x0); $("#mmscale").textContent = `${(km * 0.621).toFixed(1)} mi across`;
+}
+function drawMinimap() {
+  if (!MM.base) return; const g = MM.el.getContext("2d"); g.drawImage(MM.base, 0, 0);
+  const P = NAV.move === "paddle" ? { x: NAV.pad.x, y: NAV.pad.y, h: NAV.pad.yaw } : (() => { const v = viewState(); return { x: camera.position.x, y: -camera.position.z, h: v.hdg, tx: v.tx, ty: v.ty }; })();
+  const [cx, cy] = mmXY(P.x, P.y), h = P.h * Math.PI / 180, L = 60;
+  g.fillStyle = "rgba(240,180,76,.25)"; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.sin(h - 0.45) * L, cy - Math.cos(h - 0.45) * L); g.lineTo(cx + Math.sin(h + 0.45) * L, cy - Math.cos(h + 0.45) * L); g.closePath(); g.fill();
+  g.fillStyle = "#f0b44c"; g.strokeStyle = "#1b1305"; g.lineWidth = 2; g.beginPath(); g.arc(clamp(cx, 6, MM.el.width - 6), clamp(cy, 6, MM.el.height - 6), 7, 0, 7); g.fill(); g.stroke();
+  if (P.tx != null) { const [tx, ty] = mmXY(P.tx, P.ty); g.strokeStyle = "#fff"; g.lineWidth = 2; g.beginPath(); g.arc(tx, ty, 5, 0, 7); g.stroke(); }
+}
+MM.el.addEventListener("click", (ev) => { const r = MM.el.getBoundingClientRect(), x = LB.x0 + (ev.clientX - r.left) / r.width * (LB.x1 - LB.x0), y = LB.y1 - (ev.clientY - r.top) / r.height * (LB.y1 - LB.y0); hideHint();
+  if (NAV.move === "paddle") { if (maskAt(x, y) !== 0) { NAV.pad.x = x; NAV.pad.y = y; } return; }
+  const v = viewState(); S.view = "free"; flyTo(x, y, clamp(v.dist, 0.15, 2.5), v.hdg, Math.max(v.pitch, 15)); });
+function toggleHelp() { $("#help").hidden = !$("#help").hidden; hideHint(); }
+$("#helpbtn").onclick = toggleHelp; $("#helpx").onclick = () => { $("#help").hidden = true; };
+function hideHint() { const h = $("#hint"); if (!h.hidden) { h.style.opacity = "0"; setTimeout(() => { h.hidden = true; }, 600); try { localStorage.setItem("lakelocal-hint", "1"); } catch (e) {} } }
+function showHintOnce() { let seen = false; try { seen = localStorage.getItem("lakelocal-hint") === "1"; } catch (e) {} if (seen) return; const h = $("#hint"); h.hidden = false; h.style.opacity = "1"; setTimeout(hideHint, 9000); }
+GOTO.forEach((g, i) => { const b = document.createElement("button"); b.textContent = g[0]; b.onclick = () => { gotoPreset(i); hideHint(); }; $("#goto").appendChild(b); });
 
 // ---------------------------------------------------------------- labels
 const labelsEl = $("#labels"); let labelItems = [];
 function buildLabels() { labelsEl.innerHTML = ""; labelItems = [];
   const add = (txt, x, y, h, cls) => { const d = document.createElement("div"); d.className = "lbl" + (cls ? " " + cls : ""); d.textContent = txt; labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y), far: cls === "lake" || h > 0.1 ? 220 : 30 }); };
-  for (const [name, la, lo, h] of PLACES) { const [x, y] = ll(la, lo); add(name, x, y, h); } add("Lake Michigan", 30, 25, 0, "lake"); }
+  for (const [name, la, lo, h] of PLACES) { const [x, y] = ll(la, lo); add(name, x, y, h); } add("Lake Michigan", 2.2, 4.6, 0, "lake"); }
 const tmpV = new THREE.Vector3();
 function updateLabels() { const w = canvas.clientWidth, h = canvas.clientHeight;
   for (const it of labelItems) { tmpV.copy(it.p).project(camera); const dist = camera.position.distanceTo(it.p);
@@ -1178,7 +1394,7 @@ window.addEventListener("resize", resize);
 
 // ---------------------------------------------------------------- UI
 const MODE_NOTE = {
-  live: "Latest KLOT radar scans, the nearest wind station, the forecast model's waves for this hour, and satellite lake temperature.",
+  live: "Right now, minute by minute: the latest KLOT radar scans carried forward by the nowcast, the nearest lakefront wind station, waves for this hour, and satellite lake temperature. The data refreshes every 30 minutes.",
   forecast: "Radar extrapolated for 2 hours, then the 48-hour forecast: NWS wind and cloud cover, waves from the wind-wave model. Beyond 2 hours clouds come from forecast sky cover; rain isn't placed.",
   history: "Archived KLOT radar, NDBC observations and satellite lake temperature for a past time.",
   exp: "Set the weather yourself. Storm structure follows the same profiles as the demo storms; waves grow from your wind over the real fetch.",
@@ -1186,7 +1402,8 @@ const MODE_NOTE = {
 function setMode(m) { S.mode = m; document.querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
   $("#sec-history").hidden = m !== "history"; $("#sec-exp").hidden = m !== "exp"; $("#mode-note").textContent = MODE_NOTE[m];
   const chip = $("#status"); chip.className = "chip " + m; const [t0, t1] = range();
-  S.t = m === "live" ? t1 : m === "forecast" ? t0 : m === "history" ? (DATA.track && DATA.track.start ? new Date(DATA.track.start).getTime() : t0 + 10 * 60e3) : t0;
+  S.follow = m === "live"; $("#nowbtn").hidden = true;
+  S.t = m === "live" ? Date.now() : m === "forecast" ? t0 : m === "history" ? (DATA.track && DATA.track.start ? new Date(DATA.track.start).getTime() : t0 + 10 * 60e3) : t0;
   buildTicks(); WAVES.key = null; }
 document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode));
 document.querySelectorAll("[data-ov]").forEach((b) => b.onclick = () => { S.ov = b.dataset.ov; document.querySelectorAll("[data-ov]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
@@ -1206,9 +1423,11 @@ $("#x-seed").onclick = () => { S.x.seed = Math.floor(Math.random() * 1e6); };
 const ICON_PLAY = "M3 1.5v13l11-6.5z", ICON_PAUSE = "M3 1.5h3.5v13H3zM9.5 1.5H13v13H9.5z";
 function setPlaying(p) { S.playing = p; $("#play-icon").setAttribute("d", p ? ICON_PAUSE : ICON_PLAY); $("#play").setAttribute("aria-label", p ? "Pause" : "Play"); }
 $("#play").onclick = () => setPlaying(!S.playing);
-$("#scrub").oninput = (e) => { const [t0, t1] = range(); S.t = t0 + (t1 - t0) * (+e.target.value / 1000); setPlaying(false); };
-$("#toggle").onclick = () => { const c = $("#controls"); c.dataset.open = c.dataset.open === "1" ? "0" : "1"; applyPanel(); };
-function applyPanel() { const narrow = matchMedia("(max-width: 760px)").matches, c = $("#controls"); c.hidden = narrow && c.dataset.open !== "1"; $("#toggle").setAttribute("aria-expanded", String(!c.hidden)); }
+$("#scrub").oninput = (e) => { const [t0, t1] = range(); S.t = t0 + (t1 - t0) * (+e.target.value / 1000); setPlaying(false); if (S.mode === "live") { S.follow = false; $("#nowbtn").hidden = false; } };
+$("#nowbtn").onclick = () => { S.follow = true; $("#nowbtn").hidden = true; };
+$("#showtrack").onchange = (e) => { S.showTrack = e.target.checked; };
+$("#toggle").onclick = () => { const c = $("#controls"); c.dataset.open = c.hidden ? "1" : "0"; applyPanel(); };
+function applyPanel() { const narrow = matchMedia("(max-width: 760px)").matches, c = $("#controls"), open = c.dataset.open ? c.dataset.open === "1" : !narrow; c.hidden = !open; $("#toggle").setAttribute("aria-expanded", String(open)); $("#toggle").textContent = open ? "Hide settings" : "Settings"; }
 matchMedia("(max-width: 760px)").addEventListener("change", applyPanel); applyPanel();
 $("#gpx-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { setTrack(parseGPX(await f.text(), f.name.replace(/\.gpx$/i, ""))); } catch (err) { $("#track-note").textContent = `Couldn't read that file: ${err.message}`; } };
 $("#hist-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { await addHistory(JSON.parse(await f.text())); S.histIdx = SRC.hist.length - 1; $("#hist-pick").value = String(S.histIdx); setMode("history"); } catch (err) { $("#hist-note").textContent = `Couldn't load that file: ${err.message}`; } };
@@ -1257,27 +1476,33 @@ function tick() {
   const dt = Math.min(clock.getDelta(), 0.1), now = performance.now();
   if (!RM) U.uTime.value += dt;
   if (FW.cur) { const n = FW.cur.eta.frames, L = n * FW.cur.eta.dt; U.uFwT.value = ((U.uTime.value % L) / L) * (n - 1) / n + 0.5 / n; }
+  if (S.mode === "live" && S.follow) S.t = Date.now();
   const [t0, t1] = range();
-  if (S.playing) { const rate = S.mode === "forecast" ? 1800 : S.mode === "exp" ? 60 : 60; S.t += dt * 1000 * rate * S.speed; if (S.t > t1) S.t = t0; }
+  if (S.playing && !(S.mode === "live" && S.follow)) { const rate = S.mode === "forecast" ? 1800 : S.mode === "exp" ? 60 : 60; S.t += dt * 1000 * rate * S.speed; if (S.t > t1) S.t = t0; }
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
+  navStep(dt);
   // board: on the track at this time (history or replay), else under the camera target
-  const tp = trackAt(S.t); const tgt = controls.target;
-  let bx = tp && (S.view === "ride" || S.view === "rider" || S.mode === "history") ? tp.x : tgt.x, by = tp && (S.view === "ride" || S.view === "rider" || S.mode === "history") ? tp.y : -tgt.z;
-  const hd = tp ? tp.hd : 0;
+  const tp = S.showTrack ? trackAt(S.t) : null; const tgt = controls.target;
+  const paddle = NAV.move === "paddle";
+  let bx = paddle ? NAV.pad.x : tp ? tp.x : tgt.x, by = paddle ? NAV.pad.y : tp ? tp.y : -tgt.z;
+  const hd = paddle ? NAV.pad.yaw : tp ? tp.hd : 0;
   // GPS drifts 5-15 m: if the track point is on land (narrow harbour arms), use the nearest water within 30 m
-  if (tp && MAP.ok && maskAt(bx, by) === 0) { let best = null;
+  if (tp && !paddle && MAP.ok && maskAt(bx, by) === 0) { let best = null;
     for (const r of [0.006, 0.012, 0.02, 0.03]) { for (let a = 0; a < 16; a++) { const x = bx + r * Math.cos(a * Math.PI / 8), y = by + r * Math.sin(a * Math.PI / 8); if (maskAt(x, y) !== 0) { best = [x, y]; break; } } if (best) break; }
     if (best) { bx = best[0]; by = best[1]; } }
-  if (S.view === "ride" || S.view === "rider") {
+  if ((S.view === "ride" || S.view === "rider") && tp && !paddle) {
     const h0 = WAVES.ready ? heightAtM((bx - WAVES.origin[0]) * 1000, -(by - WAVES.origin[1]) * 1000) / 1000 : 0, r = hd * Math.PI / 180;
     if (S.view === "rider") { camera.position.set(bx, h0 + 0.00175, -by); controls.target.set(bx + Math.sin(r) * 0.03, h0 + 0.0008, -(by + Math.cos(r) * 0.03)); }
     else { camera.position.set(bx - Math.sin(r) * 0.014, 0.0045, -(by - Math.cos(r) * 0.014)); controls.target.set(bx + Math.sin(r) * 0.01, 0.0004, -(by + Math.cos(r) * 0.01)); }
   }
-  controls.update(); if (camera.position.y < 0.0006) camera.position.y = 0.0006;
+  if (paddle) {    // first person on the board: eye ~1.7 m above the moving water
+    const h0 = WAVES.ready ? heightAtM((bx - WAVES.origin[0]) * 1000, -(by - WAVES.origin[1]) * 1000) / 1000 : 0, yr = NAV.pad.yaw * Math.PI / 180, pr = NAV.pad.pitch * Math.PI / 180;
+    camera.position.set(bx, h0 + 0.0017, -by); camera.lookAt(bx + Math.sin(yr) * Math.cos(pr), h0 + 0.0017 + Math.sin(pr), -(by + Math.cos(yr) * Math.cos(pr)));
+  } else { controls.update(); clampView(); }
   // conditions (a few times a second)
   if (now - lastCond > 250) { lastCond = now;
-    const cx = camera.position.y < 1.5 ? camera.position.x : tgt.x, cy = camera.position.y < 1.5 ? -camera.position.z : -tgt.z;
+    const cx = paddle ? bx : camera.position.y < 0.6 ? camera.position.x : tgt.x, cy = paddle ? by : camera.position.y < 0.6 ? -camera.position.z : -tgt.z;
     COND = conditions(S.t, cx, cy); const C = COND;
     const date = S.mode === "exp" ? new Date(S.t) : new Date(S.t); const sun = setLight(date); COND.sun = sun;
     const sys = C.systems.length ? C.systems : [];
@@ -1287,7 +1512,7 @@ function tick() {
     U.uWaterC.value = C.waterC ?? 15; U.uIceExp.value = S.mode === "exp" ? S.x.ice : 0; U.uHasTemp.value = S.mode === "exp" ? 0 : GRIDS.temp ? 1 : 0;
     U.uHasIce.value = S.mode !== "exp" && GRIDS.ice ? 1 : 0; U.uSnowCover.value = C.snow && (C.airC ?? 5) < -1 ? 0.8 : 0; U.uSnow.value = C.snow ? 1 : 0;
     // clouds beyond radar: forecast sky cover, or the chosen fair-weather layer
-    U.uExtra.value = S.mode === "forecast" && !RS ? clamp((C.sky - 10) / 90, 0, 1) * 0.95 : S.mode === "exp" && S.x.type === "cumulus" ? 0.55 * S.x.cov : 0;
+    U.uExtra.value = (S.mode === "forecast" || S.mode === "live") && !RS ? clamp((C.sky - 10) / 90, 0, 1) * 0.95 : S.mode === "exp" && S.x.type === "cumulus" ? 0.55 * S.x.cov : 0;
     // wave patch: origin at the nearest shore frame; rebuild when conditions or place change
     const sf = C.shore, key = JSON.stringify([SWAN.key, sys.map((q) => [q.hs.toFixed(3), q.tp.toFixed(1), Math.round(q.dir)]), C.dRef, Math.round(sf.nx * 50), Math.round(sf.ny * 50), Math.round(C.wind)]);
     const ox = cx + sf.nx * (sf.d - C.dRef / 1000) * 0 , oy = cy;
@@ -1305,9 +1530,9 @@ function tick() {
   if (patch.visible) { const sx = Math.round(camera.position.x * 50) / 50, sz = Math.round(camera.position.z * 50) / 50; patch.position.set(sx, 0, sz);
     WU.uPatchRel.value.set((sx - WAVES.origin[0]) * 1000, (sz + WAVES.origin[1]) * 1000); }
   // track ribbon: bold from above, a faint wake line at paddler height
-  TRK.group.visible = camera.position.y > 0.03; TRK.group.children.forEach((m) => { m.material.opacity = clamp(camera.position.y / 0.08, 0.3, 0.9); });
+  TRK.group.visible = !!S.showTrack && camera.position.y > 0.03; TRK.group.children.forEach((m) => { m.material.opacity = clamp(camera.position.y / 0.08, 0.3, 0.9); });
   // board
-  board.visible = !!(tp || S.view === "ride" || S.view === "rider") && camera.position.y < 3; board.userData.rider.forEach((m) => m.visible = S.view !== "rider");
+  board.visible = (paddle || !!tp) && camera.position.y < 3; board.userData.rider.forEach((m) => m.visible = !paddle);
   if (board.visible) { const rx = (bx - WAVES.origin[0]) * 1000, rz = -(by - WAVES.origin[1]) * 1000, h0 = WAVES.ready ? heightAtM(rx, rz) : 0;
     const hx = WAVES.ready ? heightAtM(rx + 1.6, rz) - heightAtM(rx - 1.6, rz) : 0, hz = WAVES.ready ? heightAtM(rx, rz + 0.4) - heightAtM(rx, rz - 0.4) : 0;
     board.position.set(bx, h0 / 1000, -by); board.rotation.set(-Math.atan2(hz, 0.8), -hd * Math.PI / 180 + Math.PI / 2, Math.atan2(hx, 3.2), "YXZ"); }
@@ -1343,13 +1568,18 @@ function tick() {
   renderer.setRenderTarget(rtVol); renderer.render(volScene, quadCam);
   renderer.setRenderTarget(null); renderer.render(compScene, quadCam);
   updateLabels();
-  if (now - lastHud > 150) { lastHud = now; updateHud(rr, tp); }
+  if (now - lastHud > 150) { lastHud = now; updateHud(rr, tp); updateCompass(); drawMinimap(); }
 }
 function updateHud(rr, tp) {
   const C = COND; if (!C) return; const [t0, t1] = range();
   $("#clock").textContent = fmtFull.format(new Date(S.t)).replace(/^\w+, /, "");
   const chip = $("#status"); const lead = RS && RS.lead ? ` +${RS.lead} min` : "";
-  chip.textContent = { live: "Live", forecast: `Forecast${S.t > t0 ? " +" + Math.round((S.t - t0) / 3600e3 * 10) / 10 + " h" : ""}`, history: "Historical", exp: "Experimental" }[S.mode];
+  if (S.mode === "live" && SRC.live) { const lastObs = SRC.live.frames[SRC.live.nObs - 1].t, age = (Date.now() - lastObs) / 60000, el = $("#age");
+    const gen = DATA.generated ? ` · page built ${fmtHM.format(new Date(DATA.generated))}` : "";
+    el.textContent = age > 150 ? `Data is ${age > 2880 ? Math.round(age / 1440) + " days" : Math.round(age / 60) + " h"} old (radar ${fmtHM.format(new Date(lastObs))}); it refreshes every 30 min${gen}` :
+      `Radar ${fmtHM.format(new Date(lastObs))} (${Math.round(age)} min ago)${S.t > lastObs + 60e3 ? ", nowcast since" : ""}${gen}`;
+    el.className = "age" + (age > 75 ? " stale" : ""); } else $("#age").textContent = "";
+  chip.textContent = { live: S.follow ? "Live" : "Live · paused", forecast: `Forecast${S.t > t0 ? " +" + Math.round((S.t - t0) / 3600e3 * 10) / 10 + " h" : ""}`, history: "Historical", exp: "Experimental" }[S.mode];
   const sc = $("#scrub"); if (document.activeElement !== sc) sc.value = Math.round((S.t - t0) / Math.max(t1 - t0, 1) * 1000);
   const tot = Math.sqrt(C.systems.reduce((a, q) => a + q.hs * q.hs, 0)), tpk = C.systems[0] ? C.systems[0].tp : 0;
   const wx = rr > 0.2 ? `${C.snow ? "snow" : "rain"} ${rr.toFixed(1)} mm/h` : U.uOvercast.value > 0.6 ? "overcast" : U.uOvercast.value > 0.25 ? "partly cloudy" : C.sun && C.sun.el < -6 ? "clear night" : "clear";
@@ -1381,7 +1611,8 @@ function renderModels() {
 }
 
 // ---------------------------------------------------------------- boot
-setLight(new Date()); resize(); goCam("overview", true); buildLabels(); requestAnimationFrame(tick);
+U.uLocalC.value.set(LB.cx, LB.cy); S.showTrack = false;
+setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnimationFrame(tick);
 (async () => {
   try {
     const live = !txt("scene-data") && !txt("sup-data");
@@ -1394,15 +1625,16 @@ setLight(new Date()); resize(); goCam("overview", true); buildLabels(); requestA
       [DATA.bathy, DATA.swan, DATA.funwave] = await Promise.all([DATA.bathy || get2("api/bathy.json"), DATA.swan || get2("api/swan.json"), DATA.funwave || get2("api/funwave.json")]); }
     await setBathy(DATA.bathy); await setSwan(DATA.swan); await setFunwave(DATA.funwave); renderModels();
     if (DATA.lake) { buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
+    buildMinimap(); showHintOnce();
     SRC.live = await decodeScene(DATA.scene);
     for (const h of DATA.hist) await addHistory(h);
     if (!SRC.hist.length) { const o = document.createElement("option"); o.textContent = "No historical periods in this page"; $("#hist-pick").appendChild(o); }
     setTrack(DATA.track);
     $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""}`;
     setMode(SRC.live ? "live" : SRC.hist.length ? "history" : "exp");
-    if (DATA.track && SRC.hist.length) { S.histIdx = 0; $("#hist-pick").value = "0"; }
+    if (SRC.hist.length) { S.histIdx = 0; $("#hist-pick").value = "0"; }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
+window.__world = { NAV, setMove, gotoPreset, viewState, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
 })();
 </script>

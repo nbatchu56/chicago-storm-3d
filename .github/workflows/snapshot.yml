@@ -4,6 +4,8 @@ name: Radar snapshot
 # (scene.json + status.json + sup.json + lakefront.json), so it can be loaded into the viewer from anywhere.
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "3,33 * * * *"        # every 30 minutes; the Lakefront Local page is rebuilt from it
 
 permissions:
   contents: write
@@ -36,7 +38,9 @@ jobs:
         continue-on-error: true
         env:
           NWS_USER_AGENT: "chicago-storm-3d (github.com/${{ github.repository }})"
-        run: python -m app.lakefront --out "$RUNNER_TEMP/storm/lakefront.json" --probe "$RUNNER_TEMP/storm/probe.json"
+        run: |
+          git fetch -q --depth 1 origin snapshot 2>/dev/null && git show origin/snapshot:lakefront.json > "$RUNNER_TEMP/prev_lakefront.json" || true
+          python -m app.lakefront --out "$RUNNER_TEMP/storm/lakefront.json" --probe "$RUNNER_TEMP/storm/probe.json" --reuse "$RUNNER_TEMP/prev_lakefront.json"
       - name: Build scene from the newest KLOT scans
         continue-on-error: true
         env:
@@ -45,12 +49,24 @@ jobs:
           DATA_DIR: ${{ runner.temp }}/storm
           SOURCE: aws
         run: python -m app.pipeline --once
+      - name: Build the Lakefront Local page
+        continue-on-error: true
+        env:
+          OUT: ${{ runner.temp }}/storm
+        run: |
+          M="$RUNNER_TEMP/models"; mkdir -p "$M"
+          for b in bathy:bathy.json swan:swan.json funwave:funwave_rough.json funwave:funwave_storm.json validate:validate.json history:history-paddle-2026-10-23.json; do
+            br=${b%%:*}; f=${b#*:}; git fetch -q --depth 1 origin "$br" 2>/dev/null && git show "origin/$br:$f" > "$M/$f" 2>/dev/null || rm -f "$M/$f"; done
+          ls -la "$M"
+          python tools/build_world.py --out "$OUT/world.html" --scene "$OUT/scene.json" --sup "$OUT/sup.json" --lakefront "$OUT/lakefront.json" \
+            --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M/funwave_rough.json" "$M/funwave_storm.json" --validate "$M/validate.json" \
+            --history "$M/history-paddle-2026-10-23.json"
       - name: Publish to the snapshot branch
         env:
           OUT: ${{ runner.temp }}/storm
         run: |
           mkdir -p "$RUNNER_TEMP/pub" && cd "$RUNNER_TEMP/pub"
-          for f in scene.json status.json sup.json lakefront.json probe.json; do [ -f "$OUT/$f" ] && cp "$OUT/$f" .; done
+          for f in scene.json status.json sup.json lakefront.json probe.json world.html; do [ -f "$OUT/$f" ] && cp "$OUT/$f" .; done
           ls -la
           git init -q -b snapshot
           git config user.name "github-actions[bot]"

@@ -464,9 +464,24 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default="lakefront.json")
     ap.add_argument("--probe", help="write discovery/debug info here")
+    ap.add_argument("--reuse", help="earlier lakefront.json: keep its map if it covers the same area and is under 7 days old")
     a = ap.parse_args()
     probe = {}
-    d = build(probe=probe)
+    prev = None
+    if a.reuse and os.path.exists(a.reuse):
+        try:
+            prev = json.load(open(a.reuse))
+            age = dt.datetime.now(UTC) - dt.datetime.fromisoformat(prev.get("osm_time") or prev["generated"])
+            if not prev.get("osm") or list(prev.get("map_bbox", [])) != list(MAP_BBOX) or age > dt.timedelta(days=7):
+                prev = None
+        except Exception as e:  # noqa: BLE001
+            log.info("can't reuse %s: %s", a.reuse, e); prev = None
+    d = build(probe=probe, skip_osm=prev is not None)
+    if prev is not None:
+        for k in ("osm", "osm_time", "osm_attribution", "osm_errors"):
+            if k in prev:
+                d[k] = prev[k]
+        d.setdefault("notes", []).append("map reused from the previous snapshot")
     with open(a.out, "w") as fh:
         json.dump(d, fh, separators=(",", ":"))
     if a.probe:
