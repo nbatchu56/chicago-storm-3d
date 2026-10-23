@@ -175,3 +175,12 @@ def test_waves_build_from_calm():
     h1, h8 = hs_at(data, "rainbow", 1), hs_at(data, "rainbow", 8)
     print(f"building: +1 h {h1:.2f} m, +8 h {h8:.2f} m")
     assert h8 > 1.5 * h1
+
+
+
+def test_join_multipolygon_rings():
+    from app import lakefront as lf
+    parts = [[(0, 0), (10, 0)], [(10, 10), (10, 0)], [(10, 10), (0, 10)], [(0, 10), (0, 0)]]
+    rings = lf.join_rings(parts)
+    assert len(rings) == 1 and rings[0][0] == rings[0][-1] and len(rings[0]) == 5
+    assert lf.is_harbour({"water": "harbour"}) and lf.is_harbour({"name": "Diversey Harbor"}) and not lf.is_harbour({"water": "pond"})

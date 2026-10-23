@@ -65,6 +65,8 @@ def overpass_queries(b):
     return {
         "shore": head + f"rel({LAKE_MICHIGAN_REL});way(r)({bb});out geom;",
         "water": head + f'(way["natural"="water"]({bb});way["leisure"="marina"]({bb});way["harbour"]({bb}););out geom tags;',
+        # water drawn as multipolygons (e.g. Diversey Harbor), minus the lake itself
+        "water_rel": head + f'(rel["natural"="water"]({bb}); - rel({LAKE_MICHIGAN_REL}););out geom tags;',
         "structures": head + f'way["man_made"~"^(breakwater|pier|groyne)$"]({bb});out geom tags;',
         "land": head + f'(way["natural"="beach"]({bb});way["leisure"="park"]({bb});way["highway"~"^(motorway|trunk|primary)$"]({bb}););out geom tags;',
         "buildings": head + f'(way["building"]["building:levels"~"^([2-9][0-9]|[1-9][0-9][0-9])$"]({bb});'
@@ -103,6 +105,44 @@ def building_height(t):
         return None
 
 
+def is_harbour(t):
+    """Water connected to the lake (harbours, marinas, lagoons, basins), which shares the lake temperature."""
+    name = (t.get("name") or "").lower()
+    return (t.get("water") in ("harbour", "lagoon", "basin", "reservoir_harbour") or "harbour" in t or t.get("leisure") == "marina"
+            or any(w in name for w in ("harbor", "harbour", "marina", "lagoon", "slip")))
+
+
+def join_rings(parts, tol=0.5):
+    """Join multipolygon member ways end to end into closed rings."""
+    parts = [list(p) for p in parts if len(p) >= 2]
+    rings = []
+    while parts:
+        ring = parts.pop(0)
+        changed = True
+        while changed and ring[0] != ring[-1]:
+            changed = False
+            for i, p in enumerate(parts):
+                close = lambda a, b: abs(a[0] - b[0]) <= tol and abs(a[1] - b[1]) <= tol  # noqa: E731
+                if close(ring[-1], p[0]):
+                    ring += p[1:]
+                elif close(ring[-1], p[-1]):
+                    ring += p[::-1][1:]
+                elif close(ring[0], p[-1]):
+                    ring = p[:-1] + ring
+                elif close(ring[0], p[0]):
+                    ring = p[::-1][:-1] + ring
+                else:
+                    continue
+                parts.pop(i)
+                changed = True
+                break
+        if len(ring) >= 4:
+            if ring[0] != ring[-1]:
+                ring.append(ring[0])
+            rings.append(ring)
+    return rings
+
+
 def _overpass(q, get, probe=None, tag=""):
     import time
     last = None
@@ -127,6 +167,18 @@ def fetch_osm(bbox=MAP_BBOX, get=http_get, probe=None):
             errors.append(str(e))
             continue
         for el in js.get("elements", []):
+            if el.get("type") == "relation":
+                tags = el.get("tags") or {}
+                parts = [[xy(p["lat"], p["lon"]) for p in m["geometry"]] for m in el.get("members", [])
+                         if m.get("type") == "way" and m.get("role", "outer") in ("outer", "") and m.get("geometry")]
+                for ring in join_rings(parts):
+                    f = {"kind": "water", "pts": ring, "closed": True, "rel": el["id"]}
+                    if tags.get("name"):
+                        f["name"] = tags["name"]
+                    if is_harbour(tags):
+                        f["harbour"] = True
+                    feats.append(f)
+                continue
             if el.get("type") != "way" or "geometry" not in el:
                 continue
             kind = "coastline" if tag == "shore" else classify(el.get("tags"))
@@ -141,6 +193,8 @@ def fetch_osm(bbox=MAP_BBOX, get=http_get, probe=None):
                 f["name"] = name
             if kind == "building":
                 f["h"] = building_height(el.get("tags") or {})
+            if kind == "water" and is_harbour(el.get("tags") or {}):
+                f["harbour"] = True
             feats.append(f)
         time.sleep(2)
     if not any(f["kind"] == "coastline" for f in feats):

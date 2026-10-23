@@ -999,7 +999,7 @@ function buildMap(LF, track, ov) {
   }
   // harbours/lagoons and ponds from water polygons
   const wc = document.createElement("canvas"); wc.width = WPX; wc.height = HPX; const w = wc.getContext("2d");
-  feats.filter((f) => f.kind === "water" && f.closed).forEach((f) => { w.fillStyle = /harbou?r|marina|lagoon|channel/i.test(f.name || "") ? "#f00" : "#0f0"; path(w, f.pts, true); w.fill(); });
+  feats.filter((f) => f.kind === "water" && f.closed).forEach((f) => { w.fillStyle = f.harbour || /harbou?r|marina|lagoon|channel|slip/i.test(f.name || "") ? "#f00" : "#0f0"; path(w, f.pts, true); w.fill(); });
   const wd = w.getImageData(0, 0, WPX, HPX).data;
   for (let i = 0; i < mask.length; i++) if (!mask[i]) { if (wd[i * 4] > 128) mask[i] = 2; else if (wd[i * 4 + 1] > 128) mask[i] = 3; }
   // 2) colour the map
