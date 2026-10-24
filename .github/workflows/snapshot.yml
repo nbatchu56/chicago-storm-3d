@@ -3,9 +3,7 @@ name: Radar snapshot
 # Builds one live scene from the newest KLOT scans and publishes it to the `snapshot` branch
 # (scene.json + status.json + sup.json + lakefront.json), so it can be loaded into the viewer from anywhere.
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: "3 0-3,10-23 * * *"   # hourly 5 AM-10 PM Chicago (UTC hours; CDT); the page is republished from it at :20
+  workflow_dispatch:   # started by the page refresh task (about 6 AM, noon and 4 PM Chicago) or its "Refresh now" button
 
 permissions:
   contents: write
@@ -63,7 +61,7 @@ jobs:
           python tools/build_world.py --out "$OUT/world.html" --scene "$OUT/scene.json" --sup "$OUT/sup.json" --lakefront "$OUT/lakefront.json" \
             --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M"/funwave_*.json --validate "$M/validate.json" \
             --history "$M"/history-*.json --imports examples/*.json --split \
-            --start '{"mode":"import","view":[41.93,-87.633,0.45,250,14]}'
+            --start '{"mode":"import","view":[41.92,-87.61,6.5,285,40]}'
       - name: Publish to the snapshot branch
         env:
           OUT: ${{ runner.temp }}/storm

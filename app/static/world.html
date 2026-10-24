@@ -340,7 +340,7 @@ const PLACES = [["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Theater on th
 const LB = (() => { const [x0, y0] = ll(41.870, -87.650), [x1, y1] = ll(41.970, -87.562); return { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; })();
 // camera presets: target (lat, lon), distance km, view heading (deg, compass), pitch (deg below horizontal)
 const GOTO = [
-  ["Whole route", 41.9200, -87.6100, 6.5, 285, 40],
+  ["Skyline view", 41.9200, -87.6100, 6.5, 285, 40],
   ["Montrose Harbor", 41.9615, -87.6310, 0.45, 250, 18],
   ["Belmont Harbor mouth", 41.9418, -87.6335, 0.32, 250, 16],
   ["North Ave Beach", 41.9140, -87.6225, 0.32, 255, 16],
@@ -352,7 +352,7 @@ const GOTO = [
   ["Ohio St / Navy Pier", 41.8930, -87.6110, 0.45, 250, 16],
   ["Monroe Harbor", 41.8805, -87.6130, 0.6, 260, 20],
   ["Harrison-Dever crib", 41.9160, -87.5735, 0.35, 90, 12],
-  ["Skyline", 41.9050, -87.6200, 1.3, 215, 7],
+  ["Downtown from the lake", 41.9050, -87.6200, 1.3, 215, 7],
 ];
 function inLakeCoarse(x, y) { let c = false; for (let i = 0, j = LAKE.length - 1; i < LAKE.length; j = i++) { const [ax, ay] = LAKE[i], [bx, by] = LAKE[j]; if ((ay > y) !== (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax) c = !c; } return c; }
 function rayFetchKm(x, y, fromDeg) { const b = fromDeg * Math.PI / 180, dx = Math.sin(b), dy = Math.cos(b); let d = 0; while (d < 500 && inLakeCoarse(x + dx * d, y + dy * d)) d += d < 5 ? 0.25 : 1; return d; }
@@ -722,9 +722,10 @@ function buildMap(LF) {
     if (len(P) < 60) return false;   // short or narrow structures: a 4 m grid can't judge them
     const ok = deps.filter((d) => d === d).sort((x, y) => x - y);
     return ok.length >= deps.length * 0.7 && ok.length >= 4 && ok[ok.length >> 1] > 2.5 && ok.filter((d) => d < 0).length < 0.15 * ok.length; };
-  MAP.submerged = 0;
+  MAP.submerged = 0; const floating = [];
   ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => {
-    if (kind === "pier" && (f.closed ? area(f.pts) < 4000 : len(f.pts) < 150)) return;
+    // marina docks (named "Dock A"... or short) float over open water: drawn in 3-D below, not a wall in the mask
+    if (kind === "pier" && (/\bdock\b/i.test(f.name || "") || (f.closed ? area(f.pts) < 4000 : len(f.pts) < 150))) { floating.push(f); return; }
     if (BATHY.det && submerged(f.pts, f.closed)) { MAP.submerged++; return; }
     if (f.closed) { path(pcx, f.pts, true); pcx.fill(); } else { pcx.lineWidth = (kind === "pier" ? 2 : 3) * SC; path(pcx, f.pts, false); pcx.stroke(); } }));
   // the 1 m lidar knows where the water is better than the map: surveyed water that the map calls land
@@ -772,6 +773,35 @@ function buildMap(LF) {
     if (BATHY.assumed) { const half = U.uBathy.value.image.data; for (let q = 0; q < half.length; q++) half[q] = THREE.DataUtils.toHalfFloat(BATHY.dep[q]); U.uBathy.value.needsUpdate = true; }
     MAP.lidarWater = fixed; }
   const pd = pcx.getImageData(0, 0, WPX, HPX).data; for (let i = 0; i < mask.length; i++) if (pd[i * 4] > 128) mask[i] = 0;
+  // marinas: boats moored at the docks read as dry land in the lidar, which cut Diversey Harbor's west half off. Docks only
+  // float on water, so the water runs under and ~7 m around every floating dock (where the survey is less than ~3.5 m above
+  // the lake: hulls, not the park), with a nominal 2.5 m depth where the survey reads dry
+  { const R = Math.max(1, Math.round(7 / MPP)), D = BATHY.det, G = BATHY.ok ? BATHY.g : null; let carved = 0, fineHit = false, coarseHit = false;
+    const deepen = (xk, yk) => { if (D) { const g = D.g, i = Math.round((xk * 1000 - g.x0) / g.dx), j = Math.round((yk * 1000 - g.y0) / g.dx);
+        if (i >= 0 && j >= 0 && i < g.nx && j < g.ny) { const k = j * g.nx + i; if (D.dep[k] === D.dep[k] && D.dep[k] < 0.5) { D.dep[k] = 2.5; fineHit = true; } } }
+      if (G) { const i = Math.round((xk * 1000 - G.x0) / G.dx), j = Math.round((yk * 1000 - G.y0) / G.dx);
+        if (i >= 0 && j >= 0 && i < G.nx && j < G.ny) { const k = j * G.nx + i; if (BATHY.dep[k] < 0.5) { BATHY.dep[k] = 2.5; coarseHit = true; } } } };
+    for (const f of floating) { const Pp = f.closed ? f.pts.concat([f.pts[0]]) : f.pts;
+      for (let s2 = 1; s2 < Pp.length; s2++) { const [ax, ay] = P(...m2k(Pp[s2 - 1])), [bx, by] = P(...m2k(Pp[s2])), n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay)));
+        for (let k = 0; k <= n; k++) { const cx = Math.round(ax + (bx - ax) * k / n), cy = Math.round(ay + (by - ay) * k / n);
+          for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { if (dx * dx + dy * dy > R * R) continue; const px = cx + dx, py = cy + dy; if (px < 0 || py < 0 || px >= WPX || py >= HPX) continue;
+            const i = py * WPX + px; if (mask[i] !== 0 || pd[i * 4] > 128) continue;
+            const xk = x0 + (px + 0.5) / WPX * (x1 - x0), yk = y1 - (py + 0.5) / HPX * (y1 - y0), sv = BATHY.ok ? surveyAt(xk, yk) : null;
+            if (sv && sv.dep < -3.5) continue;
+            mask[i] = 2; carved++; deepen(xk, yk); } } } }
+    if (fineHit) { const t = U.uBathyF.value, hd = t.image.data; for (let i = 0; i < hd.length; i++) hd[i] = THREE.DataUtils.toHalfFloat(D.dep[i] === D.dep[i] ? D.dep[i] : -999); t.needsUpdate = true; }
+    if (coarseHit) { const hd = U.uBathy.value.image.data; for (let q = 0; q < hd.length; q++) hd[q] = THREE.DataUtils.toHalfFloat(BATHY.dep[q]); U.uBathy.value.needsUpdate = true; }
+    MAP.marina = carved; }
+  // specks of "land" inside water (boats and docks the lidar saw, survey noise) become water: any land patch under ~1500 m2
+  // that touches no map edge and no pier or breakwater
+  { const lim = Math.round(1500 / (MPP * MPP)), seen = new Uint8Array(WPX * HPX), q = new Int32Array(lim + 8); let filled = 0;
+    for (let i0 = 0; i0 < mask.length; i0++) { if (mask[i0] !== 0 || seen[i0]) continue;
+      let h = 0, t = 0, edge = false, solid = false, wcls = 0, big = false; q[t++] = i0; seen[i0] = 1;
+      while (h < t) { const i = q[h++], x = i % WPX, y = (i / WPX) | 0; if (x === 0 || y === 0 || x === WPX - 1 || y === HPX - 1) edge = true; if (pd[i * 4] > 128) solid = true;
+        for (const n of [i - 1, i + 1, i - WPX, i + WPX]) { if (n < 0 || n >= mask.length) continue; const m = mask[n];
+          if (m) { if (!wcls || m === 2) wcls = m; continue; } if (seen[n]) continue; seen[n] = 1; if (t < lim) q[t++] = n; else big = true; } }
+      if (!big && !edge && !solid && wcls) { for (let k = 0; k < t; k++) mask[q[k]] = wcls; filled += t; } }
+    MAP.specks = filled; }
   // one byte per pixel (class * 85); DataTexture rows run south->north, canvas rows north->south
   const flipped = new Uint8Array(WPX * HPX); for (let y = 0; y < HPX; y++) { const src = (HPX - 1 - y) * WPX, dst = y * WPX; for (let x = 0; x < WPX; x++) flipped[dst + x] = mask[src + x] * 85; }
   const maskTex = new THREE.DataTexture(flipped, WPX, HPX, THREE.RedFormat); maskTex.unpackAlignment = 1; maskTex.minFilter = maskTex.magFilter = THREE.NearestFilter; maskTex.needsUpdate = true;
@@ -802,6 +832,8 @@ function buildMap(LF) {
   const colTex = new THREE.CanvasTexture(cv); colTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); colTex.minFilter = THREE.LinearMipmapLinearFilter;
   U.uMapCol.value = colTex; U.uMapMask.value = maskTex; U.uMapMin.value.set(x0, y0); U.uMapSize.value.set(x1 - x0, y1 - y0); U.uHasMap.value = 1;
   Object.assign(MAP, { ok: true, x0, y0, x1, y1, WPX, HPX, mask, coast: feats.filter((f) => f.kind === "coastline").flatMap((f) => f.pts.map(m2k)) });
+  buildDocksAndBridges(floating, feats.filter((f) => f.kind === "road"), (xm, ym) => { const px = Math.floor((xm / 1000 - x0) / (x1 - x0) * WPX), py = Math.floor((y1 - ym / 1000) / (y1 - y0) * HPX);
+    return px < 0 || py < 0 || px >= WPX || py >= HPX ? 0 : mask[py * WPX + px]; });
   // buildings, extruded to their mapped heights, merged into one mesh
   const geos = [], tops = []; let bid = 0;
   feats.filter((f) => f.kind === "building" && f.closed && f.h).forEach((f) => {
@@ -863,6 +895,57 @@ function buildMap(LF) {
         fragmentShader: `${LOGF[0]} uniform float uCity; varying float vA; void main(){ ${LOGF[1]} float r = length(gl_PointCoord - 0.5) * 2.0; gl_FragColor = vec4(vec3(3.0, 0.25, 0.15) * vA * smoothstep(1.0, 0.0, r) * clamp(uCity * 10.0, 0.0, 1.0), 1.0); }` }));
       beacons.frustumCulled = false; beacons.renderOrder = 2; scene.add(beacons); }
   }
+}
+// ---------------------------------------------------------------- floating docks and road bridges (3-D, metres in, km out)
+function buildDocksAndBridges(docks, roads, maskM) {
+  const pos = [], nrm = [], tint = [];
+  // a box along a->b (metres east/north), w wide, from yBot to yTop metres above the water; c: colour index
+  const box = (ax, ay, bx, by, w, yTop, yBot, c) => { const L = Math.hypot(bx - ax, by - ay); if (L < 0.05) return; const ux = (bx - ax) / L, uy = (by - ay) / L, nx = -uy * w / 2, ny = ux * w / 2;
+    const C = [[ax + nx, ay + ny], [bx + nx, by + ny], [bx - nx, by - ny], [ax - nx, ay - ny]], K = (q, h) => [q[0] / 1000, h / 1000, -q[1] / 1000];
+    const quad = (a, b, cc, d, n) => { for (const v of [a, b, cc, a, cc, d]) { pos.push(...v); nrm.push(...n); tint.push(c); } };
+    quad(K(C[0], yTop), K(C[3], yTop), K(C[2], yTop), K(C[1], yTop), [0, 1, 0]);
+    const sides = [[0, 1, [-uy, 0, -ux]], [1, 2, [ux, 0, -uy]], [2, 3, [uy, 0, ux]], [3, 0, [-ux, 0, uy]]];
+    for (const [i, j, n] of sides) quad(K(C[i], yBot), K(C[j], yBot), K(C[j], yTop), K(C[i], yTop), n); };
+  // docks: main walkways ~2.4 m, finger piers ~1 m, decks 0.45 m above the water
+  let nd = 0;
+  for (const f of docks) { const main = /\bdock\b/i.test(f.name || "") || f.closed, w = main ? 2.4 : 1.0, P = f.closed ? f.pts.concat([f.pts[0]]) : f.pts;
+    if (f.closed && !/\bdock\b/i.test(f.name || "")) { // small closed piers: their outline as a walkway ring is enough at this scale
+      for (let i = 1; i < P.length; i++) box(P[i - 1][0], P[i - 1][1], P[i][0], P[i][1], 2.0, 0.45, -0.1, 0); nd++; continue; }
+    for (let i = 1; i < P.length; i++) box(P[i - 1][0], P[i - 1][1], P[i][0], P[i][1], w, 0.45, -0.1, 0); nd++; }
+  // bridges: a stretch of a main road that crosses water (8-90 m, water on both sides of the road) gets a deck over it;
+  // Lake Shore Drive over the Diversey Harbor inlet: 1940 steel frame, ~21 m span, ~9 ft clearance at mean high water
+  let nb = 0; MAP.bridges = [];
+  for (const r of roads) { if (/^lower\b/i.test(r.name || "")) continue;   // a lower deck sits under the upper one's bridge
+    const P = r.pts; let run = null; const step = 2;
+    const flush = () => { if (!run) return; const L = run.d1 - run.d0; if (L < 8 || L > 90) { run = null; return; }
+      const [ax, ay] = run.a, [bx, by] = run.b, ux = (bx - ax) / L, uy = (by - ay) / L, mx = (ax + bx) / 2, my = (ay + by) / 2;
+      if (!(maskM(mx - uy * 25, my + ux * 25) && maskM(mx + uy * 25, my - ux * 25))) { run = null; return; }
+      const ext = 5, A = [ax - ux * ext, ay - uy * ext], B = [bx + ux * ext, by + uy * ext];
+      box(A[0], A[1], B[0], B[1], 26, 3.8, 2.75, 1);                                      // deck
+      for (const s of [-1, 1]) { const ox = -uy * 12.7 * s, oy = ux * 12.7 * s; box(A[0] + ox, A[1] + oy, B[0] + ox, B[1] + oy, 0.5, 4.8, 3.8, 1); }   // parapets
+      for (const q of [run.a, run.b]) box(q[0] - uy * 13, q[1] + ux * 13, q[0] + uy * 13, q[1] - ux * 13, 1.6, 2.75, -1.5, 2);              // abutments at the water's edge
+      MAP.bridges.push({ x: mx / 1000, y: my / 1000, len: L, name: r.name || "" }); nb++; run = null; };
+    let d = 0;
+    for (let i = 1; i < P.length; i++) { const [ax, ay] = P[i - 1], [bx, by] = P[i], L = Math.hypot(bx - ax, by - ay);
+      for (let t = 0; t < L; t += step) { const x = ax + (bx - ax) * t / L, y = ay + (by - ay) * t / L, wet = maskM(x, y) !== 0;
+        if (wet) { if (!run) run = { a: [x, y], d0: d + t }; run.b = [x, y]; run.d1 = d + t; } else flush(); }
+      d += L; }
+    flush(); }
+  MAP.docks = nd;
+  if (!pos.length) return;
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3)); g.setAttribute("tint", new THREE.Float32BufferAttribute(tint, 1));
+  const mat = new THREE.ShaderMaterial({ uniforms: U, side: THREE.DoubleSide,
+    vertexShader: `${LOGV[0]} attribute float tint; varying vec3 vW, vN; varying float vT; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vN = normal; vT = tint; gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
+    fragmentShader: `${LOGF[0]} uniform vec3 uSunDir, uSunCol, uAmbTop, uAmbBot, uCamPos; uniform float uCity, uOvercast, uSnowCover; varying vec3 vW, vN; varying float vT;
+      void main(){ ${LOGF[1]} vec3 N = normalize(vN); float sunUp = smoothstep(-0.02, 0.06, uSunDir.y);
+        vec3 alb = vT < 0.5 ? vec3(0.42, 0.40, 0.36) : vT < 1.5 ? vec3(0.36, 0.36, 0.37) : vec3(0.30, 0.29, 0.27);   // dock decking, concrete deck, abutment
+        alb = mix(alb, vec3(0.8), uSnowCover * step(0.9, N.y));
+        float under = vT > 0.5 && N.y < -0.5 ? 0.35 : 1.0;
+        vec3 c = alb * under * (uSunCol * max(dot(N, uSunDir), 0.0) * sunUp * (1.0 - 0.7 * uOvercast) + mix(uAmbBot, uAmbTop, 0.5 + 0.5 * N.y) * 1.4);
+        c += vec3(1.0, 0.75, 0.45) * uCity * (vT > 0.5 && vT < 1.5 && N.y > 0.9 ? 0.5 : vT < 0.5 && N.y > 0.9 ? 0.18 : 0.0);   // lit roadway and dock lamps at night
+        float hc = max(uCamPos.y, 0.001), hf = hc < 0.05 ? 1.0 : 3.0 * (1.0 - exp(-hc / 3.0)) / hc;
+        gl_FragColor = vec4(mix(c, mix(uAmbBot, uAmbTop, 0.5) * 1.2, 1.0 - exp(-length(uCamPos - vW) * hf / 70.0)), 1.0); }` });
+  const m = new THREE.Mesh(g, mat); m.frustumCulled = false; scene.add(m); MAP.bridgeCount = nb;
 }
 function maskAt(xk, yk) { if (!MAP.ok) return inLakeCoarse(xk, yk) ? 1 : 0; const px = Math.floor((xk - MAP.x0) / (MAP.x1 - MAP.x0) * MAP.WPX), py = Math.floor((MAP.y1 - yk) / (MAP.y1 - MAP.y0) * MAP.HPX);
   if (px < 0 || py < 0 || px >= MAP.WPX || py >= MAP.HPX) return inLakeCoarse(xk, yk) ? 1 : 0; return MAP.mask[py * MAP.WPX + px]; }
@@ -1522,8 +1605,19 @@ function gotoPreset(i, instant) { const g = GOTO[i], [x, y] = ll(g[1], g[2]); S.
 function goCam(name, instant) {     // track views (optional)
   S.view = name; setExag(1);
   if (name === "birdseye") { S.showTrack = true; $("#showtrack").checked = true; const b = routeBounds(); flyTo(b.cx + 0.25, b.cy, b.span * 1.5, 0, 88, instant); S.view = "birdseye"; return; }
-  if (name === "ride") { S.showTrack = true; $("#showtrack").checked = true; if (S.mode !== "history" && SRC.hist.length) setMode("history"); if (NAV.move === "paddle") setMove("fly"); camTween = null; S.view = "ride"; }
+  if (name === "ride") { S.showTrack = true; $("#showtrack").checked = true; if (NAV.move === "paddle") setMove("fly"); camTween = null; S.view = "ride";
+    const tr = DATA.track; if (!tr || !tr.start) { $("#track-note").textContent = "Load a GPX from your paddle app first (it needs timestamps to replay)."; S.view = "free"; return; }
+    // weather for the paddle: the historical period that covers it, else the current mode's conditions with the track on its own clock
+    const t0 = new Date(tr.start).getTime(), t1 = t0 + tr.pts[tr.pts.length - 1][0] * 1000;
+    const i = SRC.hist.findIndex((h) => { const w = h.raw.window; return new Date(w.start).getTime() - 15 * 60e3 <= t1 && new Date(w.end).getTime() + 15 * 60e3 >= t0; });
+    if (i >= 0) { S.histIdx = i; $("#hist-pick").value = String(i); setMode("history"); S.rideOwn = false; S.t = t0; }
+    else { S.rideOwn = true; S.rideT = t0;
+      $("#track-note").textContent = `${tr.name}: no recorded weather for this paddle's time in the page yet, so the replay shows ${MODE_LABEL[S.mode] || S.mode} conditions. Ask Claude to add a history period for it.`; }
+    setPlaying(true); }
 }
+const MODE_LABEL = { live: "live", forecast: "forecast", history: "historical", exp: "experimental", import: "screenshot" };
+// the track position: on the page's clock when its weather period is loaded, else on the replay's own clock
+const trackTime = () => S.rideOwn ? S.rideT : S.t;
 function setExag(v) { S.exag = v; U.uExag.value = v; $("#exag").value = v; $("#exag-o").textContent = `×${v}`; }
 function setMove(m) {
   if (m === NAV.move) return;
@@ -1721,7 +1815,8 @@ $("#showtrack").onchange = (e) => { S.showTrack = e.target.checked; };
 $("#toggle").onclick = () => { const c = $("#controls"); c.dataset.open = c.hidden ? "1" : "0"; applyPanel(); };
 function applyPanel() { const narrow = matchMedia("(max-width: 760px)").matches, c = $("#controls"), open = c.dataset.open ? c.dataset.open === "1" : !narrow; c.hidden = !open; $("#toggle").setAttribute("aria-expanded", String(open)); $("#toggle").textContent = open ? "Hide settings" : "Settings"; }
 matchMedia("(max-width: 760px)").addEventListener("change", applyPanel); applyPanel();
-$("#gpx-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { setTrack(parseGPX(await f.text(), f.name.replace(/\.gpx$/i, ""))); } catch (err) { $("#track-note").textContent = `Couldn't read that file: ${err.message}`; } };
+$("#gpx-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { const tr = parseGPX(await f.text(), f.name.replace(/\.gpx$/i, "")); setTrack(tr); S.rideOwn = false;
+    try { localStorage.setItem("lakelocal-track", JSON.stringify(tr)); } catch (e2) {} } catch (err) { $("#track-note").textContent = `Couldn't read that file: ${err.message}`; } };
 $("#hist-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { await addHistory(JSON.parse(await f.text())); S.histIdx = SRC.hist.length - 1; $("#hist-pick").value = String(S.histIdx); setMode("history"); } catch (err) { $("#hist-note").textContent = `Couldn't load that file: ${err.message}`; } };
 $("#hist-pick").onchange = (e) => { S.histIdx = +e.target.value; setMode("history"); };
 $("#fw-pick").onchange = (e) => { selectFunwave(e.target.value || null); };
@@ -1776,7 +1871,9 @@ function tick() {
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   navStep(dt);
   // board: on the track at this time (history or replay), else under the camera target
-  const tp = S.showTrack ? trackAt(S.t) : null; const tgt = controls.target;
+  if (S.rideOwn && S.playing && DATA.track) { const t0 = new Date(DATA.track.start).getTime(), L = DATA.track.pts[DATA.track.pts.length - 1][0] * 1000;
+    S.rideT += dt * 1000 * 60 * S.speed; if (S.rideT > t0 + L) S.rideT = t0; }
+  const tp = S.showTrack ? trackAt(trackTime()) : null; const tgt = controls.target;
   const paddle = NAV.move === "paddle";
   let bx = paddle ? NAV.pad.x : tp ? tp.x : tgt.x, by = paddle ? NAV.pad.y : tp ? tp.y : -tgt.z;
   const hd = paddle ? NAV.pad.yaw : tp ? tp.hd : 0;
@@ -2029,6 +2126,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
     SRC.live = await decodeScene(DATA.scene);
     for (const h of DATA.hist) await addHistory(h);
     if (!SRC.hist.length) { const o = document.createElement("option"); o.textContent = "No historical periods in this page"; $("#hist-pick").appendChild(o); }
+    if (!DATA.track) { try { const t = JSON.parse(localStorage.getItem("lakelocal-track") || "null"); if (t && t.pts && t.pts.length) DATA.track = t; } catch (e) {} }   // your last GPX, in this browser only
     setTrack(DATA.track);
     $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""}`;
     setMode(SRC.live ? "live" : SRC.hist.length ? "history" : "exp");
