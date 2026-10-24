@@ -19,13 +19,16 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: bash -eo pipefail {0}   # a failed backfill or fit must not publish
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
           cache: pip
-      - run: pip install numpy scipy
+      - run: pip install numpy scipy matplotlib
       - name: Check out the learn branch
         run: tools/learn_branch.sh checkout "$RUNNER_TEMP/L"
       - name: Backfill model vs buoy from the NDBC archive
