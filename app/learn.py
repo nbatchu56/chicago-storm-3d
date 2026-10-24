@@ -46,6 +46,10 @@ MIN_HS = 0.15                                # below this the log ratio is mostl
 SHRINK_K = 72.0                              # hours of data a cell needs before it counts as much as its parent
                                              # (hours are strongly correlated: ~72 h is a few storms' worth)
 CLIP = (0.5, 2.0)
+# Fit only on data that matches how each buoy measures today. 45174 read ~20% higher waves through 2024 than from
+# 2025 on, for the same wind and model (45198 didn't change), so something changed at that buoy; the live nudge and
+# the scorecard use today's readings, so the older 45174 years are kept in the backfill but left out of the fit.
+FIT_FROM = {"45174": "2025-01-01"}
 SWELL_FRAC = 0.5                             # share of wave energy in leftover/swell above this -> "swell" factor
 LEAD_BUCKETS = [(0, 0), (1, 3), (4, 6), (7, 12), (13, 24), (25, 48)]
 METHODS = ["raw", "learned", "product", "product_learned", "nws", "glwu"]
@@ -220,51 +224,81 @@ def _usable(p, key_obs, key_pred):
 
 
 def _shrunk_table(pairs, key_obs, key_pred):
-    """log(obs/pred): global -> swell / per-sector -> sector x speed, each shrunk toward its parent."""
-    ys = [(p, math.log(p[key_obs] / p[key_pred])) for p in pairs if _usable(p, key_obs, key_pred)]
-    if not ys:
+    """Least-squares factor f = sum(obs*model)/sum(model^2) (the scale that minimizes the squared error, so a noisy
+    model is not blown up), lake-wide -> swell / per sector -> sector x speed, each shrunk toward its parent by
+    adding SHRINK_K typical hours that agree with the parent."""
+    xs = [p for p in pairs if _usable(p, key_obs, key_pred)]
+    if not xs:
         return None
-    g = float(np.mean([y for _, y in ys]))
-    swell = [y for p, y in ys if (p.get("swell_frac") or 0) > SWELL_FRAC]
-    wind = [(p, y) for p, y in ys if (p.get("swell_frac") or 0) <= SWELL_FRAC]
-    shrink = lambda vals, parent: (sum(vals) + SHRINK_K * parent) / (len(vals) + SHRINK_K)  # noqa: E731
-    sw_f = shrink(swell, g)
-    sec_vals = [[] for _ in range(SECTORS)]
-    cell_vals = [[[] for _ in range(len(SPEED_EDGES) + 1)] for _ in range(SECTORS)]
-    for p, y in wind:
-        s, b = sector(p["wdir"]), speed_bin(p["u"])
-        sec_vals[s].append(y)
-        cell_vals[s][b].append(y)
-    sec = [shrink(v, g) for v in sec_vals]
-    table = [[shrink(cell_vals[s][b], sec[s]) for b in range(len(SPEED_EDGES) + 1)] for s in range(SECTORS)]
-    lo, hi = math.log(CLIP[0]), math.log(CLIP[1])
-    c = lambda x: round(math.exp(min(max(x, lo), hi)), 3)  # noqa: E731
-    return {"global": c(g), "swell": c(sw_f), "n_swell": len(swell), "table": [[c(x) for x in row] for row in table],
-            "n": [[len(v) for v in row] for row in cell_vals]}
+    op = lambda ps: sum(p[key_obs] * p[key_pred] for p in ps)  # noqa: E731
+    pp = lambda ps: sum(p[key_pred] ** 2 for p in ps)  # noqa: E731
+    w = pp(xs) / len(xs)                                        # one typical hour's weight
+    g = op(xs) / pp(xs)
+    shrink = lambda ps, parent: (op(ps) + SHRINK_K * w * parent) / (pp(ps) + SHRINK_K * w)  # noqa: E731
+    swell = [p for p in xs if (p.get("swell_frac") or 0) > SWELL_FRAC]
+    wind = [p for p in xs if (p.get("swell_frac") or 0) <= SWELL_FRAC]
+    sec_ps = [[] for _ in range(SECTORS)]
+    cell_ps = [[[] for _ in range(len(SPEED_EDGES) + 1)] for _ in range(SECTORS)]
+    for p in wind:
+        sec_ps[sector(p["wdir"])].append(p)
+        cell_ps[sector(p["wdir"])][speed_bin(p["u"])].append(p)
+    sec = [shrink(v, g) for v in sec_ps]
+    table = [[shrink(cell_ps[s][b], sec[s]) for b in range(len(SPEED_EDGES) + 1)] for s in range(SECTORS)]
+    c = lambda x: round(min(max(x, CLIP[0]), CLIP[1]), 3)  # noqa: E731
+    return {"global": c(g), "swell": c(shrink(swell, g)), "n_swell": len(swell), "table": [[c(x) for x in row] for row in table],
+            "n": [[len(v) for v in row] for row in cell_ps]}
+
+
+# Wave height: a small regression (model output statistics), buoy Hs ~ these terms. The model's height alone,
+# scaled by direction, isn't enough: the wind speed itself carries what the growth curves miss (they grow seas
+# too slowly here, which is also why the model's peaks come late), and light-wind hours have a background sea.
+FEATURES = ["1", "m", "m cos d", "m sin d", "cos d", "sin d", "u", "u^2/10", "m swell"]
+RIDGE = 1e-3
+RATIO_CLIP = (0.33, 3.0)     # applied as a factor on the model's sea (so sheltered spots stay sheltered)
+MIN_M = 0.05                 # below this the model has no sea to scale: left as is
+
+
+def features(m, u, wdir, swell_frac):
+    d = math.radians(wdir)
+    return [1.0, m, m * math.cos(d), m * math.sin(d), math.cos(d), math.sin(d), u, u * u / 10, m * (swell_frac or 0.0)]
+
+
+def _regression(pairs):
+    xs = [p for p in pairs if p.get("obs_hs") is not None and p.get("pred_hs") is not None and p.get("u") is not None and p.get("wdir") is not None]
+    if len(xs) < 50:
+        return None
+    X = np.array([features(p["pred_hs"], p["u"], p["wdir"], p.get("swell_frac")) for p in xs])
+    y = np.array([p["obs_hs"] for p in xs])
+    A = X.T @ X + RIDGE * len(xs) * np.diag([0.0] + [1.0] * (X.shape[1] - 1))
+    coef = np.linalg.solve(A, X.T @ y)
+    return {"kind": "regression", "features": FEATURES, "coef": [round(float(c), 5) for c in coef], "ratio_clip": list(RATIO_CLIP), "min_m": MIN_M}
 
 
 def fit_pairs(pairs):
-    hs, tp = _shrunk_table(pairs, "obs_hs", "pred_hs"), _shrunk_table(pairs, "obs_tp", "pred_tp")
-    return {"version": 1, "sectors": SECTORS, "speed_edges": list(SPEED_EDGES), "swell_frac": SWELL_FRAC, "clip": list(CLIP),
+    hs, tp = _regression(pairs), _shrunk_table(pairs, "obs_tp", "pred_tp")
+    return {"version": 2, "sectors": SECTORS, "speed_edges": list(SPEED_EDGES), "swell_frac": SWELL_FRAC, "clip": list(CLIP),
             "hs": hs, "tp": tp, "hours": len(pairs)}
 
 
-def factor(corr, wdir, u, swell_frac=0.0, what="hs"):
-    """Correction factor for this hour (1.0 when there is no correction)."""
+def factor(corr, wdir, u, swell_frac=0.0, what="hs", m=None):
+    """Correction factor for this hour's model sea (1.0 when there is no correction). Height needs the model's
+    height m at the place (the regression gives the buoy-like height, applied as a ratio)."""
     t = (corr or {}).get(what)
     if not t or wdir is None or u is None:
         return 1.0
+    if t.get("kind") == "regression":
+        if m is None or m < t.get("min_m", MIN_M):
+            return 1.0
+        est = sum(c * f for c, f in zip(t["coef"], features(m, u, wdir, swell_frac)))
+        lo, hi = t.get("ratio_clip", RATIO_CLIP)
+        return min(max(est / m, lo), hi)
     if (swell_frac or 0) > corr.get("swell_frac", SWELL_FRAC):
         return t["swell"]
     return t["table"][sector(wdir)][speed_bin(u)]
 
 
 def apply_pairs(corr, pairs):
-    out = []
-    for p in pairs:
-        f = factor(corr, p["wdir"], p["u"], p.get("swell_frac"))
-        out.append(p["pred_hs"] * f)
-    return out
+    return [p["pred_hs"] * factor(corr, p["wdir"], p["u"], p.get("swell_frac"), m=p["pred_hs"]) for p in pairs]
 
 
 def skill(obs, pred):
@@ -330,17 +364,34 @@ def cross_validate(pairs):
             "improves": bool(tot_l["rmse_m"] < 0.97 * tot_raw["rmse_m"] and better * 2 > len(rows))}
 
 
+def by_year(pairs):
+    """Mean buoy / mean model per buoy and year: shows instrument changes and drifts."""
+    acc = {}
+    for p in pairs:
+        a = acc.setdefault(p["buoy"], {}).setdefault(p["t"][:4], [0, 0.0, 0.0])
+        a[0] += 1
+        a[1] += p["obs_hs"]
+        a[2] += p["pred_hs"]
+    return {b: {y: {"hours": n, "obs_m": round(o / n, 3), "model_m": round(m / n, 3), "ratio": round(o / m, 3) if m else None}
+                for y, (n, o, m) in sorted(ys.items())} for b, ys in acc.items()}
+
+
 def fit_dir(d):
     paths = sorted(glob.glob(os.path.join(d, "backfill", "pairs_*.csv.gz")))
-    pairs = read_pairs(paths)
-    if not pairs:
+    every = read_pairs(paths)
+    if not every:
         raise SystemExit("no backfill pairs under " + d)
+    pairs = [p for p in every if p["t"] >= FIT_FROM.get(p["buoy"], "")]
     corr = fit_pairs(pairs)
     corr["generated"] = dt.datetime.now(UTC).isoformat(timespec="seconds")
-    corr["method"] = ("log(buoy/model) by wind direction (12 sectors) x 10 m wind speed (<4, 4-7, 7-10, >10 m/s), and for "
-                      "swell-dominated hours, shrunk toward the sector and lake-wide averages (k = %d h); clipped %.1f-%.1f" % (SHRINK_K, *CLIP))
+    corr["method"] = ("height: regression of buoy Hs on the model's Hs (and its variation with wind direction), wind direction, 10 m wind "
+                      "speed and the swell share, applied as a factor on the model's sea (%.2f-%.1f); period: least-squares factor by wind "
+                      "direction x speed, shrunk toward broader averages" % RATIO_CLIP)
     corr["data"] = {b: sorted({p["t"][:4] for p in pairs if p["buoy"] == b}) for b in BUOYS}
     corr["hours_by_buoy"] = {b: sum(1 for p in pairs if p["buoy"] == b) for b in BUOYS}
+    corr["fit_from"] = FIT_FROM
+    corr["left_out_hours"] = len(every) - len(pairs)
+    corr["by_year"] = by_year(every)
     corr["cv"] = cross_validate(pairs)
     corr["lag"] = best_lag(pairs)
     corr["in_sample"] = {"raw": skill([p["obs_hs"] for p in pairs], [p["pred_hs"] for p in pairs]),
@@ -444,8 +495,7 @@ def summarize(corr, card):
         cv = corr.get("cv") or {}
         out["correction"] = {k: corr.get(k) for k in ("generated", "method", "hours", "data", "hours_by_buoy", "lag")}
         out["correction"].update(cv_overall=cv.get("overall"), years_better=cv.get("years_better"), years_scored=cv.get("years_scored"),
-                                 improves=cv.get("improves"), swell=corr["hs"]["swell"], global_factor=corr["hs"]["global"],
-                                 table=corr["hs"]["table"], speed_edges=corr.get("speed_edges"))
+                                 improves=cv.get("improves"), by_buoy=cv.get("by_buoy"), fit_from=corr.get("fit_from"))
     if card:
         out["scorecard"] = card
     return out
@@ -477,13 +527,16 @@ if __name__ == "__main__":
     elif a.cmd == "fit":
         c = fit_dir(a.dir)
         cv = c["cv"]
-        print("hours", c["hours"], json.dumps(c["hours_by_buoy"]), "lag", json.dumps(c["lag"]))
+        print("hours", c["hours"], json.dumps(c["hours_by_buoy"]), "left out", c["left_out_hours"], json.dumps(c["fit_from"]), "lag", json.dumps(c["lag"]))
+        for b, ys in c["by_year"].items():
+            print("  buoy/model by year", b, " ".join("%s:%.2f" % (y, v["ratio"]) for y, v in ys.items()))
         print("held-out years:", json.dumps(cv.get("overall")))
         for r in cv.get("years", []):
             print(" ", r["year"], "raw rmse", r["raw"]["rmse_m"], "learned", r["learned"]["rmse_m"], "big-wave bias", r["raw"]["big_bias_m"], "->", r["learned"]["big_bias_m"])
-        print("improves:", cv.get("improves"), "global factor", c["hs"]["global"], "swell", c["hs"]["swell"])
-        for s_, row in enumerate(c["hs"]["table"]):
-            print("  from %3d deg" % (s_ * 30), row, c["hs"]["n"][s_])
+        print("improves:", cv.get("improves"), "by buoy", json.dumps(cv.get("by_buoy")))
+        print("height regression:", " ".join("%s %+.4f" % fc for fc in zip(FEATURES, c["hs"]["coef"])))
+        for u_ in (3, 6, 9, 12):
+            print("  factor at %2d m/s (model 0.5 m)" % u_, " ".join("%d:%.2f" % (d_, factor(c, d_, u_, 0.0, m=0.5)) for d_ in range(0, 360, 45)))
     elif a.cmd == "log":
         sup = json.load(open(a.sup))
         g = json.load(open(a.glwu)) if a.glwu and os.path.exists(a.glwu) else None

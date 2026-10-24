@@ -36,13 +36,14 @@ def synth_pairs(years=(2019, 2020, 2021, 2022), seed=1):
 
 def test_fit_recovers_direction_bias():
     c = learn.fit_pairs(synth_pairs())
-    ne = c["hs"]["table"][learn.sector(45)][learn.speed_bin(8.0)]
-    sw_ = c["hs"]["table"][learn.sector(200)][learn.speed_bin(8.0)]
-    assert 0.65 < ne < 0.78, ne        # ~1/1.4
-    assert 0.93 < sw_ < 1.07, sw_
-    assert learn.factor(c, 45, 8.0) == ne
-    assert learn.factor(None, 45, 8.0) == 1.0
-    assert learn.factor(c, 45, 8.0, swell_frac=0.9) == c["hs"]["swell"]
+    ne = learn.factor(c, 45, 8.0, m=0.1 + 0.12 * 8.0)
+    sw_ = learn.factor(c, 200, 8.0, m=0.1 + 0.12 * 8.0)
+    assert 0.6 < ne < 0.85, ne        # ~1/1.4
+    assert 0.9 < sw_ < 1.12, sw_
+    assert learn.factor(None, 45, 8.0, m=1.0) == 1.0
+    assert learn.factor(c, 45, 8.0, m=0.01) == 1.0        # no model sea to scale
+    lo, hi = c["hs"]["ratio_clip"]
+    assert lo <= learn.factor(c, 45, 30.0, m=0.06) <= hi
 
 
 def test_cross_validation_reports_held_out_gain():
@@ -84,7 +85,8 @@ def test_backfill_and_fit_from_archive_files(tmp_path):
     pairs = learn.read_pairs(sorted((tmp_path / "backfill").glob("*.csv.gz")))
     assert all(p["wind_src"] in ("45174", "45198") for p in pairs)   # each buoy's own anemometer first
     c = learn.fit_dir(str(tmp_path))
-    assert (tmp_path / "correction.json").exists() and c["hs"]["global"] > 0
+    assert (tmp_path / "correction.json").exists() and len(c["hs"]["coef"]) == len(learn.FEATURES)
+    assert c["left_out_hours"] > 0 and c["hours_by_buoy"]["45174"] == 0      # 45174 before 2025: not fitted
     assert c["cv"]["years_scored"] == 2
 
 
@@ -95,8 +97,10 @@ def test_sup_build_adds_learned_hours_and_buoy_forecasts(tmp_path, monkeypatch):
     monkeypatch.setenv("LEARN_PATH", str(p))
     data = sw.build(now=NOW, hours=12, get=make_get(8.0, 40))          # NE wind: the learned model should cut the waves
     h = data["spots"][0]["hourly"][3]
-    assert h["learned"]["factor"] < 0.85
+    assert h["learned"]["factor"] < 0.9
     assert h["learned"]["hs_offshore"] < h["hs_offshore"] * 1.01 or data["learned"]["calibration"] > data["calibration"]
+    # the spot's factor comes from its nearer buoy's sea (Montrose and North Ave: Chicago buoy 45198)
+    assert sw.nearest_buoy(41.9145, -87.6235) == "45198" and sw.nearest_buoy(42.13, -87.66) == "45174"
     bf = data["buoy_fc"]
     assert set(bf) == {"45174", "45198"} and len(bf["45174"]["raw"]) == 13
     assert all(a < b for a, b in zip(bf["45198"]["learned"][2:], bf["45198"]["raw"][2:]) if b > 0.2)

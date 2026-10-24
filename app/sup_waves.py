@@ -569,7 +569,8 @@ def build(now=None, hours=48, get=http_get):
     calib = calib_l = 1.0
     from . import learn                                   # experimental learned correction (learn branch), if present
     corr = learn.load_correction()
-    lfac = lambda s_, comps, what="hs": learn.factor(corr, s_["dir"], s_["u_wave"], swell_share(comps), what) if corr else 1.0  # noqa: E731
+    lfac = lambda s_, comps, what="hs": learn.factor(corr, s_["dir"], s_["u_wave"], swell_share(comps), what,  # noqa: E731
+                                                     m=math.sqrt(sum(c["hs"] ** 2 for c in comps))) if corr else 1.0
     if wave_now and wave_now["wvht"]:
         bt = fetch_table(wave_now["lat"], wave_now["lon"], 90)
         sea = SeaState()
@@ -579,6 +580,9 @@ def build(now=None, hours=48, get=http_get):
         if hs_model > 0.1:
             calib = float(np.clip(wave_now["wvht"] / hs_model, 0.5, 2.0))
             calib_l = float(np.clip(wave_now["wvht"] / (hs_model * lfac(series[i_now], sea.components())), 0.5, 2.0))
+    # the learned correction is worked out where it was learned (at the buoys, from the sea there) and carried to each
+    # spot from its nearer buoy, like the live buoy nudge: the regression's wind terms belong to the buoys' fetch
+    ratios = learned_ratios(series, lfac) if corr else {}
     hist_hours = sum(1 for k in range(0, i_now) if series[k]["wind"] is not None)
     if hist_hours < 6:
         sources["errors"].append(f"only {hist_hours} h of wind history: waves already on the lake may be underestimated")
@@ -598,7 +602,7 @@ def build(now=None, hours=48, get=http_get):
             c_t = 1 + (calib - 1) * math.exp(-lead / 6.0)          # buoy correction fades over ~6 h
             c_tl = 1 + (calib_l - 1) * math.exp(-lead / 6.0)       # ... toward the learned model, when there is one
             raw = sea.components()
-            fh, ft = lfac(s_, raw), lfac(s_, raw, "tp")
+            fh, ft = ratios[nearest_buoy(spot["lat"], spot["lon"])][k] if corr else (1.0, 1.0)
 
             def xform(cf, fh_=1.0, ft_=1.0):
                 out = []
@@ -669,6 +673,26 @@ def build(now=None, hours=48, get=http_get):
         "learned": None if not corr else {"generated": corr.get("generated"), "hours": corr.get("hours"), "calibration": round(calib_l, 2),
                                           "improves": (corr.get("cv") or {}).get("improves")},
     }
+
+
+def nearest_buoy(lat, lon):
+    from . import learn
+    return min(learn.BUOYS, key=lambda b: (learn.BUOYS[b][0] - lat) ** 2 + ((learn.BUOYS[b][1] - lon) * 0.74) ** 2)
+
+
+def learned_ratios(series, lfac):
+    """Learned height and period factors, hour by hour, from the sea at each buoy."""
+    from . import learn
+    out = {}
+    for b, (la, lo) in learn.BUOYS.items():
+        table = fetch_table(la, lo, 90)
+        sea, r = SeaState(), []
+        for s_ in series:
+            sea.step(s_["u_wave"], s_["dir"], lambda d, t=table: interp_dir(t, d) * 1000)
+            comps = sea.components()
+            r.append((lfac(s_, comps), lfac(s_, comps, "tp")) if s_["dir"] is not None and s_["u_wave"] is not None else (1.0, 1.0))
+        out[b] = r
+    return out
 
 
 def swell_share(comps):
