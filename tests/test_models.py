@@ -94,3 +94,15 @@ def test_monroe_walls_vertical():
     far = {"x0": g["x0"], "y0": g["y0"] + 20000, "dx": 8.0, "nx": 80, "ny": 120}
     lake2 = {"osm": [{"kind": "breakwater", "pts": [[x0, y0 + 20000], [x0, y1 + 20000]], "closed": False}]}
     assert sc.obstacles(lake2, far, np.full((120, 80), 5.0))[0]["refl"] == sc.REFL["breakwater"]
+
+
+def test_coastline_across_harbour_mouth_is_open():
+    """OSM closes the coastline across a harbour mouth; with water along it and on both sides it is no wall"""
+    g = {"x0": 0.0, "y0": 0.0, "dx": 8.0, "nx": 60, "ny": 60}
+    depth = np.full((60, 60), 6.0); depth[:, :10] = -2.0             # land to the west, deep water elsewhere
+    fine = ({"x0": 0.0, "y0": 0.0, "dx": 4.0, "nx": 120, "ny": 120}, np.kron(depth, np.ones((2, 2))))
+    mouth = {"kind": "coastline", "pts": [[300.0, 100.0], [300.0, 300.0]]}            # across open water
+    shore = {"kind": "coastline", "pts": [[78.0, 100.0], [78.0, 300.0]]}              # the real waterline
+    ob = sc.obstacles({"osm": [mouth, shore]}, g, depth, fine)
+    xs = sorted({round(p[0]) for o in ob for p in o["pts"]})
+    assert ob and all(x < 100 for x in xs)

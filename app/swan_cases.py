@@ -161,6 +161,19 @@ def obstacles(lakefront, g, depth, fine=None):
                 return "deep_wall" if toe >= TOE_DEEP else "shoaled" if toe < TOE_SHOAL else "revetment"
         return "revetment"
 
+    def opening(a, b, nx, ny):
+        """OSM closes the coastline across harbour mouths (Monroe Harbor's gap, 230 m and 8 m deep): a segment
+        with lidar water along it and 10 m to both sides is an opening, not a wall"""
+        L = math.dist(a, b)
+        if L < 20:
+            return False
+        n = max(3, int(L / 4)); hits = 0
+        for k in range(1, n):
+            px, py = a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n
+            ds = [fine_at(px + nx * t, py + ny * t) for t in (-10.0, 0.0, 10.0)]
+            hits += all(np.isfinite(v) and v > 1.5 for v in ds)
+        return hits >= 0.7 * (n - 1)
+
     def wall(run, kinds):
         mx, my = np.mean([p[0] for p in run]), np.mean([p[1] for p in run])
         k = "vertical" if any(a[0] <= mx <= b[0] and a[1] <= my <= b[1] for a, b in zones) else (kinds[0] if kinds else "revetment")
@@ -177,7 +190,7 @@ def obstacles(lakefront, g, depth, fine=None):
             L = math.dist(a, b) or 1
             nx, ny = (b[1] - a[1]) / L, -(b[0] - a[0]) / L            # one side's normal; test both
             d = np.nanmax([depth_at(mx + nx * 15, my + ny * 15), depth_at(mx - nx * 15, my - ny * 15)])
-            if np.isfinite(d) and d > 2.0:
+            if np.isfinite(d) and d > 2.0 and not opening(a, b, nx, ny):
                 k = toe_class(mx, my, nx, ny)
                 if run and kinds and k != kinds[0]:          # a new wall grade starts a new obstacle line
                     out.append(wall(run, kinds)); run, kinds = [], []
