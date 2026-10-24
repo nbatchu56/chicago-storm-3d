@@ -55,12 +55,13 @@ jobs:
           OUT: ${{ runner.temp }}/storm
         run: |
           M="$RUNNER_TEMP/models"; mkdir -p "$M"
-          for b in bathy:bathy.json swan:swan.json funwave:funwave_rough.json funwave:funwave_storm.json validate:validate.json history:history-paddle-2026-10-23.json; do
+          for b in bathy:bathy.json swan:swan.json funwave:funwave_rough.json funwave:funwave_storm.json validate:validate.json; do
             br=${b%%:*}; f=${b#*:}; git fetch -q --depth 1 origin "$br" 2>/dev/null && git show "origin/$br:$f" > "$M/$f" 2>/dev/null || rm -f "$M/$f"; done
+          git fetch -q --depth 1 origin history 2>/dev/null && for f in $(git ls-tree --name-only origin/history | grep '^history-.*\.json$'); do git show "origin/history:$f" > "$M/$f"; done || true
           ls -la "$M"
           python tools/build_world.py --out "$OUT/world.html" --scene "$OUT/scene.json" --sup "$OUT/sup.json" --lakefront "$OUT/lakefront.json" \
             --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M/funwave_rough.json" "$M/funwave_storm.json" --validate "$M/validate.json" \
-            --history "$M/history-paddle-2026-10-23.json"
+            --history "$M"/history-*.json
       - name: Publish to the snapshot branch
         env:
           OUT: ${{ runner.temp }}/storm

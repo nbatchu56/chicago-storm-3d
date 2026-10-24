@@ -20,6 +20,7 @@ import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATE = os.path.join(ROOT, "app", "static", "world.html")
+TITLES = {"derecho-2026-08-11": "Aug 11 derecho", "paddle-2026-10-23": "Your paddle, Oct 23"}
 
 
 def load(path):
@@ -97,15 +98,25 @@ def main():
         ap.add_argument("--" + k)
     ap.add_argument("--funwave", nargs="*", default=[])
     ap.add_argument("--history", nargs="*", default=[])
+    ap.add_argument("--start", help='open on a history period: JSON {"label":..,"t":ISO,"view":[lat,lon,km,heading,pitch]}')
     a = ap.parse_args()
     html = open(TEMPLATE).read()
     blocks = {
         "scene-data": load(a.scene), "sup-data": load(a.sup), "lakefront-data": load(a.lakefront), "track-data": load(a.track),
         "bathy-data": thin_bathy(load(a.bathy)), "swan-data": coarsen_swan(load(a.swan)),
         "funwave-data": quantize_funwave([load(p) for p in a.funwave]) or None, "validate-data": summarize_validation(load(a.validate)),
-        "meta-data": {"generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")},
+        "meta-data": {"generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), **({"start": json.loads(a.start)} if a.start else {})},
     }
-    hist = [h for h in (load(p) for p in a.history) if h]
+    hist = []
+    for p in a.history:
+        h = load(p)
+        if not h:
+            continue
+        name = os.path.basename(p)
+        h.setdefault("label", name[len("history-"):-len(".json")] if name.startswith("history-") else name)
+        h.setdefault("title", TITLES.get(h["label"]))
+        hist.append(h)
+    hist.sort(key=lambda h: 0 if "derecho" in h["label"] else 1)
     if hist:
         blocks["history-data"] = hist
     for tag, obj in blocks.items():

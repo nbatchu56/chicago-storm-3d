@@ -1454,7 +1454,7 @@ function buildTicks() { const [t0, t1] = range(), tk = $("#ticks"), span = t1 - 
   [t0, t0 + span / 2, t1].forEach((t) => { const s = document.createElement("span"); s.textContent = f.format(new Date(t)); tk.appendChild(s); }); }
 async function addHistory(raw) { const scene = raw.scene ? await decodeScene(raw.scene) : null; SRC.hist.push({ raw, scene });
   const sel = $("#hist-pick"), o = document.createElement("option"); o.value = String(SRC.hist.length - 1);
-  o.textContent = `${fmtFull.format(new Date(raw.window.start))}${scene ? ` · ${scene.frames.length} radar scans` : " · no radar"}`; sel.appendChild(o); }
+  o.textContent = `${raw.title ? raw.title + " · " : ""}${fmtFull.format(new Date(raw.window.start))}${scene ? ` · ${scene.frames.length} radar scans` : " · no radar"}`; sel.appendChild(o); }
 function renderLegend() {
   const el = $("#legend"); let h = "";
   if (S.ov === "temp") { const grad = TSTOPS.map(([f, c]) => `rgb(${c}) ${((f - 32) / 48 * 100).toFixed(0)}%`).join(",");
@@ -1665,6 +1665,11 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
     $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""}`;
     setMode(SRC.live ? "live" : SRC.hist.length ? "history" : "exp");
     if (SRC.hist.length) { S.histIdx = 0; $("#hist-pick").value = "0"; }
+    // a page can be built to open on a featured period (e.g. a storm): meta.start = {label, t, view: [lat, lon, km, heading, pitch]}
+    const st = (parseJSON("meta-data") || {}).start;
+    if (st) { const i = SRC.hist.findIndex((h) => h.raw.label === st.label || (h.raw.window && h.raw.window.start.startsWith(st.label || "~")));
+      if (i >= 0) { S.histIdx = i; $("#hist-pick").value = String(i); setMode("history"); if (st.t) S.t = new Date(st.t).getTime(); }
+      if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
 window.__world = { NAV, setMove, gotoPreset, viewState, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
