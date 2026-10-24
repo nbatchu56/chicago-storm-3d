@@ -1,27 +1,16 @@
-hours 68827 {"45174": 48769, "45198": 20058} lag {"lag_h": 2, "r": 0.795}
-held-out years: {"raw": {"hours": 68827, "bias_m": -0.179, "rmse_m": 0.321, "mae_m": 0.217, "r": 0.786, "big_hours": 8649, "big_bias_m": -0.525, "big_rmse_m": 0.716}, "learned": {"hours": 68827, "bias_m": -0.007, "rmse_m": 0.311, "mae_m": 0.189, "r": 0.792, "big_hours": 8649, "big_bias_m": -0.06, "big_rmse_m": 0.66}}
-  2015 raw rmse 0.39 learned 0.342 big-wave bias -0.56 -> -0.03
-  2016 raw rmse 0.335 learned 0.273 big-wave bias -0.613 -> -0.251
-  2017 raw rmse 0.311 learned 0.259 big-wave bias -0.504 -> -0.066
-  2018 raw rmse 0.318 learned 0.258 big-wave bias -0.501 -> -0.051
-  2019 raw rmse 0.389 learned 0.303 big-wave bias -0.702 -> -0.297
-  2020 raw rmse 0.363 learned 0.289 big-wave bias -0.583 -> -0.157
-  2021 raw rmse 0.332 learned 0.326 big-wave bias -0.58 -> -0.062
-  2022 raw rmse 0.322 learned 0.289 big-wave bias -0.607 -> -0.133
-  2023 raw rmse 0.33 learned 0.305 big-wave bias -0.561 -> -0.083
-  2024 raw rmse 0.353 learned 0.294 big-wave bias -0.637 -> -0.202
-  2025 raw rmse 0.234 learned 0.395 big-wave bias -0.05 -> 0.524
-  2026 raw rmse 0.229 learned 0.334 big-wave bias -0.178 -> 0.353
-improves: True global factor 1.459 swell 1.534
-  from   0 deg [1.576, 1.439, 1.501, 1.685] [281, 2021, 2027, 861]
-  from  30 deg [1.559, 1.421, 1.524, 1.541] [295, 1571, 1290, 479]
-  from  60 deg [1.52, 1.295, 1.279, 1.236] [309, 1367, 753, 374]
-  from  90 deg [1.405, 1.313, 1.272, 1.203] [353, 1646, 514, 239]
-  from 120 deg [1.366, 1.288, 1.227, 1.285] [445, 1855, 545, 152]
-  from 150 deg [1.265, 1.247, 1.306, 1.393] [588, 1836, 736, 99]
-  from 180 deg [1.247, 1.3, 1.355, 1.265] [433, 1577, 768, 178]
-  from 210 deg [1.391, 1.428, 1.481, 1.341] [109, 1568, 1047, 205]
-  from 240 deg [1.552, 1.566, 1.515, 1.448] [17, 1043, 723, 252]
-  from 270 deg [1.524, 1.547, 1.532, 1.571] [27, 738, 702, 375]
-  from 300 deg [1.587, 1.571, 1.689, 1.821] [75, 741, 733, 503]
-  from 330 deg [1.474, 1.473, 1.713, 1.791] [237, 1174, 919, 673]
+hours 27758 {"45174": 7700, "45198": 20058} left out 41069 {"45174": "2025-01-01"} lag {"lag_h": 2, "r": 0.787}
+  buoy/model by year 45174 2015:1.54 2016:1.74 2017:1.53 2018:1.55 2019:1.74 2020:1.67 2021:1.60 2022:1.73 2023:1.65 2024:1.63 2025:1.09 2026:1.18
+  buoy/model by year 45198 2021:1.40 2022:1.34 2023:1.29 2024:1.52 2025:1.30 2026:1.25
+held-out years: {"raw": {"hours": 27758, "bias_m": -0.101, "rmse_m": 0.243, "mae_m": 0.17, "r": 0.779, "big_hours": 2234, "big_bias_m": -0.239, "big_rmse_m": 0.554}, "learned": {"hours": 27758, "bias_m": -0.004, "rmse_m": 0.175, "mae_m": 0.123, "r": 0.844, "big_hours": 2234, "big_bias_m": -0.223, "big_rmse_m": 0.376}}
+  2021 raw rmse 0.263 learned 0.23 big-wave bias -0.625 -> -0.493
+  2022 raw rmse 0.238 learned 0.154 big-wave bias -0.299 -> -0.233
+  2023 raw rmse 0.239 learned 0.164 big-wave bias -0.287 -> -0.217
+  2024 raw rmse 0.286 learned 0.198 big-wave bias -0.444 -> -0.346
+  2025 raw rmse 0.234 learned 0.172 big-wave bias -0.05 -> -0.109
+  2026 raw rmse 0.229 learned 0.169 big-wave bias -0.178 -> -0.218
+improves: True by buoy {"45198": {"raw": {"hours": 20058, "bias_m": -0.12, "rmse_m": 0.248, "mae_m": 0.175, "r": 0.767, "big_hours": 1578, "big_bias_m": -0.273, "big_rmse_m": 0.571}, "learned": {"hours": 20058, "bias_m": -0.016, "rmse_m": 0.173, "mae_m": 0.12, "r": 0.84, "big_hours": 1578, "big_bias_m": -0.228, "big_rmse_m": 0.373}}, "45174": {"raw": {"hours": 7700, "bias_m": -0.054, "rmse_m": 0.229, "mae_m": 0.156, "r": 0.812, "big_hours": 656, "big_bias_m": -0.159, "big_rmse_m": 0.512}, "learned": {"hours": 7700, "bias_m": 0.025, "rmse_m": 0.181, "mae_m": 0.13, "r": 0.859, "big_hours": 656, "big_bias_m": -0.212, "big_rmse_m": 0.384}}}
+height regression: 1 +0.1393 m +0.2962 m cos d +0.0878 m sin d +0.1123 cos d +0.0362 sin d +0.0274 u +0.0129 u^2/10 +0.0307 m swell +0.1635
+  factor at  3 m/s (model 0.5 m) 0:0.87 45:0.94 90:0.87 135:0.71 180:0.55 225:0.48 270:0.54 315:0.70
+  factor at  6 m/s (model 0.5 m) 0:1.11 45:1.18 90:1.12 135:0.96 180:0.79 225:0.72 270:0.78 315:0.95
+  factor at  9 m/s (model 0.5 m) 0:1.46 45:1.54 90:1.47 135:1.31 180:1.14 225:1.07 270:1.14 315:1.30
+  factor at 12 m/s (model 0.5 m) 0:1.93 45:2.00 90:1.93 135:1.77 180:1.61 225:1.54 270:1.60 315:1.76
