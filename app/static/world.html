@@ -993,8 +993,10 @@ async function setFunwave(list) {
     o.textContent = `${r.label} (${ft(r.hs)} ft, ${r.tp} s, from ${compass(r.dir)}) · ${rs.length} tile${rs.length > 1 ? "s" : ""}`; $("#fw-pick").appendChild(o); }
   $("#fw-box").hidden = !FW.runs.length;
 }
-const fwIn = (r, xk, yk) => { const g = r.grid, x = xk * 1000, y = yk * 1000; return x >= g.x0 && y >= g.y0 && x <= g.x0 + (g.nx - 1) * g.dx && y <= g.y0 + (g.ny - 1) * g.dx; };
-const fwMid = (r) => { const g = r.grid; return [(g.x0 + (g.nx - 1) * g.dx / 2) / 1000, (g.y0 + (g.ny - 1) * g.dx / 2) / 1000]; };
+// a run's domain can reach up-wave of its tile (oblique seas); a tile is shown where its core is
+const fwBox = (r) => { const c = r.core, g = r.grid; return c ? [c.x_west, c.y_south, c.x_east, c.y_north] : [g.x0, g.y0, g.x0 + (g.nx - 1) * g.dx, g.y0 + (g.ny - 1) * g.dx]; };
+const fwIn = (r, xk, yk) => { const [x0, y0, x1, y1] = fwBox(r), x = xk * 1000, y = yk * 1000; return x >= x0 && y >= y0 && x <= x1 && y <= y1; };
+const fwMid = (r) => { const [x0, y0, x1, y1] = fwBox(r); return [(x0 + x1) / 2000, (y0 + y1) / 2000]; };
 function fwTileAt(xk, yk) { const rs = FW.byCase[FW.case] || []; let best = rs.find((r) => fwIn(r, xk, yk)) || null, bd = 1e9;
   if (!best) for (const r of rs) { const [mx, my] = fwMid(r), d = Math.hypot(mx - xk, my - yk); if (d < bd) { bd = d; best = r; } } return { r: best, inside: !!best && fwIn(best, xk, yk) }; }
 async function bindFunwave(r) {

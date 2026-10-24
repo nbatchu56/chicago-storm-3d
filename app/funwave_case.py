@@ -18,6 +18,7 @@ import base64
 import glob
 import gzip
 import json
+import math
 import os
 
 import numpy as np
@@ -26,11 +27,12 @@ from . import bathymetry as bm
 
 # tiles in the shared local frame (m east/north of State & Madison); the east edge must be open lake
 # (the wavemaker sits 75 m inside it). "diversey" is the original harbour-entrance domain, widened.
+# x_wall: about the westmost lake wall in the tile; oblique seas need the wavemaker to reach up-wave of it
 TILES = {
-    "diversey": {"x_east": 200.0, "x_west": -650.0, "y_south": 5150.0, "y_north": 6000.0, "dx": 1.5, "label": "Diversey Harbor"},
-    "belmont": {"x_east": 150.0, "x_west": -950.0, "y_south": 5900.0, "y_north": 6850.0, "dx": 1.5, "label": "Diversey to Belmont"},
-    "northave": {"x_east": 800.0, "x_west": -150.0, "y_south": 3350.0, "y_north": 4300.0, "dx": 1.5, "label": "North Ave to the Chess Pavilion"},
-    "fullerton": {"x_east": 300.0, "x_west": -650.0, "y_south": 4200.0, "y_north": 5150.0, "dx": 1.5, "label": "Chess Pavilion to Fullerton"},
+    "diversey": {"x_east": 200.0, "x_west": -650.0, "y_south": 5150.0, "y_north": 6000.0, "dx": 1.5, "x_wall": -400.0, "label": "Diversey Harbor"},
+    "belmont": {"x_east": 150.0, "x_west": -950.0, "y_south": 5900.0, "y_north": 6850.0, "dx": 1.5, "x_wall": -650.0, "label": "Diversey to Belmont"},
+    "northave": {"x_east": 800.0, "x_west": -150.0, "y_south": 3350.0, "y_north": 4300.0, "dx": 1.5, "x_wall": -150.0, "label": "North Ave to the Chess Pavilion"},
+    "fullerton": {"x_east": 300.0, "x_west": -650.0, "y_south": 4200.0, "y_north": 5150.0, "dx": 1.5, "x_wall": -250.0, "label": "Chess Pavilion to Fullerton (Theater on the Lake)"},
 }
 DOMAIN = TILES["diversey"]
 CASES = {
@@ -125,9 +127,22 @@ WaveHeight = T
 """
 
 
+def run_domain(tile, case):
+    """The tile, extended up-wave for an oblique sea: waves from the wavemaker travel at an angle, so without
+    this the walls near the up-wave edge sit in a false shadow (half height at Theater on the Lake for NE seas)."""
+    core = TILES[tile]; d = dict(core)
+    ang = math.radians(abs(90.0 - CASES[case]["dir"]))
+    ext = round(max(0.0, (core["x_east"] - 75.0 - core["x_wall"]) * math.tan(ang)) + 30.0, -1) if ang > 0.05 else 0.0
+    if CASES[case]["dir"] < 90:
+        d["y_north"] = core["y_north"] + ext       # from the NE: rays run to the SW
+    else:
+        d["y_south"] = core["y_south"] - ext
+    return d, core
+
+
 def prepare(bathy_path, case, out, tile="diversey", procs=4):
     bathy = json.load(open(bathy_path))
-    d = TILES[tile]
+    d, core = run_domain(tile, case)
     xs, ys, D, S = depth_grid(bathy, d)
     os.makedirs(os.path.join(out, "output"), exist_ok=True)
     # wavemaker depth: median depth along the wavemaker line (model x = 75 m); it must be open water
@@ -140,7 +155,7 @@ def prepare(bathy_path, case, out, tile="diversey", procs=4):
     px, py = (2, procs // 2) if procs >= 2 else (1, 1)
     with open(os.path.join(out, "input.txt"), "w") as fh:
         fh.write(input_txt(D.shape[1], D.shape[0], case, dep_wk, d, tile, px, py))
-    meta = {"case": case, "tile": tile, "tile_label": d["label"], **CASES[case], "domain": d, "m": int(D.shape[1]), "n": int(D.shape[0]),
+    meta = {"case": case, "tile": tile, "tile_label": d["label"], **CASES[case], "domain": d, "core": core, "m": int(D.shape[1]), "n": int(D.shape[0]),
             "dep_wk": dep_wk, "lidar_frac": round(float((S == 1).mean()), 3)}
     json.dump(meta, open(os.path.join(out, "meta.json"), "w"))
     return meta
@@ -161,7 +176,12 @@ def collect(run, out_path, step=2):
     hs = _read(hs_files[-1], n, m)
     # world orientation: columns west->east (model i runs east->west), rows south->north
     hs = hs[:, ::-1]
-    frames = [_read(f, n, m)[:, ::-1][::step, ::step] for f in eta_files[-40:]]
+    # dry cells carry a placeholder (~12 m) in FUNWAVE's output: zero them, so they don't swamp the 1-byte
+    # quantization of the surface on the page
+    dep_path = os.path.join(run, "depth.txt")
+    dry = (np.loadtxt(dep_path, dtype=np.float32).reshape(n, m)[:, ::-1] <= 0.0) if os.path.exists(dep_path) else np.zeros((n, m), bool)
+    hs = np.where(dry, 0.0, hs)
+    frames = [np.where(dry, 0.0, _read(f, n, m)[:, ::-1])[::step, ::step] for f in eta_files[-40:]]
     eta = np.stack(frames).astype(np.float16) if frames else np.zeros((0, 1, 1), np.float16)
     # the oblique internal wavemaker in a 600 m wide domain with absorbing sides under-delivers energy:
     # scale the run so the open-water band in front of the wavemaker carries the stated offshore height
@@ -173,6 +193,8 @@ def collect(run, out_path, step=2):
     out = {"version": 3, "model": "FUNWAVE-TVD", "scaled_by": round(norm, 3), "tile": meta.get("tile", "diversey"), "tile_label": meta.get("tile_label", "Diversey Harbor"),
            **{k: meta[k] for k in ("case", "hs", "tp", "dir", "label", "lidar_frac")},
            "grid": {"x0": d["x_west"], "y0": d["y_south"], "dx": d["dx"], "nx": m, "ny": n},
+           # the tile proper (the run domain may extend up-wave of it): the page shows a tile there
+           "core": {k: (meta.get("core") or d)[k] for k in ("x_west", "x_east", "y_south", "y_north")},
            "hsig": enc(np.clip(np.round(hs * 100), 0, 65535).astype("<u2")), "hsig_units": "cm",
            "eta": {"dt": SNAP, "step": step, "nx": int(eta.shape[2]) if eta.size else 0, "ny": int(eta.shape[1]) if eta.size else 0,
                    "frames": int(eta.shape[0]), "data": enc(eta.astype("<f2")), "units": "m"}}
