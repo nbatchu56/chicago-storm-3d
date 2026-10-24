@@ -23,6 +23,17 @@ TEMPLATE = os.path.join(ROOT, "app", "static", "world.html")
 TITLES = {"derecho-2026-08-11": "Aug 11 derecho", "paddle-2026-10-23": "Your paddle, Oct 23"}
 
 
+def paddle_title(label):
+    """paddle-2026-10-24 -> "Your paddle, Oct 24" (any other label: no title)."""
+    try:
+        if label and label.startswith("paddle-"):
+            d = dt.date.fromisoformat(label[7:17])
+            return f"Your paddle, {d.strftime('%b')} {d.day}"
+    except ValueError:
+        pass
+    return None
+
+
 def load(path):
     if not path or not os.path.exists(path):
         return None
@@ -156,7 +167,7 @@ def main():
             continue
         name = os.path.basename(p)
         h.setdefault("label", name[len("history-"):-len(".json")] if name.startswith("history-") else name)
-        h.setdefault("title", TITLES.get(h["label"]))
+        h.setdefault("title", TITLES.get(h["label"]) or paddle_title(h["label"]))
         hist.append(h)
     hist.sort(key=lambda h: 0 if "derecho" in h["label"] else 1)
     if hist:
