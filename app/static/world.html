@@ -253,7 +253,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
     <section>
       <h2>View</h2>
       <div class="seg" role="group" aria-label="Overlay"><button data-ov="natural" aria-pressed="true">Natural</button><button data-ov="temp" aria-pressed="false">Water temp</button><button data-ov="radar" aria-pressed="false">Radar</button></div>
-      <div class="seg" role="group" aria-label="Lake overlay"><button data-ov="depth" aria-pressed="false">Depth</button><button data-ov="hs" aria-pressed="false">Wave height</button></div>
+      <div class="seg" role="group" aria-label="Lake overlay"><button data-ov="depth" aria-pressed="false">Depth</button><button data-ov="hs" aria-pressed="false">Wave height</button><button data-ov="chop" aria-pressed="false">Chop</button></div>
       <div class="row" hidden><label for="exag">Cloud height scale</label><output id="exag-o">×1</output></div>
       <input type="range" id="exag" min="1" max="5" step="0.5" value="1" hidden>
       <label class="check"><input type="checkbox" id="bolts" checked> Lightning flashes</label>
@@ -482,6 +482,8 @@ const U = {
   uBathyF: { value: blank2D }, uBathyFMin: { value: new THREE.Vector2() }, uBathyFSize: { value: new THREE.Vector2(1, 1) }, uHasBathyF: { value: 0 },
   uSwan: { value: blank2D }, uSwanMin: { value: new THREE.Vector2() }, uSwanSize: { value: new THREE.Vector2(1, 1) }, uSwanOn: { value: 0 }, uSwanRef: { value: 1 }, uHsOff: { value: 0 },
   uDepthOn: { value: 0 }, uHsOn: { value: 0 },
+  // chop overlay: wave energy everywhere; inside a bound FUNWAVE tile also its crossing/rebound index (tex R = Hs m, G = crossing 0..1)
+  uChopOn: { value: 0 }, uChopTex: { value: blank2D }, uChopMin: { value: new THREE.Vector2() }, uChopSize: { value: new THREE.Vector2(1, 1) }, uChopCore: { value: new THREE.Vector4(1e6, 1e6, -1e6, -1e6) }, uChopHas: { value: 0 },
   uFw: { value: null }, uFwHs: { value: blank2D }, uFwMin: { value: new THREE.Vector2() }, uFwSize: { value: new THREE.Vector2(1, 1) }, uFwOn: { value: 0 }, uFwT: { value: 0 },
   uTempOn: { value: 0 }, uTRamp: { value: tRamp }, uLocalC: { value: new THREE.Vector2() }, uWaterC: { value: 15 }, uIceExp: { value: 0 }, uSnowCover: { value: 0 },
 };
@@ -560,6 +562,20 @@ float swanRatio(vec2 pk) { if (uSwanOn < 0.5) return -1.0; vec2 f = (pk - uSwanM
   if (f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0) return -1.0; return texture2D(uSwan, f).r; }
 vec3 depthColor(float d) { float t = clamp(d / 12.0, 0.0, 1.0); vec3 c = mix(vec3(0.93, 0.86, 0.55), vec3(0.25, 0.75, 0.72), smoothstep(0.0, 0.25, t));
   c = mix(c, vec3(0.10, 0.35, 0.65), smoothstep(0.25, 0.6, t)); return pow(mix(c, vec3(0.05, 0.10, 0.35), smoothstep(0.6, 1.0, t)), vec3(2.2)); }
+// chop: wave energy density E = rho g Hs^2 / 16 (fresh water: 613 J/m2 per m^2 of Hs), log scale 10..1000 J/m2
+// (a 1 ft day and a 6 ft day both read);
+// where waves cross (rebound off a wall, or two trains meeting) magenta hatching, solid tint when far away
+uniform sampler2D uChopTex; uniform vec2 uChopMin, uChopSize; uniform vec4 uChopCore; uniform float uChopHas, uChopOn;
+vec2 chopAt(vec2 pk, float hsFb) { if (uChopHas > 0.5 && pk.x >= uChopCore.x && pk.y >= uChopCore.y && pk.x <= uChopCore.z && pk.y <= uChopCore.w)
+  return texture2D(uChopTex, clamp((pk - uChopMin) / uChopSize, 0.0, 1.0)).rg; return vec2(hsFb, 0.0); }
+// w = fwidth of the stripe coordinate, from the caller (fwidth only exists in fragment shaders)
+vec3 chopTint(vec2 hc, vec2 pk, float w) { float t = clamp(log(max(613.0 * hc.x * hc.x, 1.0) / 10.0) / log(100.0), 0.0, 1.0);
+  vec3 c = mix(vec3(0.10, 0.16, 0.30), vec3(0.15, 0.55, 0.70), smoothstep(0.0, 0.12, t)); c = mix(c, vec3(0.30, 0.80, 0.45), smoothstep(0.12, 0.3, t));
+  c = mix(c, vec3(0.97, 0.85, 0.25), smoothstep(0.3, 0.6, t)); c = pow(mix(c, vec3(0.92, 0.30, 0.15), smoothstep(0.6, 1.0, t)), vec3(2.2));
+  float x = smoothstep(0.35, 0.7, hc.y) * step(0.03, hc.x), s = (pk.x + pk.y) * 1000.0 / 12.0;
+  float line = 1.0 - smoothstep(0.22 - w, 0.22 + w, abs(fract(s) - 0.5)), far = smoothstep(0.15, 0.45, w);
+  vec3 mag = pow(vec3(0.95, 0.25, 0.85), vec3(2.2));
+  return mix(c, mag, x * mix(line * 0.9, 0.45, far)); }
 vec3 hsColor(float h) { float t = clamp(h / 2.5, 0.0, 1.0); vec3 c = mix(vec3(0.15, 0.35, 0.75), vec3(0.2, 0.75, 0.55), smoothstep(0.0, 0.2, t));
   c = mix(c, vec3(0.95, 0.85, 0.3), smoothstep(0.2, 0.5, t)); return pow(mix(c, vec3(0.9, 0.25, 0.2), smoothstep(0.5, 1.0, t)), vec3(2.2)); }
 float iceAt(vec2 p, float shoreD, float n) {
@@ -643,12 +659,13 @@ void main(){
     if (uDepthOn > 0.5 && inBathy(p)) { float lw = fwidth(dep) * 1.2 + 0.02;
       bodyTint = depthColor(dep) * 0.5 * (1.0 - 0.55 * (1.0 - smoothstep(0.0, lw, min(fract(dep), 1.0 - fract(dep))))); }
     if (uHsOn > 0.5) bodyTint = hsColor(kr >= 0.0 ? uHsOff * kr : uHs) * 0.5;
+    if (uChopOn > 0.5) bodyTint = chopTint(chopAt(p, kr >= 0.0 ? uHsOff * kr : uHs), p, fwidth((p.x + p.y) * 1000.0 / 12.0)) * 0.5;
     vec3 body = bodyTint * (sunL + amb * 2.0) + vec3(0.0, 0.01, 0.012) * uCity;
     vec3 H = normalize(uSunDir + V); float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
     col = mix(body, refl, uTempOn > 0.5 ? F * 0.45 : F) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice);
     // light through the thin tops of the waves: a lighter green-blue on the crests, stronger as the waves grow
     float hsLook = (kr >= 0.0 ? uHsOff * kr : uHs) * calm;
-    col += vec3(0.02, 0.075, 0.07) * (sunL + amb * 2.0) * smoothstep(0.4, 2.2, crest) * clamp(hsLook * 2.5, 0.15, 1.0) * (uTempOn + uDepthOn + uHsOn > 0.5 ? 0.0 : 1.0);
+    col += vec3(0.02, 0.075, 0.07) * (sunL + amb * 2.0) * smoothstep(0.4, 2.2, crest) * clamp(hsLook * 2.5, 0.15, 1.0) * (uTempOn + uDepthOn + uHsOn + uChopOn > 0.5 ? 0.0 : 1.0);
     float hsHere = (kr >= 0.0 ? uHsOff * kr : uHs) * calm, brk = inBathy(p) && cls < 1.5 ? smoothstep(0.6, 1.0, hsHere / max(dep, 0.05)) * step(0.08, hsHere) : 0.0;
     float wc = vnoise(p * 900.0 + uTime * 0.6) * vnoise(p * 310.0 - uTime * 0.3), cover = max(clamp(uWhitecap, 0.0, 0.3) * calm, brk * 0.3 * (0.4 + 0.6 * vnoise(p * 400.0 - uTime * 0.4)));
     float foam = mix(smoothstep(1.0 - cover * 4.0, 1.0 - cover * 3.0, wc), cover, clamp(foot * 60.0, 0.0, 1.0));
@@ -1121,13 +1138,16 @@ async function bindFunwave(r) {
     const hr = await gunzipB64(r.hsig), hu = new Uint16Array(hr.buffer, hr.byteOffset, hr.byteLength / 2), g = r.grid, hh = new Uint16Array(g.nx * g.ny);
     for (let k = 0; k < hh.length; k++) hh[k] = THREE.DataUtils.toHalfFloat(hu[k] / 100);
     r.hsTex = new THREE.DataTexture(hh, g.nx, g.ny, THREE.RedFormat, THREE.HalfFloatType); r.hsTex.minFilter = r.hsTex.magFilter = THREE.LinearFilter; r.hsTex.needsUpdate = true;
-    r.hsArr = hu; }
+    r.hsArr = hu; fwChop(r, h); }
   if (FW.case !== (r.case || r.label)) return false;   // the condition changed while this loaded
   const g = r.grid; U.uFw.value = r.tex; U.uFwHs.value = r.hsTex; U.uFwMin.value.set(g.x0 / 1000, g.y0 / 1000); U.uFwSize.value.set((g.nx - 1) * g.dx / 1000, (g.ny - 1) * g.dx / 1000);
+  U.uChopTex.value = r.chopTex; U.uChopMin.value.set(g.x0 / 1000, g.y0 / 1000); U.uChopSize.value.set((r.eta.nx - 1) * g.dx * r.eta.step / 1000, (r.eta.ny - 1) * g.dx * r.eta.step / 1000);
+  { const [a, b, c, d] = fwBox(r); U.uChopCore.value.set(a / 1000, b / 1000, c / 1000, d / 1000); } U.uChopHas.value = 1;
   U.uFwOn.value = 1; FW.cur = r; WAVES.key = null; $("#fw-tile").textContent = `Showing the ${r.tile_label} tile; move along the shore to switch.`; return true;
 }
 async function selectFunwave(k) {
   if (typeof k === "number") k = (FW.runs[k] || {}).case;   // older callers passed a run index
+  U.uChopHas.value = 0;
   if (!k || !FW.byCase[k]) { FW.case = null; FW.cur = null; U.uFwOn.value = 0; WAVES.key = null; $("#fw-tile").textContent = ""; return; }
   FW.case = k; FW.cur = null; U.uFwOn.value = 0;
   const t = controls.target, { r, inside } = fwTileAt(t.x, -t.z); if (!r) return;
@@ -1138,6 +1158,38 @@ async function selectFunwave(k) {
 let fwBusy = false;
 function followFunwave() { if (!FW.case || fwBusy) return; const t = controls.target, { r, inside } = fwTileAt(t.x, -t.z);
   if (r && inside && r !== FW.cur) { fwBusy = true; bindFunwave(r).finally(() => { fwBusy = false; }); } }
+// crossing/rebound index from the phase-resolved surface: for one train of waves the time-mean of
+// (d eta/dt)(grad eta) points along the waves with the full magnitude sqrt(<eta_t^2><|grad eta|^2>); waves meeting
+// their own reflection (clapotis) or another train cancel it. crossing = 1 - |mean| / sqrt(...), averaged over
+// ~40 m: 0 for a clean run of waves, ~0.3 for two trains at right angles, ~0.9 against a wall reflecting 90%.
+// h: the eta frames as half floats (frames x ny x nx). Builds r.chopTex (R = Hs m, G = crossing) and r.crossArr.
+function fwChop(r, h) {
+  const e = r.eta, g = r.grid, nx = e.nx, ny = e.ny, nf = e.frames, N = nx * ny, ds = g.dx * e.step, dt = e.dt, hf = THREE.DataUtils.fromHalfFloat;
+  const F = new Float32Array(nf * N); for (let k = 0; k < F.length; k++) F[k] = hf(h[k]);
+  const Ax = new Float32Array(N), Ay = new Float32Array(N), Bt = new Float32Array(N), Bg = new Float32Array(N);
+  for (let f = 1; f < nf - 1; f++) { const a = (f - 1) * N, b = f * N, c = (f + 1) * N;
+    for (let j = 1; j < ny - 1; j++) for (let i = 1; i < nx - 1; i++) { const q = j * nx + i, et = (F[c + q] - F[a + q]) / (2 * dt);
+      const gx = (F[b + q + 1] - F[b + q - 1]) / (2 * ds), gy = (F[b + q + nx] - F[b + q - nx]) / (2 * ds);
+      Ax[q] += et * gx; Ay[q] += et * gy; Bt[q] += et * et; Bg[q] += gx * gx + gy * gy; } }
+  const R = Math.max(2, Math.round(20 / ds)), box = (A) => { const T = new Float32Array(N), O = new Float32Array(N);
+    for (let j = 0; j < ny; j++) { let s = 0; for (let i = -R; i < nx; i++) { if (i + R < nx) s += A[j * nx + i + R]; if (i - R - 1 >= 0) s -= A[j * nx + i - R - 1]; if (i >= 0) T[j * nx + i] = s; } }
+    for (let i = 0; i < nx; i++) { let s = 0; for (let j = -R; j < ny; j++) { if (j + R < ny) s += T[(j + R) * nx + i]; if (j - R - 1 >= 0) s -= T[(j - R - 1) * nx + i]; if (j >= 0) O[j * nx + i] = s; } } return O; };
+  const sAx = box(Ax), sAy = box(Ay), sBt = box(Bt), sBg = box(Bg);
+  // the wavemaker line and the sponge behind it radiate both ways, and the side sponges: not real crossing
+  const d = r.core || {}, xMax = (d.x_east != null ? d.x_east : g.x0 + (g.nx - 1) * g.dx) - 130, yLo = g.y0 + 45, yHi = g.y0 + (g.ny - 1) * g.dx - 45;
+  const out = new Uint16Array(N * 2), cross = new Float32Array(N);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const q = j * nx + i, gi = Math.min(i * e.step, g.nx - 1), gj = Math.min(j * e.step, g.ny - 1);
+    const hs = r.hsArr[gj * g.nx + gi] / 100, x = g.x0 + i * ds, y = g.y0 + j * ds;
+    // wet and moving (older runs keep a ~12 m placeholder on dry cells; a still basin's ratio is only noise)
+    let c = 0; if (hs > Math.max(0.05, 0.08 * r.hs) && hs < 3 * r.hs && Bt[q] / (nf - 2) > 1e-5 && x < xMax && y > yLo && y < yHi) c = Math.min(1, Math.max(0, 1 - Math.hypot(sAx[q], sAy[q]) / Math.sqrt(sBt[q] * sBg[q])));
+    // the surf on a beach is confused water too, but it isn't rebound: fade the index out where the waves break
+    if (c > 0) { const dep = depthAtKm(x / 1000, y / 1000); if (dep != null) c *= Math.min(1, Math.max(0, (dep - 0.8) / 0.7)) * (hs > 0.55 * dep ? 0 : 1); }
+    cross[q] = c; out[2 * q] = THREE.DataUtils.toHalfFloat(hs < 3 * r.hs ? hs : 0); out[2 * q + 1] = THREE.DataUtils.toHalfFloat(c); }
+  r.crossArr = cross;
+  r.chopTex = new THREE.DataTexture(out, nx, ny, THREE.RGFormat, THREE.HalfFloatType); r.chopTex.minFilter = r.chopTex.magFilter = THREE.LinearFilter; r.chopTex.needsUpdate = true;
+}
+function funwaveCrossKm(xk, yk) { const r = FW.cur; if (!r || !r.crossArr || !fwIn(r, xk, yk)) return null; const g = r.grid, ds = g.dx * r.eta.step,
+  i = Math.round((xk * 1000 - g.x0) / ds), j = Math.round((yk * 1000 - g.y0) / ds); if (i < 0 || j < 0 || i >= r.eta.nx || j >= r.eta.ny) return null; return r.crossArr[j * r.eta.nx + i]; }
 function funwaveHsKm(xk, yk) { const r = FW.cur; if (!r || !r.hsArr) return null; const g = r.grid, i = Math.round((xk * 1000 - g.x0) / g.dx), j = Math.round((yk * 1000 - g.y0) / g.dx);
   if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) return null; return r.hsArr[j * g.nx + i] / 100; }
 
@@ -1224,6 +1276,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       if (uTempOn > 0.5) tint = tempColor(waterTempC(pk)) * 0.35;
       if (uDepthOn > 0.5) tint = depthColor(depth) * 0.5 * (1.0 - 0.55 * smoothstep(0.43, 0.48, abs(fract(depth) - 0.5)));
       if (uHsOn > 0.5) tint = hsColor(vFw > 0.0 ? mix(uHsB * vGain, texture2D(uFwHs, clamp((pk - uFwMin) / uFwSize, 0.0, 1.0)).r, vFw) : uHsB * vGain) * 0.5;
+      if (uChopOn > 0.5) tint = chopTint(chopAt(pk, uHsB * vGain), pk, fwidth((pk.x + pk.y) * 1000.0 / 12.0)) * 0.5;
       vec3 body = tint * (sunL + amb * 2.0) + vec3(0.0, 0.01, 0.012) * uCity;
       vec3 c = mix(body, skyColor(R, false), uTempOn > 0.5 ? F * 0.45 : F);
       vec3 Hv = normalize(uSunDir + V); float rough = 0.05 + 0.008 * uWindSpd + sqrt(unres);
@@ -1589,6 +1642,7 @@ function conditions(tMs, xk, yk) {
   if (sw) { const chop = c.systems.filter((q) => q.spread >= 50); c.systems = (c.off.hs * sw.ratio > 0.01 ? [{ hs: c.off.hs * sw.ratio, tp: c.off.tp, dir: sw.dir, spread: 22 }] : []).concat(chop);
     c.swan = sw; c.dRef = Math.max(20, shore.d * 1000); c.src.push(`SWAN ${sw.domain}`); U.uSwanRef.value = Math.max(sw.ratio, 0.02); }
   const dHere = depthAtKm(xk, yk); if (dHere != null) c.depth = dHere;
+  const fwx = funwaveCrossKm(xk, yk); if (fwx != null) c.fwCross = fwx;
   const fwh = funwaveHsKm(xk, yk); if (fwh != null) { c.fwHs = fwh; c.systems = c.systems.length ? c.systems : [{ hs: fwh, tp: FW.cur.tp, dir: FW.cur.dir, spread: 20 }]; }
   if (c.waterC == null && GRIDS.temp) c.waterC = gridValue(GRIDS.temp, xk, yk);
   c.snow = c.airC != null && c.airC < 1 || (S.mode === "exp" && S.x.type === "lakeeffect");
@@ -1822,7 +1876,7 @@ function setMode(m) { S.mode = m; document.querySelectorAll("[data-mode]").forEa
   buildTicks(); WAVES.key = null; }
 document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode));
 document.querySelectorAll("[data-ov]").forEach((b) => b.onclick = () => { S.ov = b.dataset.ov; document.querySelectorAll("[data-ov]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-  U.uMode.value = S.ov === "radar" ? 1 : 0; U.uTempOn.value = S.ov === "temp" ? 1 : 0; U.uDepthOn.value = S.ov === "depth" ? 1 : 0; U.uHsOn.value = S.ov === "hs" ? 1 : 0; renderLegend(); });
+  U.uMode.value = S.ov === "radar" ? 1 : 0; U.uTempOn.value = S.ov === "temp" ? 1 : 0; U.uDepthOn.value = S.ov === "depth" ? 1 : 0; U.uHsOn.value = S.ov === "hs" ? 1 : 0; U.uChopOn.value = S.ov === "chop" ? 1 : 0; renderLegend(); });
 document.querySelectorAll("[data-cam]").forEach((b) => b.onclick = () => goCam(b.dataset.cam));
 document.querySelectorAll("[data-q]").forEach((b) => b.onclick = () => { S.quality = +b.dataset.q; document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); try { localStorage.setItem("lakeworld-q", String(S.quality)); } catch (e) {} resize(); });
 document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-pressed", String(+x.dataset.q === S.quality)));
@@ -1881,6 +1935,10 @@ function renderLegend() {
   else if (S.ov === "hs") { const st = [[0, "#2659bf"], [0.5, "#33bf8c"], [1.25, "#f2d94d"], [2.5, "#e64033"]];
     h = `<b>Wave height</b><div class="bar" style="background:linear-gradient(90deg,${st.map(([d, c]) => `${c} ${(d / 2.5 * 100).toFixed(0)}%`).join(",")})"></div><div class="tk"><span>0</span><span>2</span><span>4</span><span>6</span><span>8 ft</span></div>
       <span>${SWAN.domains.length ? (U.uSwanOn.value > 0.5 ? `SWAN ${SWAN.cur && SWAN.cur.D.name}: sheltering, breaking, reflection` : "Outside the SWAN domains: open-lake estimate") : "No SWAN library loaded"}</span>`; }
+  else if (S.ov === "chop") { const st = [[0, "#1a2950"], [12, "#268cb3"], [30, "#4dcc73"], [60, "#f7d940"], [100, "#eb4d26"]];   // % of the log 10..1000 J/m² scale
+    h = `<b>Chop: wave energy</b><div class="bar" style="background:linear-gradient(90deg,${st.map(([d, c]) => `${c} ${d}%`).join(",")})"></div><div class="tk"><span>10</span><span>30</span><span>100</span><span>300</span><span>1000+ J/m²</span></div>
+      <span><i style="display:inline-block;width:22px;height:9px;vertical-align:-1px;background:repeating-linear-gradient(135deg,#f240d9 0 3px,transparent 3px 7px)"></i> waves crossing: rebound off walls, trains meeting</span>
+      <span>${FW.cur ? `FUNWAVE ${FW.cur.tile_label}: ${FW.cur.label}` : FW.runs.length ? "Crossing shows on wall tiles: pick a condition under Walls, wave by wave" : ""}</span><span>Waves of 1 ft ≈ 60 J/m² · 2 ft ≈ 230 · 3 ft ≈ 510 · 4 ft ≈ 910</span>`; }
   else if (S.ov === "radar") { h = `<b>Radar reflectivity</b><div class="bar" style="background:linear-gradient(90deg,${DBZ_STOPS.slice(0, 13).map(([, c]) => c).join(",")})"></div><div class="tk"><span>5</span><span>35</span><span>65 dBZ</span></div>`; }
   el.innerHTML = h; el.hidden = !h;
 }
@@ -2007,6 +2065,7 @@ function updateHud(rr, tp) {
   const rows = [["Weather here", wx], ["Wind", `${mph(C.wind)} mph ${compass(C.dir)}${C.gust ? ` · gusts ${mph(C.gust)}` : ""}`], ["Waves", tot > 0.01 ? `${ft(tot)} ft · ${tpk.toFixed(1)} s` : "calm"],
     ...(C.depth != null ? [["Depth here", C.depth > 0 ? `${(C.depth * FT).toFixed(C.depth * FT < 10 ? 1 : 0)} ft` : "dry"]] : []),
     ...(C.fwHs != null ? [["FUNWAVE Hs here", `${ft(C.fwHs)} ft`]] : []),
+    ...((C.fwHs != null ? C.fwHs : tot) > 0.01 ? [["Wave energy", `${Math.round(613 * (C.fwHs != null ? C.fwHs : tot) ** 2)} J/m²${C.fwCross != null ? ` · crossing ${Math.round(C.fwCross * 100)}%${C.fwCross >= 0.5 ? " (confused)" : ""}` : ""}`]] : []),
     ...(C.swan && C.off ? [["Offshore", `${ft(C.off.hs)} ft · ${C.off.tp.toFixed(1)} s from ${compass(C.off.dir)}`]] : []),
     ["Water", C.waterC != null ? `${Math.round(cToF(C.waterC))}°F` : "–"], ["Air", C.airC != null ? `${Math.round(cToF(C.airC))}°F` : "–"]];
   if (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) rows.push(["Ice", S.mode === "exp" ? `${Math.round(S.x.ice * 100)}% setting` : "from NOAA analysis"]);

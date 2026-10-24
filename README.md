@@ -48,13 +48,15 @@ The lakefront waves are built in layers, each checked against data:
 | Open-lake waves | Hour-by-hour growth with memory (decay 6 h, swell after wind shifts) | USACE CEM II-2 growth over the real fetch, wind adjusted to 10 m height and for air–sea stability | (in `app.sup_waves`) |
 | Validation | Hindcast at buoys 45198 (Chicago) and 45174 (Wilmette) from wind only | Last 30 days: RMSE ≈ 0.21 m, r ≈ 0.87–0.89; Oct 16 peak within 5 cm at 45198, ~7 h late | **Validate waves vs buoy** → `validate` branch |
 | Nearshore | Refraction, shoaling, breaking, friction, triads, diffraction, partial reflection off breakwaters, groynes, long piers and seawall-type revetments | SWAN 41.51 (TU Delft), stationary, 10 m grids; 12 directions × 3 periods × 2 heights per domain | **SWAN wave library** → `swan` branch |
-| Harbour entrance | Individual waves: diffraction around the heads, reflection off the walls, crossing chop, breaking | FUNWAVE-TVD (fully nonlinear Boussinesq), 1.5 m grid, 750 × 600 m | **FUNWAVE harbour entrance** → `funwave` branch |
+| Harbour entrance | Individual waves: diffraction around the heads, reflection off the walls, crossing chop, breaking | FUNWAVE-TVD (fully nonlinear Boussinesq), 1.5 m grid, ~1 km tiles: Diversey, Belmont, North Ave, Fullerton, Monroe Harbor | **FUNWAVE harbour entrance** → `funwave` branch |
+
+**Chop overlay** (View → Chop): wave energy density E = ρgHs²/16 (613 J/m² per m² of wave height, log scale 10–1000 J/m²) from SWAN everywhere it runs, so reflection off walls shows as extra energy in front of them. Inside a FUNWAVE tile (pick a condition under "Walls, wave by wave") magenta hatching marks crossing seas: from the phase-resolved surface, crossing = 1 − |⟨η_t ∇η⟩| / √(⟨η_t²⟩⟨|∇η|²⟩) over ~40 m. That's 0 for a clean run of waves, about 0.3 for two trains at right angles and about 0.9 against a wall that reflects 90%. It is faded out in the surf, and the readout gives the energy and crossing % at the view centre. The Monroe Harbor tile covers the gap between the Easterly and Southerly Inner Breakwaters and the Grant Park seawall it faces, with an Oct 3, 2026 race-day case.
 
 The paddling forecast (`/sup`) uses the surveyed cross-shore profiles for North Ave and Oak St (others keep the idealized profile). The world page blends the SWAN library for the current offshore condition, uses the real depth for breaking, and can show the FUNWAVE wave field over the Diversey Harbor entrance.
 
 To serve these from the deployed service, copy `bathy.json`, `swan.json` and `funwave.json` from those branches into `DATA_DIR` (they are served at `/api/bathy.json`, `/api/swan.json`, `/api/funwave.json`), and set `BATHY_PATH` for the forecast.
 
-Assumptions to know: inside Diversey Harbor the lidar has no returns, so unsurveyed harbour water is treated as 2 m deep; the NOAA chart's interpolated nearshore cells are floored at 1.5 m; SWAN treats obstacles as fully opaque with 35–50% reflection.
+Assumptions to know: inside Diversey Harbor the lidar has no returns, so unsurveyed harbour water is treated as 2 m deep; the NOAA chart's interpolated nearshore cells are floored at 1.5 m; SWAN treats obstacles as fully opaque with 35–50% reflection (85% for known vertical walls: Navy Pier, Monroe Harbor's seawall and inner breakwaters).
 
 ## Stand-up paddling forecast (`/sup`)
 
