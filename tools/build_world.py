@@ -83,6 +83,8 @@ def coarsen_swan(d, k=2):
         return None
     for v in d.get("domains", {}).values():
         g = v["grid"]; nc = len(v["cases"])
+        if g["dx"] >= 16:                       # already coarse (the offshore lane): keep as is
+            continue
         r = np.frombuffer(gzip.decompress(base64.b64decode(v["ratio"])), np.uint8).reshape(nc, g["ny"], g["nx"]).astype(np.float32)
         a = np.frombuffer(gzip.decompress(base64.b64decode(v["dir"])), np.uint8).reshape(nc, g["ny"], g["nx"]).astype(np.float32) * 2 * np.pi / 256
         ny, nx = g["ny"] // k * k, g["nx"] // k * k

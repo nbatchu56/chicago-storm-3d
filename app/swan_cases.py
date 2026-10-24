@@ -1,5 +1,6 @@
 """
-SWAN wave-transformation library for the lakefront route and Montrose.
+SWAN wave-transformation library for the Lake Michigan Water Trail: Monroe Harbor to Montrose ("trail", 8 m)
+inside a coarser lane out past the Harrison-Dever crib ("lane", 20 m); "route"/"montrose" are the older domains.
 
 For each offshore wave condition (direction x peak period x height class), SWAN (TU Delft, stationary, 2-D)
 propagates a JONSWAP spectrum from the lake boundaries over the real bottom (app.bathymetry), with
@@ -30,7 +31,15 @@ from . import bathymetry as bm
 DIRS = list(range(0, 180, 15))                 # N .. SSE: everything that can reach the Chicago shore from the lake
 PERIODS = [2.5, 4.0, 6.0]                      # chop, moderate sea, storm sea (s)
 HEIGHTS = [0.6, 1.8]                           # small and big day (m): breaking makes the response height-dependent
-SWAN_DX = 10.0                                 # computational grid spacing (m)
+SWAN_DX = 10.0                                 # computational grid spacing (m) for the older route/montrose domains
+# domains: bathy grid to take the bottom from, optional crop (S, W, N, E) and grid spacing (m)
+DOMAINS = {
+    "trail": {"grid": "corridor", "dx": 8.0},  # Monroe Harbor to Montrose nearshore, 4 m lidar -> 8 m
+    "lane": {"grid": "world", "bbox": (41.866, -87.648, 41.974, -87.552), "dx": 20.0},   # out past the Harrison-Dever crib
+    "route": {"grid": "route", "dx": SWAN_DX},
+    "montrose": {"grid": "montrose", "dx": SWAN_DX},
+}
+REFL = {"breakwater": 0.35, "groyne": 0.35, "pier": 0.5, "revetment": 0.45, "vertical": 0.85}
 
 
 def case_id(d, tp, hs):
@@ -38,8 +47,17 @@ def case_id(d, tp, hs):
 
 
 def load_grid(bathy, domain):
-    gr = bathy["models"][domain] if domain in bathy.get("models", {}) else bathy["world"]
+    spec = DOMAINS.get(domain, {"grid": domain})
+    name = spec["grid"]
+    gr = bathy["models"][name] if name in bathy.get("models", {}) else bathy["world"]
     z, src = bm.unpack(gr)                     # bed elevation m IGLD85, rows south->north
+    if spec.get("bbox"):
+        s_, w, n, e = spec["bbox"]
+        (xa, ya), (xb, yb) = bm.lf.xy(s_, w), bm.lf.xy(n, e)
+        i0, j0 = max(int((xa - gr["x0"]) // gr["dx"]), 0), max(int((ya - gr["y0"]) // gr["dx"]), 0)
+        i1, j1 = min(int((xb - gr["x0"]) // gr["dx"]) + 1, gr["nx"]), min(int((yb - gr["y0"]) // gr["dx"]) + 1, gr["ny"])
+        z, src = z[j0:j1, i0:i1], src[j0:j1, i0:i1]
+        gr = {"x0": gr["x0"] + i0 * gr["dx"], "y0": gr["y0"] + j0 * gr["dx"], "dx": gr["dx"], "nx": i1 - i0, "ny": j1 - j0}
     return gr, z, src
 
 
@@ -50,8 +68,12 @@ def resample(gr, z, dx):
     return {"x0": gr["x0"], "y0": gr["y0"], "dx": gr["dx"] * k, "nx": zz.shape[1], "ny": zz.shape[0]}, zz
 
 
-def obstacles(lakefront, g, depth):
-    """Polylines (local metres) for SWAN OBSTACLE: structures and wall-like shoreline."""
+def obstacles(lakefront, g, depth, fine=None):
+    """Polylines (local metres) for SWAN OBSTACLE: structures and wall-like shoreline.
+
+    Wall-like shore is split by type from the finest bottom available (fine = (grid, depth)): water > 3 m deep
+    6 m off the line is a near-vertical wall (bulkhead, pier face; reflects ~0.85), otherwise a stepped
+    revetment (~0.45)."""
     x0, y0, x1, y1 = g["x0"], g["y0"], g["x0"] + (g["nx"] - 1) * g["dx"], g["y0"] + (g["ny"] - 1) * g["dx"]
     inside = lambda p: x0 < p[0] < x1 and y0 < p[1] < y1
     out = []
@@ -67,7 +89,7 @@ def obstacles(lakefront, g, depth):
             continue
         if f.get("closed"):                    # outline polygon: use its long axis as a wall
             pts = pts + [pts[0]]
-        refl = 0.35 if kind in ("breakwater", "groyne") else 0.5
+        refl = REFL[kind]
         out.append({"kind": kind, "refl": refl, "trans": 0.0, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in pts]})
     # wall-like shore: coastline segments where the water is already > 2 m deep 15 m offshore
     def depth_at(px, py):
@@ -75,10 +97,22 @@ def obstacles(lakefront, g, depth):
         if 0 <= j < depth.shape[0] and 0 <= i < depth.shape[1]:
             return depth[j, i]
         return np.nan
+
+    fg, fd = fine if fine else (g, depth)
+
+    def fine_at(px, py):
+        i, j = int(round((px - fg["x0"]) / fg["dx"])), int(round((py - fg["y0"]) / fg["dx"]))
+        if 0 <= j < fd.shape[0] and 0 <= i < fd.shape[1]:
+            return fd[j, i]
+        return np.nan
+
+    def wall(run, kinds):
+        k = "vertical" if sum(kinds) > len(kinds) / 2 else "revetment"
+        return {"kind": "seawall", "wall": k, "refl": REFL[k], "trans": 0.0, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in run]}
     for f in (lakefront or {}).get("osm", []):
         if f.get("kind") != "coastline":
             continue
-        run = []
+        run, kinds = [], []
         pts = f["pts"]
         for a, b in zip(pts, pts[1:]):
             if not (inside(a) and inside(b)):
@@ -89,12 +123,14 @@ def obstacles(lakefront, g, depth):
             d = np.nanmax([depth_at(mx + nx * 15, my + ny * 15), depth_at(mx - nx * 15, my - ny * 15)])
             if np.isfinite(d) and d > 2.0:
                 run = run + [b] if run else [a, b]
+                toe = np.nanmax([fine_at(mx + nx * 6, my + ny * 6), fine_at(mx - nx * 6, my - ny * 6)])
+                kinds.append(bool(np.isfinite(toe) and toe > 3.0))
             else:
                 if len(run) >= 2:
-                    out.append({"kind": "seawall", "refl": 0.45, "trans": 0.0, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in run]})
-                run = []
+                    out.append(wall(run, kinds))
+                run, kinds = [], []
         if len(run) >= 2:
-            out.append({"kind": "seawall", "refl": 0.45, "trans": 0.0, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in run]})
+            out.append(wall(run, kinds))
     return out
 
 
@@ -134,10 +170,13 @@ def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=PERIODS, 
     bathy = json.load(open(bathy_path))
     lakefront = json.load(open(lakefront_path)) if lakefront_path and os.path.exists(lakefront_path) else None
     gr, z, _ = load_grid(bathy, domain)
-    g, zz = resample(gr, z, SWAN_DX)
+    g, zz = resample(gr, z, DOMAINS.get(domain, {}).get("dx", SWAN_DX))
     level = bathy["level"]["m_igld85"]
     depth_lwd = bm.LWD - zz                    # depth below LWD (SWAN adds LEVEL)
-    obst = obstacles(lakefront, g, level - zz)
+    fine = None
+    if "corridor" in bathy.get("models", {}):
+        fz, _ = bm.unpack(bathy["models"]["corridor"]); fine = (bathy["models"]["corridor"], level - fz)
+    obst = obstacles(lakefront, g, level - zz, fine or (gr, level - z))
     meta = {"domain": domain, "grid": g, "level_m_igld85": level, "obstacles": [{"kind": o["kind"], "n": len(o["pts"])} for o in obst]}
     os.makedirs(out_dir, exist_ok=True)
     bottom = "\n".join(" ".join(f"{v:.2f}" for v in row) for row in depth_lwd) + "\n"

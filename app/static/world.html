@@ -794,6 +794,7 @@ async function setSwan(sw) {
     const g = d.grid, n = g.nx * g.ny, nc = d.cases.length, ratio = await gunzipB64(d.ratio), dir = await gunzipB64(d.dir);
     SWAN.domains.push({ name, g, cases: d.cases, ratio, dir, n, x0: g.x0 / 1000, y0: g.y0 / 1000, w: (g.nx - 1) * g.dx / 1000, h: (g.ny - 1) * g.dx / 1000, obstacles: (d.obstacles || []).length });
   }
+  SWAN.domains.sort((a, b) => a.g.dx - b.g.dx);   // finest first: the 8 m trail inside the 20 m lane to the crib
   SWAN.model = sw.model;
 }
 function swanDomainAt(xk, yk) { return SWAN.domains.find((d) => xk >= d.x0 && yk >= d.y0 && xk <= d.x0 + d.w && yk <= d.y0 + d.h) || null; }
