@@ -23,6 +23,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
   text-shadow: 0 0 3px #000, 0 0 1px #000; box-shadow: 0 1px 6px rgba(0, 0, 0, .35); }
 .lbl::after { content: ""; position: absolute; left: 50%; bottom: 4px; width: 1px; height: 14px; background: linear-gradient(rgba(220,230,238,.75), rgba(220,230,238,.35)); }
 .lbl::before { content: ""; position: absolute; left: 50%; bottom: 0; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(9,15,21,.7), 0 0 6px rgba(240,180,76,.6); }
+.lbl.rental span { border-color: rgba(92, 200, 170, .55); } .lbl.rental::before { background: #5cc8aa; box-shadow: 0 0 0 2px rgba(9,15,21,.7), 0 0 6px rgba(92,200,170,.7); }
 .lbl.lake { padding-bottom: 0; } .lbl.lake span { font-family: var(--font-ui); font-style: italic; letter-spacing: .12em; text-transform: uppercase; color: #a9cde0; background: none; border: 0; box-shadow: none; text-shadow: 0 0 6px rgba(0,0,0,.9), 0 1px 2px #000; }
 .lbl.lake::after, .lbl.lake::before { display: none; }
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
@@ -354,10 +355,15 @@ const WATERWAYS = [
   ["Channel south of Diversey Harbor (east side)", 18, 1.2, [[41.92330, -87.63110], [41.92288, -87.63096], [41.92215, -87.63082], [41.92179, -87.63063]]],
   ["Channel south of Diversey Harbor", 26, 1.2, [[41.92438, -87.63175], [41.92368, -87.63150], [41.92294, -87.63118], [41.92221, -87.63072], [41.92172, -87.63048]]],
 ];
-const PLACES = [["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Theater on the Lake", 41.9262, -87.6318, 0.02], ["Diversey Harbor", 41.9300, -87.6342, 0.02], ["Chicago SUP launch", 41.9269, -87.6327, 0.01],
+const PLACES = [["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Theater on the Lake", 41.9262, -87.6318, 0.02], ["Diversey Harbor", 41.9300, -87.6342, 0.02],
   ["Lincoln Park", 41.9215, -87.6370, 0.02], ["Fullerton Ave", 41.9255, -87.6400, 0.015], ["Downtown", 41.8820, -87.6278, 0.25], ["Navy Pier", 41.8917, -87.6043, 0.03],
   ["Montrose Harbor", 41.9620, -87.6345, 0.03], ["Belmont Harbor", 41.9405, -87.6370, 0.03], ["Oak Street Beach", 41.9030, -87.6232, 0.02], ["Ohio Street Beach", 41.8935, -87.6135, 0.02],
-  ["Monroe Harbor", 41.8810, -87.6150, 0.03], ["Harrison-Dever Crib", 41.9160, -87.5720, 0.04]];
+  ["Monroe Harbor", 41.8810, -87.6150, 0.03], ["Harrison-Dever Crib", 41.9160, -87.5720, 0.04],
+  // paddle rental containers (pins). Diversey: Chicago SUP's container in the harbour's south parking lot by the boat/kayak ramp
+  // (the south tip, Cannon Dr side); North Ave: Chicago SUP's rental spot on the beach; Montrose: Kayak Chicago, 200 W Montrose
+  // Harbor Dr. Placed from descriptions and listings, to within ~50 m: move them if you have exact pins.
+  ["Chicago SUP · Diversey Harbor", 41.9265, -87.6338, 0.01, "rental"], ["Chicago SUP · North Ave Beach", 41.9152, -87.6244, 0.01, "rental"],
+  ["Kayak Chicago · Montrose Beach", 41.96633, -87.63723, 0.01, "rental"]];
 // the local world: the Lake Michigan Water Trail from Monroe Harbor to Montrose, out past the Harrison-Dever crib
 const LB = (() => { const [x0, y0] = ll(41.870, -87.650), [x1, y1] = ll(41.970, -87.562); return { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; })();
 // camera presets: target (lat, lon), distance km, view heading (deg, compass), pitch (deg below horizontal)
@@ -369,7 +375,9 @@ const GOTO = [
   ["Fullerton revetment", 41.9258, -87.6312, 0.28, 300, 14],
   ["Diversey Harbor mouth", 41.9322, -87.6318, 0.26, 245, 15],
   ["Inside the harbor", 41.9290, -87.6342, 0.20, 190, 22],
-  ["Chicago SUP launch", 41.9269, -87.6327, 0.18, 20, 20],
+  ["Chicago SUP · Diversey", 41.9265, -87.6338, 0.18, 20, 20],
+  ["Chicago SUP · North Ave", 41.9152, -87.6244, 0.2, 75, 18],
+  ["Kayak Chicago · Montrose", 41.96633, -87.63723, 0.25, 60, 18],
   ["Out on the lake", 41.9220, -87.6150, 0.05, 265, 4],
   ["Oak St curve", 41.9010, -87.6215, 0.35, 230, 15],
   ["Ohio St / Navy Pier", 41.8930, -87.6110, 0.45, 250, 16],
@@ -1854,13 +1862,13 @@ function showHintOnce() { let seen = false; try { seen = localStorage.getItem("l
 // ---------------------------------------------------------------- labels
 const labelsEl = $("#labels"); let labelItems = [];
 function buildLabels() { labelsEl.innerHTML = ""; labelItems = [];
-  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"), sp = document.createElement("span"); d.className = "lbl" + (cls ? " " + cls : ""); sp.textContent = txt; d.appendChild(sp); labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y), far: cls === "lake" || h > 0.1 ? 220 : 30, lake: cls === "lake" }); };
-  for (const [name, la, lo, h] of PLACES) { const [x, y] = ll(la, lo); add(name, x, y, h); } add("Lake Michigan", 2.2, 4.6, 0, "lake"); }
+  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"), sp = document.createElement("span"); d.className = "lbl" + (cls ? " " + cls : ""); sp.textContent = txt; d.appendChild(sp); labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y), far: cls === "lake" || h > 0.1 ? 220 : 30, near: cls === "rental" ? 0.03 : 0.25, lake: cls === "lake" }); };
+  for (const [name, la, lo, h, cls] of PLACES) { const [x, y] = ll(la, lo); add(name, x, y, h, cls); } add("Lake Michigan", 2.2, 4.6, 0, "lake"); }
 const tmpV = new THREE.Vector3();
 // nearest labels win: one that would overlap a closer one is hidden (no stacked, unreadable names)
 function updateLabels() { const w = canvas.clientWidth, h = canvas.clientHeight, placed = [];
   for (const it of labelItems) { tmpV.copy(it.p).project(camera); it.dist = camera.position.distanceTo(it.p); it.sx = (tmpV.x * 0.5 + 0.5) * w; it.sy = (-tmpV.y * 0.5 + 0.5) * h;
-    it.vis = tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1 && it.dist < it.far && it.dist > 0.25; }
+    it.vis = tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1 && it.dist < it.far && it.dist > it.near; }
   for (const it of labelItems.slice().sort((a, b) => a.dist - b.dist)) {
     if (it.vis) { if (!it.bw) { it.d.style.display = ""; it.bw = it.d.firstChild.offsetWidth || 80; it.bh = it.d.firstChild.offsetHeight || 18; }
       const r = [it.sx - it.bw / 2 - 3, it.sy - (it.lake ? it.bh : it.bh + 19) - 3, it.sx + it.bw / 2 + 3, it.sy - (it.lake ? 0 : 19) + 3];
