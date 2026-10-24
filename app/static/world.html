@@ -50,7 +50,10 @@ button[aria-pressed="true"] { background: var(--accent); color: #1b1305; border-
 .modes button[data-mode="history"][aria-pressed="true"] { background: var(--hist); border-color: var(--hist); }
 .modes button[data-mode="exp"][aria-pressed="true"] { background: var(--exp); border-color: var(--exp); }
 .modes { grid-template-columns: repeat(2, 1fr); grid-auto-flow: row; }
-.modes button:nth-child(2) { border-right: 0; } .modes button:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+.modes button:nth-child(2), .modes button:nth-child(4) { border-right: 0; } .modes button:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+.modes button[data-mode="import"][aria-pressed="true"] { background: #e6c35c; border-color: #e6c35c; }
+.chip.import { color: #e6c35c; }
+#imp-table table { border-collapse: collapse; width: 100%; } #imp-table td, #imp-table th { padding: 2px 4px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; } #imp-table th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--panel-solid); }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .cams { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; font-size: 13px; }
@@ -187,6 +190,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
         <button data-mode="forecast" aria-pressed="false">Forecast</button>
         <button data-mode="history" aria-pressed="false">Historical</button>
         <button data-mode="exp" aria-pressed="false">Experimental</button>
+        <button data-mode="import" aria-pressed="false" style="grid-column: 1 / span 2; border-top: 1px solid var(--line)">From a screenshot</button>
       </div>
       <p class="note" id="mode-note"></p>
     </section>
@@ -200,6 +204,13 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
       </div>
       <label class="file"><input type="file" id="hist-file" accept=".json,application/json"><span>Load a history file (.json)</span></label>
       <p class="note" id="hist-note">Built from the NEXRAD archive, NDBC observations and NOAA satellite lake temperature. Any past time can be built with the History workflow or the deployed service (<code>/api/history?start=…</code>).</p>
+    </section>
+    <section id="sec-import" hidden>
+      <h2>Forecast screenshot</h2>
+      <label class="file" id="shot-label"><input type="file" id="shot-file" accept="image/png,image/jpeg,image/webp"><span>Import a screenshot (Windy, Surfline, NWS…)</span></label>
+      <select id="imp-pick" aria-label="Imported forecast"></select>
+      <p class="note" id="imp-note">Wind, gusts and waves read from a forecast app's screenshot drive the world: the waves enter SWAN as the offshore condition and are carried to the shore over the real lake bottom.</p>
+      <div id="imp-table" style="overflow-x:auto;max-height:180px;font:11px var(--font-data)"></div>
     </section>
     <section id="sec-exp" hidden>
       <h2>Experimental weather</h2>
@@ -273,6 +284,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 <script id="funwave-data" type="application/json"></script>
 <script id="validate-data" type="application/json"></script>
 <script id="meta-data" type="application/json"></script>
+<script id="import-data" type="application/json"></script>
 <script>
 "use strict";
 (() => {
@@ -340,7 +352,7 @@ function solar(date, lat = 41.88, lon = -87.63) {
 }
 
 // ---------------------------------------------------------------- data
-const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), generated: (parseJSON("meta-data") || {}).generated };
+const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
 { const h = parseJSON("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
 const S = { mode: "live", t: 0, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, view: "overview", histIdx: 0,
   x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, hour: 14, seed: 7 } };
@@ -1162,9 +1174,13 @@ function range() {   // [t0, t1] ms for the current mode
   if (S.mode === "live") return L ? [L.frames[0].t, Math.max(L.frames[L.frames.length - 1].t, now)] : [now - 1800e3, now];
   if (S.mode === "forecast") { const t0 = L ? L.frames[L.nObs - 1].t : now; return [t0, t0 + 48 * 3600e3]; }
   if (S.mode === "history") { const H = SRC.hist[S.histIdx]; if (!H) return [now - 3600e3, now]; const w = H.raw.window; return [new Date(w.start).getTime() - 10 * 60e3, new Date(w.end).getTime() + 5 * 60e3]; }
+  if (S.mode === "import") { const I = IMP.list[IMP.idx]; if (!I) return [now - 3600e3, now]; return [I.rows[0].t, Math.max(I.rows[I.rows.length - 1].t, I.rows[0].t + 3600e3)]; }
   const base = new Date(); base.setHours(0, 0, 0, 0); const t0 = base.getTime() + S.x.hour * 3600e3; return [t0, t0 + 120 * 60e3];
 }
 function radarState(tMs) {   // which frames to show, blend and motion shift
+  if (S.mode === "import") { const r = impRow(tMs); if (!r || !(r.precip_in > 0.005)) return null; const [t0] = range(), tm = (tMs - t0) / 60000, i = Math.floor(tm / 5) * 5, f = (tm - i) / 5;
+    const p = { ...S.x, type: r.lightning ? "thunder" : r.precip_in > 0.08 ? "showers" : "stratiform", int: clamp(0.5 + r.precip_in * 4, 0.5, 1.5), cov: 1, wspd: r.wind_mph / MPH, wdir: r.wind_from_deg, mspd: 35, mdir: (r.wind_from_deg + 180) % 360 }; delete p.hour;
+    return { A: synthFrame({ ...p }, i), B: synthFrame({ ...p }, i + 5), f, shiftA: [0, 0], shiftB: [0, 0], grid: XG, label: "Rain from the screenshot's precipitation" }; }
   if (S.mode === "exp") { if (S.x.type === "clear" || S.x.type === "cumulus") return null; const [t0] = range(), tm = (tMs - t0) / 60000, i = Math.floor(tm / 5) * 5, f = (tm - i) / 5;
     const p = { ...S.x }; delete p.hour; return { A: synthFrame({ ...p }, i), B: synthFrame({ ...p }, i + 5), f, shiftA: [0, 0], shiftB: [0, 0], grid: XG, label: "Experimental storm" }; }
   const src = S.mode === "history" ? (SRC.hist[S.histIdx] && SRC.hist[S.histIdx].scene) : SRC.live; if (!src) return null;
@@ -1181,7 +1197,15 @@ function conditions(tMs, xk, yk) {
   if (!inLakeCoarse(xk, yk) && maskAt(xk, yk) !== 1) { xk += shore.nx * (shore.d + 1.2); yk += shore.ny * (shore.d + 1.2); shore = nearestShore(xk, yk); }   // over land: report the lake just offshore
   const fetchAt = (dir) => rayFetchKm(xk, yk, dir) * 1000;
   const withChop = (sys, U10, dir) => { const ch = cem(U10, 300, 1); if (ch.hm0 > 0.01) sys.push({ hs: Math.max(ch.hm0, 0.02 + 0.006 * U10), tp: Math.max(0.9, ch.tp), dir, spread: 50 }); return sys; };
-  if (S.mode === "exp") {
+  if (S.mode === "import") {
+    const r = impRow(tMs), I = IMP.list[IMP.idx];
+    if (r) { Object.assign(c, { wind: r.wind_mph / MPH, dir: r.wind_from_deg, gust: r.gust_mph != null ? r.gust_mph / MPH : null, airC: r.air_f != null ? (r.air_f - 32) * 5 / 9 : null, sky: r.precip_in > 0 ? 85 : r.cloud_pct ?? 10 });
+      const comp = (w, spread) => w && w.ft > 0.04 && w.s > 0.5 ? { hs: w.ft / FT, tp: w.s, dir: ((w.toward_deg ?? (r.wind_from_deg + 180)) + 180) % 360, spread } : null;
+      c.systems = [comp(r.wind_wave, 30), comp(r.swell1, 18), comp(r.swell2, 15)].filter(Boolean);
+      if (!c.systems.length && r.waves) { const q = comp(r.waves, 25); if (q) c.systems = [q]; }
+      if (r.waves && r.waves.ft > 0.04) { const tw = r.waves; c.off = { hs: tw.ft / FT, tp: Math.max(tw.s, 1.5), dir: ((tw.toward_deg ?? (r.wind_from_deg + 180)) + 180) % 360, src: "screenshot" }; }
+      withChop(c.systems, c.wind, c.dir); c.src.push(`${I.source || "screenshot"}${I.place ? " · " + I.place : ""}`); }
+  } else if (S.mode === "exp") {
     const X = S.x, w = cem(X.wspd, fetchAt(X.wdir), X.dur); Object.assign(c, { wind: X.wspd, dir: X.wdir, gust: X.wspd * 1.35, airC: X.air, waterC: X.water, sky: X.type === "clear" ? 5 : X.type === "cumulus" ? 45 : 80 });
     c.systems = withChop(w.hm0 > 0.01 ? [{ hs: w.hm0, tp: w.tp, dir: X.wdir, spread: 28 }] : [], X.wspd, X.wdir); c.src.push("your settings");
     c.off = { hs: w.hm0, tp: w.tp, dir: X.wdir };
@@ -1399,13 +1423,14 @@ const MODE_NOTE = {
   live: "Right now, minute by minute: the latest KLOT radar scans carried forward by the nowcast, the nearest lakefront wind station, waves for this hour, and satellite lake temperature. The page refreshes hourly; Refresh now gets new data on demand.",
   forecast: "Radar extrapolated for 2 hours, then the 48-hour forecast: NWS wind and cloud cover, waves from the wind-wave model. Beyond 2 hours clouds come from forecast sky cover; rain isn't placed.",
   history: "Archived KLOT radar, NDBC observations and satellite lake temperature for a past time.",
+  import: "Conditions read from a forecast screenshot, hour by hour. Its waves are treated as the offshore sea and transformed to the shore by SWAN over the real lake bottom; local chop grows from its wind.",
   exp: "Set the weather yourself. Storm structure follows the same profiles as the demo storms; waves grow from your wind over the real fetch.",
 };
 function setMode(m) { S.mode = m; document.querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
-  $("#sec-history").hidden = m !== "history"; $("#sec-exp").hidden = m !== "exp"; $("#mode-note").textContent = MODE_NOTE[m];
+  $("#sec-history").hidden = m !== "history"; $("#sec-exp").hidden = m !== "exp"; $("#sec-import").hidden = m !== "import"; $("#mode-note").textContent = MODE_NOTE[m];
   const chip = $("#status"); chip.className = "chip " + m; const [t0, t1] = range();
   S.follow = m === "live"; $("#nowbtn").hidden = true;
-  S.t = m === "live" ? Date.now() : m === "forecast" ? t0 : m === "history" ? (DATA.track && DATA.track.start ? new Date(DATA.track.start).getTime() : t0 + 10 * 60e3) : t0;
+  S.t = m === "import" ? clamp(Date.now(), t0, t1) : m === "live" ? Date.now() : m === "forecast" ? t0 : m === "history" ? (DATA.track && DATA.track.start ? new Date(DATA.track.start).getTime() : t0 + 10 * 60e3) : t0;
   buildTicks(); WAVES.key = null; }
 document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode));
 document.querySelectorAll("[data-ov]").forEach((b) => b.onclick = () => { S.ov = b.dataset.ov; document.querySelectorAll("[data-ov]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
@@ -1581,7 +1606,7 @@ function updateHud(rr, tp) {
     el.textContent = age > 150 ? `Data is ${age > 2880 ? Math.round(age / 1440) + " days" : Math.round(age / 60) + " h"} old (radar ${fmtHM.format(new Date(lastObs))}); it refreshes hourly, or use Refresh now${gen}` :
       `Radar ${fmtHM.format(new Date(lastObs))} (${Math.round(age)} min ago)${S.t > lastObs + 60e3 ? ", carried forward by the nowcast" : ""}${gen}`;
     el.className = "age" + (age > 75 ? " stale" : ""); } else $("#age").textContent = "";
-  chip.textContent = { live: S.follow ? "Live" : "Live · paused", forecast: `Forecast${S.t > t0 ? " +" + Math.round((S.t - t0) / 3600e3 * 10) / 10 + " h" : ""}`, history: "Historical", exp: "Experimental" }[S.mode];
+  chip.textContent = { import: "From screenshot", live: S.follow ? "Live" : "Live · paused", forecast: `Forecast${S.t > t0 ? " +" + Math.round((S.t - t0) / 3600e3 * 10) / 10 + " h" : ""}`, history: "Historical", exp: "Experimental" }[S.mode];
   const sc = $("#scrub"); if (document.activeElement !== sc) sc.value = Math.round((S.t - t0) / Math.max(t1 - t0, 1) * 1000);
   const tot = Math.sqrt(C.systems.reduce((a, q) => a + q.hs * q.hs, 0)), tpk = C.systems[0] ? C.systems[0].tp : 0;
   const wx = rr > 0.2 ? `${C.snow ? "snow" : "rain"} ${rr.toFixed(1)} mm/h` : U.uOvercast.value > 0.6 ? "overcast" : U.uOvercast.value > 0.25 ? "partly cloudy" : C.sun && C.sun.el < -6 ? "clear night" : "clear";
@@ -1643,6 +1668,77 @@ async function initRefresh() {
   };
 }
 
+// ---------------------------------------------------------------- forecast screenshots -> conditions (proof of concept)
+const IMP = { list: [], idx: 0 };
+function addImport(d) {
+  if (!d || !Array.isArray(d.hours) || !d.hours.length) throw new Error("no hourly rows");
+  const tz = d.tz || TZ, day = d.date || new Date().toISOString().slice(0, 10);
+  // local wall-clock time on that day -> epoch ms (handles DST via the zone's offset at that moment)
+  const toMs = (dateStr, hhmm) => { const [y, mo, da] = dateStr.split("-").map(Number), [h, mi] = String(hhmm).split(":").map(Number);
+    const guess = Date.UTC(y, mo - 1, da, h, mi || 0), off = (t) => { const p = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(t));
+      const g = (k) => +p.find((x) => x.type === k).value; return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute")) - t; };
+    return guess - off(guess - off(guess)); };
+  let dd = day, prevH = -1;
+  const rows = d.hours.filter((h) => h && h.time != null && h.wind_mph != null).map((h) => {
+    const hh = +String(h.time).split(":")[0]; if (h.date) dd = h.date; else if (hh < prevH) { const t = new Date(dd + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + 1); dd = t.toISOString().slice(0, 10); }
+    prevH = hh; return { ...h, t: toMs(dd, h.time) }; }).sort((a, b) => a.t - b.t);
+  if (!rows.length) throw new Error("no usable rows (need at least time and wind)");
+  const I = { ...d, rows }; IMP.list.push(I);
+  const o = document.createElement("option"); o.value = String(IMP.list.length - 1); o.textContent = `${d.place || "Imported"} · ${fmtFull.format(new Date(rows[0].t))} · ${rows.length} h${d.source ? " · " + d.source : ""}`; $("#imp-pick").appendChild(o);
+  return IMP.list.length - 1;
+}
+function impRow(tMs) {   // linear between hourly rows (directions on the circle)
+  const I = IMP.list[IMP.idx]; if (!I) return null; const R = I.rows;
+  if (tMs <= R[0].t) return R[0]; if (tMs >= R[R.length - 1].t) return R[R.length - 1];
+  let i = 0; while (R[i + 1].t < tMs) i++; const a = R[i], b = R[i + 1], f = (tMs - a.t) / (b.t - a.t), L = (x, y) => x == null ? y : y == null ? x : x + (y - x) * f;
+  const LA = (x, y) => x == null ? y : y == null ? x : (x + angd(y, x) * f + 360) % 360;
+  const W = (p, q) => !p ? q : !q ? p : { ft: L(p.ft, q.ft), s: L(p.s, q.s), toward_deg: LA(p.toward_deg, q.toward_deg) };
+  return { ...a, wind_mph: L(a.wind_mph, b.wind_mph), gust_mph: L(a.gust_mph, b.gust_mph), wind_from_deg: LA(a.wind_from_deg, b.wind_from_deg), precip_in: L(a.precip_in, b.precip_in),
+    waves: W(a.waves, b.waves), wind_wave: W(a.wind_wave, b.wind_wave), swell1: W(a.swell1, b.swell1), swell2: W(a.swell2, b.swell2) };
+}
+function renderImportTable() {
+  const I = IMP.list[IMP.idx], el = $("#imp-table"); if (!I) { el.innerHTML = ""; return; }
+  const f = (v, d = 1) => v == null ? "–" : (+v).toFixed(d), w = (x) => x ? `${f(x.ft)}′ ${f(x.s)}s${x.toward_deg != null ? " →" + compass(x.toward_deg) : ""}` : "–";
+  el.innerHTML = `<table><tr><th>${I.place ? I.place.split(" ")[0] : ""}</th><th>wind</th><th>gust</th><th>from</th><th>waves</th><th>wind wave</th><th>swell 1</th></tr>` +
+    I.rows.map((r) => `<tr><td>${fmtHM.format(new Date(r.t))}</td><td>${f(r.wind_mph)}</td><td>${f(r.gust_mph, 0)}</td><td>${compass(r.wind_from_deg)}</td><td>${w(r.waves)}</td><td>${w(r.wind_wave)}</td><td>${w(r.swell1)}</td></tr>`).join("") + "</table>";
+  $("#imp-note").textContent = `${I.source || "Screenshot"}${I.transcribed_by ? " · read by " + I.transcribed_by.split(",")[0] : ""}. ${I.notes || ""} Waves enter SWAN as the offshore sea; local chop grows from the wind.`;
+}
+$("#imp-pick").onchange = (e) => { IMP.idx = +e.target.value; renderImportTable(); setMode("import"); };
+const SHOT_PROMPT = `You are reading a screenshot of a marine/wind forecast app (for example Windy.app, Windy.com, Surfline, Windfinder, NWS) for a place on the Chicago lakefront.
+Return ONLY one JSON object with this shape:
+{"source": app name, "place": place name shown, "date": "YYYY-MM-DD" of the first column (year ${new Date().getFullYear()} unless shown), "tz": "America/Chicago",
+ "hours": [{"time": "HH:MM" 24-hour local, "date": "YYYY-MM-DD" only if it changes, "wind_from_deg": number (direction the wind comes FROM; convert compass letters; if only arrows, arrows usually point where the wind goes, so add 180),
+   "wind_mph": number, "gust_mph": number or null, "precip_in": number or 0, "air_f": number or null, "cloud_pct": number or null, "lightning": true/false,
+   "waves": {"ft": total wave height, "s": period, "toward_deg": bearing the wave arrow points to (estimate from the icon) or null} or null,
+   "wind_wave": {...same...} or null, "swell1": {...} or null, "swell2": {...} or null}],
+ "notes": short string: anything else useful (models compared, sunrise) }
+Rules: one entry per time column that is visible, left to right. Convert km/h (÷1.609), knots (×1.151), m/s (×2.237) to mph; metres to feet (×3.281); °C to °F. Use null for anything not shown; never invent values. Read numbers exactly as printed.`;
+async function initImport() {
+  for (const d of DATA.imports) { try { addImport(d); } catch (e) {} }
+  if (IMP.list.length) { IMP.idx = 0; $("#imp-pick").value = "0"; renderImportTable(); }
+  $("#imp-pick").hidden = !IMP.list.length;
+  const sample = window.claude && typeof window.claude.use === "function" ? await window.claude.use("sample").catch(() => null) : null;
+  const caps = sample ? await sample.limits().catch(() => null) : null;
+  if (!sample || !caps || !caps.images) { $("#shot-label").hidden = true; if (!IMP.list.length) $("#imp-note").textContent = "Importing a screenshot needs this page open in Claude."; return; }
+  $("#shot-file").accept = caps.images.mediaTypes.join(",");
+  $("#shot-file").onchange = async (e) => {
+    const file = e.target.files[0]; if (!file) return; const note = $("#imp-note"), lbl = $("#shot-label span");
+    lbl.textContent = "Reading the screenshot…"; note.textContent = "Claude is reading the table (this can take up to a minute).";
+    try {
+      const d = await sample.json(SHOT_PROMPT, { images: [file], modelTier: "default" });
+      d.transcribed_by = "Claude, from your screenshot";
+      const i = addImport(d); IMP.idx = i; $("#imp-pick").value = String(i); $("#imp-pick").hidden = false; renderImportTable(); setMode("import");
+    } catch (err) {
+      const c = err && err.code;
+      note.textContent = c === "invalid_json" ? "Couldn't turn that screenshot into a table. Try a tighter crop of the hourly rows."
+        : c === "image_rejected" ? "That image wasn't accepted (type or size). Try a PNG or JPEG screenshot."
+        : c === "not_granted" || c === "sampling_disabled" ? "Reading screenshots needs your OK for this page to use Claude."
+        : c === "rate_limited" ? "Too many requests right now; try again in a bit."
+        : c === "refused" ? "Claude declined to read that image." : `Couldn't read it (${(err && err.message) || "unknown error"}).`;
+    } finally { lbl.textContent = "Import a screenshot (Windy, Surfline, NWS…)"; e.target.value = ""; }
+  };
+}
+
 // ---------------------------------------------------------------- boot
 U.uLocalC.value.set(LB.cx, LB.cy); S.showTrack = false;
 setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnimationFrame(tick);
@@ -1658,7 +1754,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
       [DATA.bathy, DATA.swan, DATA.funwave] = await Promise.all([DATA.bathy || get2("api/bathy.json"), DATA.swan || get2("api/swan.json"), DATA.funwave || get2("api/funwave.json")]); }
     await setBathy(DATA.bathy); await setSwan(DATA.swan); await setFunwave(DATA.funwave); renderModels();
     if (DATA.lake) { buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
-    buildMinimap(); showHintOnce(); initRefresh();
+    buildMinimap(); showHintOnce(); initRefresh(); await initImport();
     SRC.live = await decodeScene(DATA.scene);
     for (const h of DATA.hist) await addHistory(h);
     if (!SRC.hist.length) { const o = document.createElement("option"); o.textContent = "No historical periods in this page"; $("#hist-pick").appendChild(o); }
@@ -1668,7 +1764,8 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
     if (SRC.hist.length) { S.histIdx = 0; $("#hist-pick").value = "0"; }
     // a page can be built to open on a featured period (e.g. a storm): meta.start = {label, t, view: [lat, lon, km, heading, pitch]}
     const st = (parseJSON("meta-data") || {}).start;
-    if (st) { const i = SRC.hist.findIndex((h) => h.raw.label === st.label || (h.raw.window && h.raw.window.start.startsWith(st.label || "~")));
+    if (st && st.mode === "import" && IMP.list.length) { setMode("import"); if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }
+    else if (st) { const i = SRC.hist.findIndex((h) => h.raw.label === st.label || (h.raw.window && h.raw.window.start.startsWith(st.label || "~")));
       if (i >= 0) { S.histIdx = i; $("#hist-pick").value = String(i); setMode("history"); if (st.t) S.t = new Date(st.t).getTime(); }
       if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }
   } catch (e) { fail("Couldn't load the world", e.message); }

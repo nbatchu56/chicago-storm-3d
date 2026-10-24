@@ -1,0 +1,21 @@
+{
+  "source": "Windy.app screenshot",
+  "place": "Diversey Harbor",
+  "date": "2026-10-24",
+  "tz": "America/Chicago",
+  "transcribed_by": "Claude, from the user's screenshot (arrow bearings estimated from the icons)",
+  "notes": "Wind direction is degrees FROM; wave arrows point the way waves travel. Sunrise 07:13. Models shown at 06:00: HRRR 11 mph (gust 17), GFS+ 11 mph (gust 13).",
+  "hours": [
+    {"time": "03:00", "wind_from_deg": 173, "wind_mph": 9.6, "gust_mph": 15, "precip_in": 0, "waves": {"ft": 0.7, "s": 2.0, "toward_deg": 320}, "wind_wave": {"ft": 0.3, "s": 1.7, "toward_deg": 5}, "swell1": {"ft": 0.3, "s": 2.0, "toward_deg": 300}, "swell2": {"ft": 0.2, "s": 2.2, "toward_deg": 265}},
+    {"time": "04:00", "wind_from_deg": 182, "wind_mph": 8.3, "gust_mph": 13, "precip_in": 0, "waves": {"ft": 0.5, "s": 2.0, "toward_deg": 320}, "wind_wave": {"ft": 0.3, "s": 1.7, "toward_deg": 5}, "swell1": {"ft": 0.3, "s": 2.0, "toward_deg": 300}, "swell2": {"ft": 0.2, "s": 2.2, "toward_deg": 265}},
+    {"time": "05:00", "wind_from_deg": 188, "wind_mph": 7.7, "gust_mph": 13, "precip_in": 0, "waves": {"ft": 0.5, "s": 2.0, "toward_deg": 320}, "wind_wave": {"ft": 0.3, "s": 1.7, "toward_deg": 5}, "swell1": {"ft": 0.3, "s": 2.1, "toward_deg": 300}, "swell2": {"ft": 0.2, "s": 2.2, "toward_deg": 265}},
+    {"time": "06:00", "wind_from_deg": 181, "wind_mph": 8.1, "gust_mph": 13, "precip_in": 0, "waves": {"ft": 0.5, "s": 2.1, "toward_deg": 320}, "wind_wave": {"ft": 0.3, "s": 1.7, "toward_deg": 0}, "swell1": {"ft": 0.3, "s": 2.1, "toward_deg": 300}, "swell2": {"ft": 0.0, "s": 2.2, "toward_deg": 270}},
+    {"time": "07:00", "wind_from_deg": 178, "wind_mph": 8.7, "gust_mph": 13, "precip_in": 0, "waves": {"ft": 0.5, "s": 2.1, "toward_deg": 320}, "wind_wave": {"ft": 0.3, "s": 1.7, "toward_deg": 0}, "swell1": {"ft": 0.5, "s": 2.1, "toward_deg": 315}, "swell2": {"ft": 0.0, "s": 2.2, "toward_deg": 270}},
+    {"time": "08:00", "wind_from_deg": 183, "wind_mph": 9.1, "gust_mph": 16, "precip_in": 0, "waves": {"ft": 0.7, "s": 2.1, "toward_deg": 320}, "wind_wave": {"ft": 0.3, "s": 1.7, "toward_deg": 0}, "swell1": {"ft": 0.4, "s": 2.2, "toward_deg": 315}, "swell2": {"ft": 0.0, "s": 2.4, "toward_deg": 270}},
+    {"time": "09:00", "wind_from_deg": 187, "wind_mph": 9.0, "gust_mph": 17, "precip_in": 0, "waves": {"ft": 0.7, "s": 2.1, "toward_deg": 320}, "wind_wave": {"ft": 0.3, "s": 1.7, "toward_deg": 0}, "swell1": {"ft": 0.3, "s": 2.1, "toward_deg": 315}, "swell2": {"ft": 0.1, "s": 2.4, "toward_deg": 260}},
+    {"time": "10:00", "wind_from_deg": 186, "wind_mph": 8.5, "gust_mph": 16, "precip_in": 0, "waves": {"ft": 0.7, "s": 2.1, "toward_deg": 320}, "wind_wave": {"ft": 0.3, "s": 1.7, "toward_deg": 0}, "swell1": {"ft": 0.3, "s": 2.1, "toward_deg": 315}, "swell2": {"ft": 0.2, "s": 2.5, "toward_deg": 260}},
+    {"time": "11:00", "wind_from_deg": 177, "wind_mph": 7.6, "gust_mph": 14, "precip_in": 0, "waves": {"ft": 0.7, "s": 2.1, "toward_deg": 320}, "wind_wave": {"ft": 0.3, "s": 1.5, "toward_deg": 0}, "swell1": {"ft": 0.3, "s": 2.2, "toward_deg": 315}, "swell2": {"ft": 0.2, "s": 2.4, "toward_deg": 260}},
+    {"time": "12:00", "wind_from_deg": 161, "wind_mph": 6.7, "gust_mph": 11, "precip_in": 0, "waves": {"ft": 0.5, "s": 2.2, "toward_deg": 320}, "wind_wave": {"ft": 0.2, "s": 1.2, "toward_deg": 345}, "swell1": {"ft": 0.3, "s": 2.2, "toward_deg": 315}, "swell2": {"ft": 0.1, "s": 2.3, "toward_deg": 260}},
+    {"time": "13:00", "wind_from_deg": 140, "wind_mph": 7.1, "gust_mph": 10, "precip_in": 0, "waves": {"ft": 0.5, "s": 2.2, "toward_deg": 320}, "wind_wave": {"ft": 0.2, "s": 0.9, "toward_deg": 320}, "swell1": {"ft": 0.3, "s": 2.2, "toward_deg": 315}, "swell2": {"ft": 0.1, "s": 2.2, "toward_deg": 270}}
+  ]
+}

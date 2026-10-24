@@ -61,7 +61,7 @@ jobs:
           ls -la "$M"
           python tools/build_world.py --out "$OUT/world.html" --scene "$OUT/scene.json" --sup "$OUT/sup.json" --lakefront "$OUT/lakefront.json" \
             --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M/funwave_rough.json" "$M/funwave_storm.json" --validate "$M/validate.json" \
-            --history "$M"/history-*.json
+            --history "$M"/history-*.json --imports examples/*.json
       - name: Publish to the snapshot branch
         env:
           OUT: ${{ runner.temp }}/storm

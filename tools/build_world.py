@@ -97,6 +97,7 @@ def main():
     for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track"):
         ap.add_argument("--" + k)
     ap.add_argument("--funwave", nargs="*", default=[])
+    ap.add_argument("--imports", nargs="*", default=[], help="forecast tables read from screenshots (examples/*.json)")
     ap.add_argument("--history", nargs="*", default=[])
     ap.add_argument("--start", help='open on a history period: JSON {"label":..,"t":ISO,"view":[lat,lon,km,heading,pitch]}')
     a = ap.parse_args()
@@ -105,6 +106,7 @@ def main():
         "scene-data": load(a.scene), "sup-data": load(a.sup), "lakefront-data": load(a.lakefront), "track-data": load(a.track),
         "bathy-data": thin_bathy(load(a.bathy)), "swan-data": coarsen_swan(load(a.swan)),
         "funwave-data": quantize_funwave([load(p) for p in a.funwave]) or None, "validate-data": summarize_validation(load(a.validate)),
+        "import-data": [d for d in (load(p) for p in a.imports) if d] or None,
         "meta-data": {"generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), **({"start": json.loads(a.start)} if a.start else {})},
     }
     hist = []
