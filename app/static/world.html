@@ -101,7 +101,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #modeseg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--panel-solid); }
 #modeseg button { border: 0; border-radius: 0; padding: 8px 12px; font-size: 12.5px; }
 #minimap { position: absolute; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); padding: 6px; }
-#minimap canvas { display: block; width: 168px; height: 190px; border-radius: 3px; cursor: crosshair; }
+#minimap canvas { display: block; width: 150px; height: 222px; border-radius: 3px; cursor: crosshair; }
 #minimap .cap { font: 10.5px var(--font-ui); color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; }
 #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; bottom: calc(var(--gut) + 300px + env(safe-area-inset-bottom, 0px)) !important; }
 #help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 32px)); padding: 16px 18px; z-index: 5; }
@@ -162,7 +162,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
     </div>
     <div class="row2" style="display:flex;gap:6px"><button class="solo" data-nav="tilt" title="Top-down / back to angled (T)" aria-label="Toggle top-down view"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M5 12h14M12 5v14"/></svg></button><button class="solo" id="helpbtn" title="Controls help (?)" aria-label="Controls help">?</button></div>
   </div>
-  <div id="minimap" class="panel"><canvas id="mm" width="336" height="380" aria-label="Map: click to go there"></canvas><div class="cap"><span>Click to go there</span><span id="mmscale"></span></div></div>
+  <div id="minimap" class="panel"><canvas id="mm" width="300" height="444" aria-label="Map: click to go there"></canvas><div class="cap"><span>Click to go there</span><span id="mmscale"></span></div></div>
   <div id="help" class="panel" hidden role="dialog" aria-label="Controls">
     <button class="x" id="helpx" aria-label="Close">×</button>
     <h2>Getting around</h2>
@@ -313,17 +313,25 @@ const SHORE_LL = [[45.0,-87.42],[44.40,-87.50],[43.75,-87.70],[43.04,-87.88],[42
 const SHORE = SHORE_LL.map(([a, b]) => ll(a, b));
 const LAKE = SHORE.concat([ll(46.2, -85.4), ll(46.2, -87.3)]);
 const PLACES = [["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Theater on the Lake", 41.9262, -87.6318, 0.02], ["Diversey Harbor", 41.9300, -87.6385, 0.02],
-  ["Lincoln Park", 41.9215, -87.6370, 0.02], ["Fullerton Ave", 41.9255, -87.6400, 0.015], ["Downtown", 41.8820, -87.6278, 0.25], ["Navy Pier", 41.8917, -87.6043, 0.03]];
-// the local world: North Avenue Beach to past Diversey Harbor, with a margin of lake
-const LB = (() => { const [x0, y0] = ll(41.902, -87.660), [x1, y1] = ll(41.945, -87.590); return { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; })();
+  ["Lincoln Park", 41.9215, -87.6370, 0.02], ["Fullerton Ave", 41.9255, -87.6400, 0.015], ["Downtown", 41.8820, -87.6278, 0.25], ["Navy Pier", 41.8917, -87.6043, 0.03],
+  ["Montrose Harbor", 41.9620, -87.6345, 0.03], ["Belmont Harbor", 41.9405, -87.6370, 0.03], ["Oak Street Beach", 41.9030, -87.6232, 0.02], ["Ohio Street Beach", 41.8935, -87.6135, 0.02],
+  ["Monroe Harbor", 41.8810, -87.6150, 0.03], ["Harrison-Dever Crib", 41.9160, -87.5720, 0.04]];
+// the local world: the Lake Michigan Water Trail from Monroe Harbor to Montrose, out past the Harrison-Dever crib
+const LB = (() => { const [x0, y0] = ll(41.870, -87.650), [x1, y1] = ll(41.970, -87.562); return { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; })();
 // camera presets: target (lat, lon), distance km, view heading (deg, compass), pitch (deg below horizontal)
 const GOTO = [
-  ["Whole route", 41.9235, -87.6290, 2.4, 285, 34],
+  ["Whole route", 41.9200, -87.6100, 6.5, 285, 40],
+  ["Montrose Harbor", 41.9615, -87.6310, 0.45, 250, 18],
+  ["Belmont Harbor mouth", 41.9418, -87.6335, 0.32, 250, 16],
   ["North Ave Beach", 41.9140, -87.6225, 0.32, 255, 16],
   ["Fullerton revetment", 41.9258, -87.6312, 0.28, 300, 14],
   ["Diversey Harbor mouth", 41.9325, -87.6376, 0.26, 245, 15],
   ["Inside the harbor", 41.9290, -87.6382, 0.20, 190, 22],
   ["Out on the lake", 41.9220, -87.6150, 0.05, 265, 4],
+  ["Oak St curve", 41.9010, -87.6215, 0.35, 230, 15],
+  ["Ohio St / Navy Pier", 41.8930, -87.6110, 0.45, 250, 16],
+  ["Monroe Harbor", 41.8805, -87.6130, 0.6, 260, 20],
+  ["Harrison-Dever crib", 41.9160, -87.5735, 0.35, 90, 12],
   ["Skyline", 41.9050, -87.6200, 1.3, 215, 7],
 ];
 function inLakeCoarse(x, y) { let c = false; for (let i = 0, j = LAKE.length - 1; i < LAKE.length; j = i++) { const [ax, ay] = LAKE[i], [bx, by] = LAKE[j]; if ((ay > y) !== (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax) c = !c; } return c; }
@@ -370,7 +378,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 // far well beyond the sky dome: with a 0.3 m near plane, clip-space z for distant points rounds past 1 and gets clipped
 const camera = new THREE.PerspectiveCamera(50, 1, 0.0003, 50000);
 const controls = new THREE.OrbitControls(camera, canvas);
-controls.enableDamping = true; controls.dampingFactor = 0.1; controls.maxPolarAngle = Math.PI / 2 - 0.004; controls.minDistance = 0.003; controls.maxDistance = 6; controls.screenSpacePanning = false; controls.zoomSpeed = 1.2; controls.rotateSpeed = 0.6;
+controls.enableDamping = true; controls.dampingFactor = 0.1; controls.maxPolarAngle = Math.PI / 2 - 0.004; controls.minDistance = 0.003; controls.maxDistance = 9; controls.screenSpacePanning = false; controls.zoomSpeed = 1.2; controls.rotateSpeed = 0.6;
 const scene = new THREE.Scene();
 const rtScene = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType });
 rtScene.depthTexture = new THREE.DepthTexture(4, 4); rtScene.depthTexture.type = THREE.UnsignedIntType;
@@ -426,6 +434,7 @@ const U = {
   uTempTex: { value: blank2D }, uTempMin: { value: new THREE.Vector2() }, uTempSize: { value: new THREE.Vector2(1, 1) }, uTempN: { value: new THREE.Vector2(1, 1) }, uHasTemp: { value: 0 },
   uIceTex: { value: blank2D }, uIceMin: { value: new THREE.Vector2() }, uIceSize: { value: new THREE.Vector2(1, 1) }, uIceN: { value: new THREE.Vector2(1, 1) }, uHasIce: { value: 0 },
   uBathy: { value: blank2D }, uBathyMin: { value: new THREE.Vector2() }, uBathySize: { value: new THREE.Vector2(1, 1) }, uHasBathy: { value: 0 },
+  uBathyF: { value: blank2D }, uBathyFMin: { value: new THREE.Vector2() }, uBathyFSize: { value: new THREE.Vector2(1, 1) }, uHasBathyF: { value: 0 },
   uSwan: { value: blank2D }, uSwanMin: { value: new THREE.Vector2() }, uSwanSize: { value: new THREE.Vector2(1, 1) }, uSwanOn: { value: 0 }, uSwanRef: { value: 1 }, uHsOff: { value: 0 },
   uDepthOn: { value: 0 }, uHsOn: { value: 0 },
   uFw: { value: null }, uFwHs: { value: blank2D }, uFwMin: { value: new THREE.Vector2() }, uFwSize: { value: new THREE.Vector2(1, 1) }, uFwOn: { value: 0 }, uFwT: { value: 0 },
@@ -474,7 +483,11 @@ float waterTempC(vec2 p) { return uHasTemp > 0.5 ? gridSample(uTempTex, p, uTemp
 vec3 tempColor(float c) { float f = c * 1.8 + 32.0; return pow(texture2D(uTRamp, vec2(clamp((f - 32.0) / 48.0, 0.0, 1.0) * 0.984 + 0.008, 0.5)).rgb, vec3(2.2)); }
 uniform sampler2D uBathy, uSwan; uniform vec2 uBathyMin, uBathySize, uSwanMin, uSwanSize; uniform float uHasBathy, uSwanOn, uSwanRef, uHsOff, uDepthOn, uHsOn;
 // real lake bottom: water depth in metres (negative on land); fallback outside the surveyed grid
-float bathyDepth(vec2 pk, float fallback) { if (uHasBathy < 0.5) return fallback; vec2 f = (pk - uBathyMin) / uBathySize;
+uniform sampler2D uBathyF; uniform vec2 uBathyFMin, uBathyFSize; uniform float uHasBathyF;
+float bathyDepth(vec2 pk, float fallback) {
+  // 4 m nearshore grid first (no-data cells are stored as -999 and blend to < -50 at the band edge)
+  if (uHasBathyF > 0.5) { vec2 ff = (pk - uBathyFMin) / uBathyFSize; if (ff.x >= 0.0 && ff.y >= 0.0 && ff.x <= 1.0 && ff.y <= 1.0) { float d = texture2D(uBathyF, ff).r; if (d > -50.0) return d; } }
+  if (uHasBathy < 0.5) return fallback; vec2 f = (pk - uBathyMin) / uBathySize;
   if (f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0) return fallback; return texture2D(uBathy, f).r; }
 bool inBathy(vec2 pk) { vec2 f = (pk - uBathyMin) / uBathySize; return uHasBathy > 0.5 && f.x >= 0.0 && f.y >= 0.0 && f.x <= 1.0 && f.y <= 1.0; }
 // SWAN wave-height ratio (Hs / Hs offshore) for the current offshore condition; -1 outside the model domain
@@ -592,7 +605,10 @@ const MAP = { ok: false };
 function buildMap(LF) {
   const feats = LF.osm || []; if (!feats.length) return;
   const [Sb, Wb, Nb, Eb] = LF.map_bbox, [x0, y0] = ll(Sb, Wb), [x1, y1] = ll(Nb, Eb), m2k = (pt) => [pt[0] / 1000, pt[1] / 1000];
-  const WPX = 2048, HPX = Math.round(WPX * (y1 - y0) / (x1 - x0)), P = (x, y) => [(x - x0) / (x1 - x0) * WPX, (y1 - y) / (y1 - y0) * HPX];
+  // ~2.4 m pixels (3.4 m on low-memory devices) over the whole map; SC scales drawn widths kept from the 3.4 m version
+  const lowMem = (navigator.deviceMemory || 8) <= 4 || matchMedia("(max-width: 760px)").matches;
+  const WPX = lowMem ? 2560 : 3584, HPX = Math.round(WPX * (y1 - y0) / (x1 - x0)), P = (x, y) => [(x - x0) / (x1 - x0) * WPX, (y1 - y) / (y1 - y0) * HPX];
+  const MPP = (x1 - x0) * 1000 / WPX, SC = 3.4 / MPP;
   const path = (c, pts, close) => { c.beginPath(); pts.forEach((pt, i) => { const [px, py] = P(...m2k(pt)); i ? c.lineTo(px, py) : c.moveTo(px, py); }); if (close) c.closePath(); };
   const mk = document.createElement("canvas"); mk.width = WPX; mk.height = HPX; const m = mk.getContext("2d", { willReadFrequently: true });
   m.fillStyle = "#000"; m.fillRect(0, 0, WPX, HPX); m.strokeStyle = "#fff"; m.lineWidth = 2.5; feats.filter((f) => f.kind === "coastline").forEach((f) => { path(m, f.pts, false); m.stroke(); });
@@ -613,23 +629,24 @@ function buildMap(LF) {
   c.fillStyle = "#b9b4a4"; c.fillRect(0, 0, WPX, HPX);
   const fillKind = (kind, col) => { c.fillStyle = col; feats.filter((f) => f.kind === kind && f.closed).forEach((f) => { path(c, f.pts, true); c.fill(); }); };
   fillKind("park", "#86a96c"); fillKind("beach", "#e3cf98");
-  c.lineCap = "round"; c.strokeStyle = "#7c776a"; feats.filter((f) => f.kind === "road").forEach((f) => { c.lineWidth = 6; path(c, f.pts, false); c.stroke(); });
-  c.strokeStyle = "#d9d5ca"; feats.filter((f) => f.kind === "road").forEach((f) => { c.lineWidth = 3; path(c, f.pts, false); c.stroke(); });
+  c.lineCap = "round"; c.strokeStyle = "#7c776a"; feats.filter((f) => f.kind === "road").forEach((f) => { c.lineWidth = 6 * SC; path(c, f.pts, false); c.stroke(); });
+  c.strokeStyle = "#d9d5ca"; feats.filter((f) => f.kind === "road").forEach((f) => { c.lineWidth = 3 * SC; path(c, f.pts, false); c.stroke(); });
   ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => { c.fillStyle = c.strokeStyle = kind === "pier" ? "#d0ccc2" : "#aaa598";
-    if (f.closed) { path(c, f.pts, true); c.fill(); } else { c.lineWidth = 4; path(c, f.pts, false); c.stroke(); } }));
+    if (f.closed) { path(c, f.pts, true); c.fill(); } else { c.lineWidth = 4 * SC; path(c, f.pts, false); c.stroke(); } }));
   c.fillStyle = "#5f5d59"; feats.filter((f) => f.kind === "building" && f.closed).forEach((f) => { path(c, f.pts, true); c.fill(); });
   // piers/breakwaters are land in the mask too (so waves stop at them)
-  const pc = document.createElement("canvas"); pc.width = WPX; pc.height = HPX; const pcx = pc.getContext("2d", { willReadFrequently: true }); pcx.fillStyle = pcx.strokeStyle = "#fff"; pcx.lineWidth = 3;
+  const pc = document.createElement("canvas"); pc.width = WPX; pc.height = HPX; const pcx = pc.getContext("2d", { willReadFrequently: true }); pcx.fillStyle = pcx.strokeStyle = "#fff"; pcx.lineWidth = 3 * SC;
   // solid structures only: breakwaters and groynes, big piers (Navy Pier); marina docks float over open water
   const area = (pts) => { let a = 0; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]); return Math.abs(a / 2); };
   const len = (pts) => { let l = 0; for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; };
   ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => {
     if (kind === "pier" && (f.closed ? area(f.pts) < 4000 : len(f.pts) < 150)) return;
-    if (f.closed) { path(pcx, f.pts, true); pcx.fill(); } else { pcx.lineWidth = kind === "pier" ? 2 : 3; path(pcx, f.pts, false); pcx.stroke(); } }));
+    if (f.closed) { path(pcx, f.pts, true); pcx.fill(); } else { pcx.lineWidth = (kind === "pier" ? 2 : 3) * SC; path(pcx, f.pts, false); pcx.stroke(); } }));
   // the 1 m lidar knows where the water is better than the map: surveyed water that the map calls land
   // (Diversey Harbor's basins, lagoons) becomes sheltered water; surveyed dry land stays land
   if (BATHY.ok && BATHY.src) { const G = BATHY.g; let fixed = 0;
     // 1) every map-land pixel the survey calls water
+    const NR = Math.round(31 / MPP), ND = Math.round(NR * 0.7), NEAR = [[NR, 0], [-NR, 0], [0, NR], [0, -NR], [ND, ND], [-ND, ND], [ND, -ND], [-ND, -ND]];
     const cand = new Uint8Array(WPX * HPX), near = new Uint8Array(WPX * HPX), cdep = new Float32Array(WPX * HPX), csrc = new Uint8Array(WPX * HPX), cfine = new Uint8Array(WPX * HPX);
     for (let py = 0; py < HPX; py++) {
       const yk = y1 - (py + 0.5) / HPX * (y1 - y0);
@@ -638,7 +655,7 @@ function buildMap(LF) {
         const s = surveyAt(x0 + (px + 0.5) / WPX * (x1 - x0), yk); if (!s) continue;
         if ((s.src === 1 && s.dep > 0.4) || (s.src === 2 && s.dep > 0.05)) {
           cand[i0] = 1; cdep[i0] = s.dep; csrc[i0] = s.src; cfine[i0] = s.fine ? 1 : 0;
-          for (const [dx, dy] of [[9, 0], [-9, 0], [0, 9], [0, -9], [6, 6], [-6, 6], [6, -6], [-6, -6]]) { const qx = px + dx, qy = py + dy; if (qx >= 0 && qy >= 0 && qx < WPX && qy < HPX && mask[qy * WPX + qx] === 1) { near[i0] = 1; break; } }
+          for (const [dx, dy] of NEAR) { const qx = px + dx, qy = py + dy; if (qx >= 0 && qy >= 0 && qx < WPX && qy < HPX && mask[qy * WPX + qx] === 1) { near[i0] = 1; break; } }
         }
       }
     }
@@ -646,7 +663,7 @@ function buildMap(LF) {
     // "harbour" along every beach: keep near-lake pixels only where they continue water that reaches inland
     // (Diversey Harbor's entrance channel), at most ~45 m from it -- and only on the 4 m survey: the 10 m grid would
     // eat into seawalls and breakwaters (Navy Pier, Monroe Harbor)
-    const REACH = 13, dist = new Uint8Array(WPX * HPX).fill(255), q = new Int32Array(WPX * HPX); let qh = 0, qt = 0;
+    const REACH = Math.round(45 / MPP), dist = new Uint8Array(WPX * HPX).fill(255), q = new Int32Array(WPX * HPX); let qh = 0, qt = 0;
     for (let i = 0; i < cand.length; i++) if (cand[i] && !near[i]) { dist[i] = 0; q[qt++] = i; }
     while (qh < qt) { const i = q[qh++], x = i % WPX, d1 = dist[i] + 1; if (d1 > REACH) continue;
       for (const n of [x > 0 ? i - 1 : -1, x < WPX - 1 ? i + 1 : -1, i - WPX, i + WPX]) if (n >= 0 && n < cand.length && cand[n] && near[n] && cfine[n] && dist[n] === 255) { dist[n] = d1; q[qt++] = n; } }
@@ -664,10 +681,9 @@ function buildMap(LF) {
     if (BATHY.assumed) { const half = U.uBathy.value.image.data; for (let q = 0; q < half.length; q++) half[q] = THREE.DataUtils.toHalfFloat(BATHY.dep[q]); U.uBathy.value.needsUpdate = true; }
     MAP.lidarWater = fixed; }
   const pd = pcx.getImageData(0, 0, WPX, HPX).data; for (let i = 0; i < mask.length; i++) if (pd[i * 4] > 128) mask[i] = 0;
-  const mdata = new Uint8Array(WPX * HPX * 4); for (let i = 0; i < mask.length; i++) { mdata[i * 4] = mask[i] * 85; mdata[i * 4 + 3] = 255; }
-  // DataTexture rows run south->north; canvas rows run north->south
-  const flipped = new Uint8Array(mdata.length); for (let y = 0; y < HPX; y++) flipped.set(mdata.subarray((HPX - 1 - y) * WPX * 4, (HPX - y) * WPX * 4), y * WPX * 4);
-  const maskTex = new THREE.DataTexture(flipped, WPX, HPX); maskTex.minFilter = maskTex.magFilter = THREE.NearestFilter; maskTex.needsUpdate = true;
+  // one byte per pixel (class * 85); DataTexture rows run south->north, canvas rows north->south
+  const flipped = new Uint8Array(WPX * HPX); for (let y = 0; y < HPX; y++) { const src = (HPX - 1 - y) * WPX, dst = y * WPX; for (let x = 0; x < WPX; x++) flipped[dst + x] = mask[src + x] * 85; }
+  const maskTex = new THREE.DataTexture(flipped, WPX, HPX, THREE.RedFormat); maskTex.unpackAlignment = 1; maskTex.minFilter = maskTex.magFilter = THREE.NearestFilter; maskTex.needsUpdate = true;
   const colTex = new THREE.CanvasTexture(cv); colTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); colTex.minFilter = THREE.LinearMipmapLinearFilter;
   U.uMapCol.value = colTex; U.uMapMask.value = maskTex; U.uMapMin.value.set(x0, y0); U.uMapSize.value.set(x1 - x0, y1 - y0); U.uHasMap.value = 1;
   Object.assign(MAP, { ok: true, x0, y0, x1, y1, WPX, HPX, mask, coast: feats.filter((f) => f.kind === "coastline").flatMap((f) => f.pts.map(m2k)) });
@@ -744,10 +760,13 @@ async function setBathy(b) {
   const x0 = g.x0 / 1000, y0 = g.y0 / 1000, w = (g.nx - 1) * g.dx / 1000, h = (g.ny - 1) * g.dx / 1000;
   U.uBathy.value = t; U.uBathyMin.value.set(x0, y0); U.uBathySize.value.set(w, h); U.uHasBathy.value = 1;
   Object.assign(BATHY, { ok: true, g, dep, src: srcU8, level, x0, y0, w, h, sources: b.sources, probe: b.probe, cov: b.probe && b.probe.world && b.probe.world.coverage });
-  // finer lidar crop (4 m) around Diversey Harbor: only used to draw the water's edge
+  // finer lidar grid (4 m, Monroe Harbor to Montrose, nearshore band only): the water's edge and nearshore depth
   const d = b.detail; BATHY.det = null;
   if (d && d.z_cm && d.src) { const dz = await unpackI16(d.z_cm), ds = await gunzipB64(d.src), dn = d.nx * d.ny, dd = new Float32Array(dn);
-    if (dz.length === dn && ds.length === dn) { for (let i = 0; i < dn; i++) dd[i] = level - (LWD + dz[i] / 100); BATHY.det = { g: d, dep: dd, src: ds }; } }
+    if (dz.length === dn && ds.length === dn) { const nd = d.nodata ?? -32768; for (let i = 0; i < dn; i++) { dd[i] = dz[i] === nd ? NaN : level - (LWD + dz[i] / 100); if (ds[i] === 2 && dd[i] > 0 && dd[i] < 1.5) dd[i] = 1.5; } BATHY.det = { g: d, dep: dd, src: ds };
+      const hf = new Uint16Array(dn); for (let i = 0; i < dn; i++) hf[i] = THREE.DataUtils.toHalfFloat(dd[i] === dd[i] ? dd[i] : -999);
+      const tf = new THREE.DataTexture(hf, d.nx, d.ny, THREE.RedFormat, THREE.HalfFloatType); tf.minFilter = tf.magFilter = THREE.LinearFilter; tf.needsUpdate = true;
+      U.uBathyF.value = tf; U.uBathyFMin.value.set((d.x0 - d.dx / 2) / 1000, (d.y0 - d.dx / 2) / 1000); U.uBathyFSize.value.set(d.nx * d.dx / 1000, d.ny * d.dx / 1000); U.uHasBathyF.value = 1; } }
 }
 // survey water at a point (km): {dep, src} from the 4 m crop where it covers (bilinear depth, so the edge falls
 // between cells instead of on them), else the nearest 10 m cell; null outside the survey
@@ -756,12 +775,12 @@ function surveyAt(xk, yk) {
   if (D) { const g = D.g, fx = (xk * 1000 - g.x0) / g.dx, fy = (yk * 1000 - g.y0) / g.dx;
     if (fx >= 0 && fy >= 0 && fx <= g.nx - 1 && fy <= g.ny - 1) { const i = Math.min(Math.floor(fx), g.nx - 2), j = Math.min(Math.floor(fy), g.ny - 2), tx = fx - i, ty = fy - j, q = j * g.nx + i, v = D.dep;
       const dep = (v[q] * (1 - tx) + v[q + 1] * tx) * (1 - ty) + (v[q + g.nx] * (1 - tx) + v[q + g.nx + 1] * tx) * ty;
-      return { dep, src: D.src[Math.round(fy) * g.nx + Math.round(fx)], fine: true }; } }
+      if (dep === dep) return { dep, src: D.src[Math.round(fy) * g.nx + Math.round(fx)], fine: true }; } }   // NaN: outside the surveyed band
   const G = BATHY.g, i = Math.round((xk * 1000 - G.x0) / G.dx), j = Math.round((yk * 1000 - G.y0) / G.dx);
   if (i < 0 || j < 0 || i >= G.nx || j >= G.ny) return null; const k = j * G.nx + i; return { dep: BATHY.dep[k], src: BATHY.src[k], k };
 }
 function depthAtKm(xk, yk) {   // metres of water (negative on land), or null outside the grid
-  if (!BATHY.ok) return null; const g = BATHY.g, fx = (xk - BATHY.x0) / BATHY.w * (g.nx - 1), fy = (yk - BATHY.y0) / BATHY.h * (g.ny - 1);
+  if (!BATHY.ok) return null; if (BATHY.det) { const s = surveyAt(xk, yk); if (s && s.fine) return s.dep; } const g = BATHY.g, fx = (xk - BATHY.x0) / BATHY.w * (g.nx - 1), fy = (yk - BATHY.y0) / BATHY.h * (g.ny - 1);
   if (fx < 0 || fy < 0 || fx > g.nx - 1 || fy > g.ny - 1) return null; const i = Math.min(Math.floor(fx), g.nx - 2), j = Math.min(Math.floor(fy), g.ny - 2), tx = fx - i, ty = fy - j, D = BATHY.dep, v = (jj, ii) => D[jj * g.nx + ii];
   return (v(j, i) * (1 - tx) + v(j, i + 1) * tx) * (1 - ty) + (v(j + 1, i) * (1 - tx) + v(j + 1, i + 1) * tx) * ty; }
 function profileFor(xk, yk, shore, dShoreM) {   // depths along the normal, from the shore point outward

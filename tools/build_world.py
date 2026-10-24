@@ -36,28 +36,33 @@ def put(html, tag, obj):
     return html[:i] + json.dumps(obj, separators=(",", ":")).replace("</", "<\\/") + html[j:]
 
 
-# Diversey Harbor and its entrance channel (m east/north of the page origin 41.8820, -87.6278): the 10 m map
-# grid averages the ~25 m channel under Lake Shore Drive into dry land, so the page gets the 4 m grid here.
-DETAIL_BOX = (-860.0, 4560.0, 0.0, 5760.0)   # x0, y0, x1, y1
+# The page draws the shoreline and nearshore bottom from a 4 m grid: the corridor (Monroe Harbor to Montrose)
+# when the bathy build has it, else the older route grid around Diversey Harbor. Only the band the lidar
+# actually surveyed (plus a margin) is kept; cells beyond are NODATA and the page uses the 10 m grid there.
+DETAIL_BOX = (-860.0, 4560.0, 0.0, 5760.0)   # x0, y0, x1, y1 (m east/north of 41.8820, -87.6278): route fallback
+NODATA = -32768
+BAND_M = 160.0
 
 
-def crop_detail(g, box=DETAIL_BOX):
-    """Crop a bathy grid (z_cm int16 + src uint8, rows south->north) to box; None if it doesn't cover it."""
-    if not g or "z_cm" not in g:
+def crop_detail(g, box=None, band_m=BAND_M):
+    """4 m grid for the page: crop to box (None: whole grid), NODATA beyond band_m of any lidar cell."""
+    from scipy import ndimage
+    if not g or "z_cm" not in g or not g.get("src"):
         return None
     nx, ny, dx = g["nx"], g["ny"], g["dx"]
-    i0, j0 = int(np.floor((box[0] - g["x0"]) / dx)), int(np.floor((box[1] - g["y0"]) / dx))
-    i1, j1 = int(np.ceil((box[2] - g["x0"]) / dx)) + 1, int(np.ceil((box[3] - g["y0"]) / dx)) + 1
-    i0, j0, i1, j1 = max(i0, 0), max(j0, 0), min(i1, nx), min(j1, ny)
+    i0, j0, i1, j1 = 0, 0, nx, ny
+    if box:
+        i0, j0 = max(int(np.floor((box[0] - g["x0"]) / dx)), 0), max(int(np.floor((box[1] - g["y0"]) / dx)), 0)
+        i1, j1 = min(int(np.ceil((box[2] - g["x0"]) / dx)) + 1, nx), min(int(np.ceil((box[3] - g["y0"]) / dx)) + 1, ny)
     if i1 - i0 < 8 or j1 - j0 < 8:
         return None
-    z = np.frombuffer(gzip.decompress(base64.b64decode(g["z_cm"])), "<i2").reshape(ny, nx)[j0:j1, i0:i1]
+    z = np.frombuffer(gzip.decompress(base64.b64decode(g["z_cm"])), "<i2").reshape(ny, nx)[j0:j1, i0:i1].copy()
+    src = np.frombuffer(gzip.decompress(base64.b64decode(g["src"])), np.uint8).reshape(ny, nx)[j0:j1, i0:i1].copy()
+    keep = ndimage.binary_dilation(src == 1, iterations=max(1, int(round(band_m / dx))))
+    z[~keep] = NODATA; src[~keep] = 0
     enc = lambda a: base64.b64encode(gzip.compress(np.ascontiguousarray(a).tobytes(), 9)).decode()  # noqa: E731
-    out = {"x0": g["x0"] + i0 * dx, "y0": g["y0"] + j0 * dx, "dx": dx, "nx": i1 - i0, "ny": j1 - j0, "z_cm": enc(z.astype("<i2")),
-           "order": g.get("order")}
-    if g.get("src"):
-        out["src"] = enc(np.frombuffer(gzip.decompress(base64.b64decode(g["src"])), np.uint8).reshape(ny, nx)[j0:j1, i0:i1])
-    return out
+    return {"x0": g["x0"] + i0 * dx, "y0": g["y0"] + j0 * dx, "dx": dx, "nx": i1 - i0, "ny": j1 - j0, "z_cm": enc(z.astype("<i2")),
+            "src": enc(src), "nodata": NODATA, "order": g.get("order")}
 
 
 def thin_bathy(b):
@@ -66,11 +71,10 @@ def thin_bathy(b):
     out = {k: v for k, v in b.items() if k not in ("models", "probe")}
     cov = ((b.get("probe") or {}).get("world") or {}).get("coverage")
     out["probe"] = {"world": {"coverage": cov}} if cov else {}
-    route = (b.get("models") or {}).get("route")
-    if route and route.get("dx", 99) < b["world"]["dx"]:
-        det = crop_detail(route)
-        if det:
-            out["detail"] = det
+    models = b.get("models") or {}
+    det = crop_detail(models["corridor"]) if "corridor" in models else crop_detail(models.get("route"), DETAIL_BOX)
+    if det and det["dx"] < b["world"]["dx"]:
+        out["detail"] = det
     return out
 
 

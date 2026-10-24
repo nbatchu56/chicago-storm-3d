@@ -45,7 +45,11 @@ COOPS = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
 LEVEL_STATIONS = ["9087044", "9087031"]       # Calumet Harbor IL, Milwaukee WI (fallback)
 # world grid = lakefront map; model grid = North Ave beach to past Diversey Harbor, out to ~10 m depth
 MODEL_BBOX = (41.905, -87.648, 41.945, -87.598)
-MODEL_BBOXES = {"route": MODEL_BBOX, "montrose": (41.950, -87.648, 41.975, -87.600)}
+# corridor = the Lake Michigan Water Trail stretch paddled most: Monroe Harbor to Montrose, out past the lidar's
+# reach (~1 km); the page draws its shoreline and nearshore bottom from it (the 10 m world grid covers the lane
+# out to the Harrison-Dever crib)
+CORRIDOR_BBOX = (41.870, -87.648, 41.972, -87.590)
+MODEL_BBOXES = {"route": MODEL_BBOX, "montrose": (41.950, -87.648, 41.975, -87.600), "corridor": CORRIDOR_BBOX}
 ISGS_PAGES = ["https://clearinghouse.isgs.illinois.edu/data/coastal/chicago-beaches-chicago-park-district-topobathymetric-models"]
 ISGS_DIR = os.environ.get("ISGS_DIR", "isgs_cache")
 

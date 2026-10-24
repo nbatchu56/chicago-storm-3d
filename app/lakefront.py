@@ -27,7 +27,7 @@ UTC = dt.timezone.utc
 UA = os.environ.get("NWS_USER_AGENT", "chicago-storm-3d (github.com/nbatchu56/chicago-storm-3d)")
 
 # Map area: Oak Street to Montrose, with room for the lake (S, W, N, E)
-MAP_BBOX = (41.855, -87.665, 41.975, -87.580)    # Museum Campus / Loop to Montrose
+MAP_BBOX = (41.855, -87.665, 41.975, -87.560)    # Museum Campus / Loop to Montrose, out past the Harrison-Dever crib
 # Temperature area: the Chicago nearshore and a slice of open lake
 TEMP_BBOX = (41.60, -87.95, 42.40, -87.10)
 REF = (41.8820, -87.6278)          # State & Madison, same origin as the radar scene
