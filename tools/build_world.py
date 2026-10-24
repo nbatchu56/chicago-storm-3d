@@ -36,12 +36,41 @@ def put(html, tag, obj):
     return html[:i] + json.dumps(obj, separators=(",", ":")).replace("</", "<\\/") + html[j:]
 
 
+# Diversey Harbor and its entrance channel (m east/north of the page origin 41.8820, -87.6278): the 10 m map
+# grid averages the ~25 m channel under Lake Shore Drive into dry land, so the page gets the 4 m grid here.
+DETAIL_BOX = (-860.0, 4560.0, 0.0, 5760.0)   # x0, y0, x1, y1
+
+
+def crop_detail(g, box=DETAIL_BOX):
+    """Crop a bathy grid (z_cm int16 + src uint8, rows south->north) to box; None if it doesn't cover it."""
+    if not g or "z_cm" not in g:
+        return None
+    nx, ny, dx = g["nx"], g["ny"], g["dx"]
+    i0, j0 = int(np.floor((box[0] - g["x0"]) / dx)), int(np.floor((box[1] - g["y0"]) / dx))
+    i1, j1 = int(np.ceil((box[2] - g["x0"]) / dx)) + 1, int(np.ceil((box[3] - g["y0"]) / dx)) + 1
+    i0, j0, i1, j1 = max(i0, 0), max(j0, 0), min(i1, nx), min(j1, ny)
+    if i1 - i0 < 8 or j1 - j0 < 8:
+        return None
+    z = np.frombuffer(gzip.decompress(base64.b64decode(g["z_cm"])), "<i2").reshape(ny, nx)[j0:j1, i0:i1]
+    enc = lambda a: base64.b64encode(gzip.compress(np.ascontiguousarray(a).tobytes(), 9)).decode()  # noqa: E731
+    out = {"x0": g["x0"] + i0 * dx, "y0": g["y0"] + j0 * dx, "dx": dx, "nx": i1 - i0, "ny": j1 - j0, "z_cm": enc(z.astype("<i2")),
+           "order": g.get("order")}
+    if g.get("src"):
+        out["src"] = enc(np.frombuffer(gzip.decompress(base64.b64decode(g["src"])), np.uint8).reshape(ny, nx)[j0:j1, i0:i1])
+    return out
+
+
 def thin_bathy(b):
     if not b:
         return None
     out = {k: v for k, v in b.items() if k not in ("models", "probe")}
     cov = ((b.get("probe") or {}).get("world") or {}).get("coverage")
     out["probe"] = {"world": {"coverage": cov}} if cov else {}
+    route = (b.get("models") or {}).get("route")
+    if route and route.get("dx", 99) < b["world"]["dx"]:
+        det = crop_detail(route)
+        if det:
+            out["detail"] = det
     return out
 
 

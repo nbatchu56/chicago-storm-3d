@@ -629,21 +629,38 @@ function buildMap(LF) {
   // the 1 m lidar knows where the water is better than the map: surveyed water that the map calls land
   // (Diversey Harbor's basins, lagoons) becomes sheltered water; surveyed dry land stays land
   if (BATHY.ok && BATHY.src) { const G = BATHY.g; let fixed = 0;
+    // 1) every map-land pixel the survey calls water
+    const cand = new Uint8Array(WPX * HPX), near = new Uint8Array(WPX * HPX), cdep = new Float32Array(WPX * HPX), csrc = new Uint8Array(WPX * HPX), cfine = new Uint8Array(WPX * HPX);
     for (let py = 0; py < HPX; py++) {
-      const yk = y1 - (py + 0.5) / HPX * (y1 - y0), j = Math.round((yk * 1000 - G.y0) / G.dx); if (j < 0 || j >= G.ny) continue;
+      const yk = y1 - (py + 0.5) / HPX * (y1 - y0);
       for (let px = 0; px < WPX; px++) {
         const i0 = py * WPX + px; if (mask[i0] !== 0) continue;
-        const xk = x0 + (px + 0.5) / WPX * (x1 - x0), i = Math.round((xk * 1000 - G.x0) / G.dx); if (i < 0 || i >= G.nx) continue;
-        const k = j * G.nx + i, sk = BATHY.src[k];
-        // skip the open lake's beach edge (survey vs map shoreline differ by a few metres): only enclosed water
-        let nearLake = false; for (const [dx, dy] of [[9, 0], [-9, 0], [0, 9], [0, -9], [6, 6], [-6, 6], [6, -6], [-6, -6]]) { const qx = px + dx, qy = py + dy; if (qx >= 0 && qy >= 0 && qx < WPX && qy < HPX && mask[qy * WPX + qx] === 1) { nearLake = true; break; } }
-        if (nearLake) continue;
-        if ((sk === 1 && BATHY.dep[k] > 0.4) || (sk === 2 && BATHY.dep[k] > 0.05)) {
-          mask[i0] = 2; fixed++;
-          if (sk === 2 && BATHY.dep[k] < 2.0) { BATHY.dep[k] = 2.0; BATHY.assumed = (BATHY.assumed || 0) + 1; }   // unsurveyed boat harbour: ~2 m assumed
+        const s = surveyAt(x0 + (px + 0.5) / WPX * (x1 - x0), yk); if (!s) continue;
+        if ((s.src === 1 && s.dep > 0.4) || (s.src === 2 && s.dep > 0.05)) {
+          cand[i0] = 1; cdep[i0] = s.dep; csrc[i0] = s.src; cfine[i0] = s.fine ? 1 : 0;
+          for (const [dx, dy] of [[9, 0], [-9, 0], [0, 9], [0, -9], [6, 6], [-6, 6], [6, -6], [-6, -6]]) { const qx = px + dx, qy = py + dy; if (qx >= 0 && qy >= 0 && qx < WPX && qy < HPX && mask[qy * WPX + qx] === 1) { near[i0] = 1; break; } }
         }
       }
     }
+    // 2) near the open lake the survey and map shorelines differ by a few metres, which would leave a ribbon of
+    // "harbour" along every beach: keep near-lake pixels only where they continue water that reaches inland
+    // (Diversey Harbor's entrance channel), at most ~45 m from it -- and only on the 4 m survey: the 10 m grid would
+    // eat into seawalls and breakwaters (Navy Pier, Monroe Harbor)
+    const REACH = 13, dist = new Uint8Array(WPX * HPX).fill(255), q = new Int32Array(WPX * HPX); let qh = 0, qt = 0;
+    for (let i = 0; i < cand.length; i++) if (cand[i] && !near[i]) { dist[i] = 0; q[qt++] = i; }
+    while (qh < qt) { const i = q[qh++], x = i % WPX, d1 = dist[i] + 1; if (d1 > REACH) continue;
+      for (const n of [x > 0 ? i - 1 : -1, x < WPX - 1 ? i + 1 : -1, i - WPX, i + WPX]) if (n >= 0 && n < cand.length && cand[n] && near[n] && cfine[n] && dist[n] === 255) { dist[n] = d1; q[qt++] = n; } }
+    let deepened = 0;
+    for (let i = 0; i < cand.length; i++) {
+      if (dist[i] === 255) continue;
+      mask[i] = 2; fixed++;
+      const px = i % WPX, py = (i / WPX) | 0, xk = x0 + (px + 0.5) / WPX * (x1 - x0), yk = y1 - (py + 0.5) / HPX * (y1 - y0);
+      const gi = Math.round((xk * 1000 - G.x0) / G.dx), gj = Math.round((yk * 1000 - G.y0) / G.dx); if (gi < 0 || gj < 0 || gi >= G.nx || gj >= G.ny) continue;
+      const k = gj * G.nx + gi, want = csrc[i] === 2 ? 2.0 : Math.max(cdep[i], 0.5);   // unsurveyed boat harbour: ~2 m assumed
+      // the 10 m depth grid under water the 4 m survey found (the channel) can read dry: give it the water's depth
+      if (BATHY.dep[k] < want && (csrc[i] === 2 || BATHY.dep[k] < 0.5)) { BATHY.dep[k] = want; deepened++; }
+    }
+    if (deepened) BATHY.assumed = (BATHY.assumed || 0) + deepened;
     if (BATHY.assumed) { const half = U.uBathy.value.image.data; for (let q = 0; q < half.length; q++) half[q] = THREE.DataUtils.toHalfFloat(BATHY.dep[q]); U.uBathy.value.needsUpdate = true; }
     MAP.lidarWater = fixed; }
   const pd = pcx.getImageData(0, 0, WPX, HPX).data; for (let i = 0; i < mask.length; i++) if (pd[i * 4] > 128) mask[i] = 0;
@@ -727,6 +744,21 @@ async function setBathy(b) {
   const x0 = g.x0 / 1000, y0 = g.y0 / 1000, w = (g.nx - 1) * g.dx / 1000, h = (g.ny - 1) * g.dx / 1000;
   U.uBathy.value = t; U.uBathyMin.value.set(x0, y0); U.uBathySize.value.set(w, h); U.uHasBathy.value = 1;
   Object.assign(BATHY, { ok: true, g, dep, src: srcU8, level, x0, y0, w, h, sources: b.sources, probe: b.probe, cov: b.probe && b.probe.world && b.probe.world.coverage });
+  // finer lidar crop (4 m) around Diversey Harbor: only used to draw the water's edge
+  const d = b.detail; BATHY.det = null;
+  if (d && d.z_cm && d.src) { const dz = await unpackI16(d.z_cm), ds = await gunzipB64(d.src), dn = d.nx * d.ny, dd = new Float32Array(dn);
+    if (dz.length === dn && ds.length === dn) { for (let i = 0; i < dn; i++) dd[i] = level - (LWD + dz[i] / 100); BATHY.det = { g: d, dep: dd, src: ds }; } }
+}
+// survey water at a point (km): {dep, src} from the 4 m crop where it covers (bilinear depth, so the edge falls
+// between cells instead of on them), else the nearest 10 m cell; null outside the survey
+function surveyAt(xk, yk) {
+  const D = BATHY.det;
+  if (D) { const g = D.g, fx = (xk * 1000 - g.x0) / g.dx, fy = (yk * 1000 - g.y0) / g.dx;
+    if (fx >= 0 && fy >= 0 && fx <= g.nx - 1 && fy <= g.ny - 1) { const i = Math.min(Math.floor(fx), g.nx - 2), j = Math.min(Math.floor(fy), g.ny - 2), tx = fx - i, ty = fy - j, q = j * g.nx + i, v = D.dep;
+      const dep = (v[q] * (1 - tx) + v[q + 1] * tx) * (1 - ty) + (v[q + g.nx] * (1 - tx) + v[q + g.nx + 1] * tx) * ty;
+      return { dep, src: D.src[Math.round(fy) * g.nx + Math.round(fx)], fine: true }; } }
+  const G = BATHY.g, i = Math.round((xk * 1000 - G.x0) / G.dx), j = Math.round((yk * 1000 - G.y0) / G.dx);
+  if (i < 0 || j < 0 || i >= G.nx || j >= G.ny) return null; const k = j * G.nx + i; return { dep: BATHY.dep[k], src: BATHY.src[k], k };
 }
 function depthAtKm(xk, yk) {   // metres of water (negative on land), or null outside the grid
   if (!BATHY.ok) return null; const g = BATHY.g, fx = (xk - BATHY.x0) / BATHY.w * (g.nx - 1), fy = (yk - BATHY.y0) / BATHY.h * (g.ny - 1);
