@@ -40,7 +40,12 @@ DOMAINS = {
     "route": {"grid": "route", "dx": SWAN_DX},
     "montrose": {"grid": "montrose", "dx": SWAN_DX},
 }
-REFL = {"breakwater": 0.35, "groyne": 0.35, "pier": 0.5, "revetment": 0.45, "vertical": 0.85}
+REFL = {"breakwater": 0.35, "groyne": 0.35, "pier": 0.5, "revetment": 0.45, "vertical": 0.85,
+        # lakefront walls graded by the water depth 8 m out from the lidar waterline: in deep water the waves reach
+        # the wall unbroken and come straight back (Theater on the Lake: 5 m deep 12 m out); over a shoal they
+        # break first and little returns (Chess Pavilion, just south of the theater)
+        "deep_wall": 0.8, "shoaled": 0.25}
+TOE_DEEP, TOE_SHOAL = 3.0, 1.5             # m of water 8 m out from the waterline
 # shore known to be vertical wall rather than stepped revetment (S, W, N, E): Navy Pier's faces
 VERTICAL_ZONES = {"Navy Pier": (41.8885, -87.6150, 41.8945, -87.5955)}
 
@@ -78,8 +83,9 @@ def _area(pts):
 def obstacles(lakefront, g, depth, fine=None):
     """Polylines (local metres) for SWAN OBSTACLE: structures and wall-like shoreline.
 
-    Wall-like shore along the open lake is the stepped revetment of the Chicago Shoreline Protection Project
-    (reflects ~0.45); Navy Pier's faces are vertical (~0.85); floating marina docks are left out. Long
+    Wall-like shore along the open lake is graded by the lidar depth 8 m out from the waterline: deep water at
+    the wall (>= 3 m) reflects ~0.8, a shoal in front (< 1.5 m) ~0.25, otherwise ~0.45; Navy Pier's faces are
+    vertical (~0.85); floating marina docks are left out. Long
     structures the 4 m lidar sees as open water are skipped (fine = (grid, depth, src))."""
     x0, y0, x1, y1 = g["x0"], g["y0"], g["x0"] + (g["nx"] - 1) * g["dx"], g["y0"] + (g["ny"] - 1) * g["dx"]
     inside = lambda p: x0 < p[0] < x1 and y0 < p[1] < y1
@@ -125,7 +131,7 @@ def obstacles(lakefront, g, depth, fine=None):
         elif kind == "pier" and f.get("closed") and _area(f["pts"]) > 20000:   # Navy Pier: vertical faces
             refl = REFL["vertical"]
         out.append({"kind": kind, "name": name or None, "refl": refl, "trans": trans, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in pts]})
-    # wall-like shore: coastline segments where the water is already > 2 m deep 15 m offshore
+    # wall-like shore: coastline segments where the water is already > 2 m deep 15 m offshore, graded by toe depth
     def depth_at(px, py):
         i, j = int((px - x0) / g["dx"]), int((py - y0) / g["dx"])
         if 0 <= j < depth.shape[0] and 0 <= i < depth.shape[1]:
@@ -134,9 +140,21 @@ def obstacles(lakefront, g, depth, fine=None):
 
     zones = [(bm.lf.xy(s_, w), bm.lf.xy(n, e)) for s_, w, n, e in VERTICAL_ZONES.values()]
 
+    def toe_class(mx, my, nx, ny):
+        """grade a wall segment by the depth 8 m lakeward of where the lidar puts the waterline"""
+        sgn = 1.0 if np.nan_to_num(depth_at(mx + nx * 15, my + ny * 15), nan=-9) >= np.nan_to_num(depth_at(mx - nx * 15, my - ny * 15), nan=-9) else -1.0
+        for t in np.arange(-20.0, 40.0, 1.0):     # the OSM line can sit metres off the real wall
+            d = fine_at(mx + sgn * nx * t, my + sgn * ny * t)
+            if np.isfinite(d) and d > 0.3:
+                toe = fine_at(mx + sgn * nx * (t + 8), my + sgn * ny * (t + 8))
+                if not np.isfinite(toe):
+                    return "revetment"
+                return "deep_wall" if toe >= TOE_DEEP else "shoaled" if toe < TOE_SHOAL else "revetment"
+        return "revetment"
+
     def wall(run, kinds):
         mx, my = np.mean([p[0] for p in run]), np.mean([p[1] for p in run])
-        k = "vertical" if any(a[0] <= mx <= b[0] and a[1] <= my <= b[1] for a, b in zones) else "revetment"
+        k = "vertical" if any(a[0] <= mx <= b[0] and a[1] <= my <= b[1] for a, b in zones) else (kinds[0] if kinds else "revetment")
         return {"kind": "seawall", "wall": k, "refl": REFL[k], "trans": 0.0, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in run]}
     for f in (lakefront or {}).get("osm", []):
         if f.get("kind") != "coastline":
@@ -151,8 +169,11 @@ def obstacles(lakefront, g, depth, fine=None):
             nx, ny = (b[1] - a[1]) / L, -(b[0] - a[0]) / L            # one side's normal; test both
             d = np.nanmax([depth_at(mx + nx * 15, my + ny * 15), depth_at(mx - nx * 15, my - ny * 15)])
             if np.isfinite(d) and d > 2.0:
+                k = toe_class(mx, my, nx, ny)
+                if run and kinds and k != kinds[0]:          # a new wall grade starts a new obstacle line
+                    out.append(wall(run, kinds)); run, kinds = [], []
                 run = run + [b] if run else [a, b]
-                kinds.append(False)
+                kinds.append(k)
             else:
                 if len(run) >= 2:
                     out.append(wall(run, kinds))
