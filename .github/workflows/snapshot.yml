@@ -77,7 +77,7 @@ jobs:
             --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M"/funwave_*.json --validate "$M/validate.json" \
             --history "$M"/history-*.json --imports examples/*.json --split \
             --learn "$RUNNER_TEMP/correction.json" --scorecard "$RUNNER_TEMP/L/scorecard.json" \
-            --start '{"mode":"import","view":[41.92,-87.61,6.5,285,40]}'
+            --start '{"mode":"import","view":[41.9203,-87.6195,1.58,284,34]}'
       - name: Publish to the snapshot branch
         env:
           OUT: ${{ runner.temp }}/storm
