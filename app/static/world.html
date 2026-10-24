@@ -1699,7 +1699,7 @@ function renderModels() {
   rows.push(["Lake level", BATHY.ok ? `${(BATHY.level - LWD).toFixed(2)} m above low-water datum` : "–"]);
   rows.push(["Open-lake waves", "CEM growth with memory, 10 m wind + stability"]);
   rows.push(["Nearshore", SWAN.domains.length ? `SWAN 41.51: ${SWAN.domains.map((d) => `${d.name} (${d.cases.length} cases, ${d.obstacles} walls)`).join(", ")}` : "1-D refraction/shoaling on the real profile"]);
-  rows.push(["Harbour entrance", FW.runs.length ? `FUNWAVE-TVD, ${FW.runs.length} run${FW.runs.length > 1 ? "s" : ""}` : "not run"]);
+  rows.push(["Walls, wave by wave", FW.runs.length ? `FUNWAVE-TVD: ${[...new Set(FW.runs.map((r) => r.tile_label))].join(", ")} (${Object.keys(FW.byCase).length} conditions)` : "not run"]);
   $("#models").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd style="text-align:left">${v}</dd>`).join("");
   const V = DATA.validate;
   if (V && V.buoys) { const b = V.buoys.filter((x) => x.stats);
