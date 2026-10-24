@@ -3,10 +3,10 @@ on:
   workflow_dispatch:
     inputs:
       tiles:
-        description: "Tiles (comma list): diversey, belmont, northave, fullerton"
+        description: "Tiles (comma list): diversey, belmont, northave, fullerton, monroe"
         default: "diversey,belmont,northave,fullerton"
       cases:
-        description: "Cases (comma list): rough, storm, east"
+        description: "Cases (comma list): rough, storm, east, race (Monroe race day)"
         default: "rough,storm,east"
 permissions:
   contents: write

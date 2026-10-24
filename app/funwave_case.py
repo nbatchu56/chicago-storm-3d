@@ -33,12 +33,19 @@ TILES = {
     "belmont": {"x_east": 150.0, "x_west": -950.0, "y_south": 5900.0, "y_north": 6850.0, "dx": 1.5, "x_wall": -650.0, "label": "Diversey to Belmont"},
     "northave": {"x_east": 800.0, "x_west": -150.0, "y_south": 3350.0, "y_north": 4300.0, "dx": 1.5, "x_wall": -150.0, "label": "North Ave to the Chess Pavilion"},
     "fullerton": {"x_east": 300.0, "x_west": -650.0, "y_south": 4200.0, "y_north": 5150.0, "dx": 1.5, "x_wall": -250.0, "label": "Chess Pavilion to Fullerton (Theater on the Lake)"},
+    # the harbour gap between the Easterly and Southerly Inner Breakwaters (y -560..-790, 8 m deep) and the Grant
+    # Park seawall it faces ~500 m west. The offshore band is measured opposite the gap: elsewhere the vertical
+    # Easterly breakwater ~35 m behind the band would send its reflection back through it
+    "monroe": {"x_east": 1850.0, "x_west": 880.0, "y_south": -1450.0, "y_north": -250.0, "dx": 1.5, "x_wall": 950.0, "label": "Monroe Harbor",
+               "norm_y": (-800.0, -550.0), "fill_holes": True},
 }
 DOMAIN = TILES["diversey"]
 CASES = {
     "rough": {"hs": 1.0, "tp": 5.0, "dir": 45.0, "label": "Typical rough NE day: 3.3 ft at 5 s"},
     "storm": {"hs": 2.4, "tp": 7.0, "dir": 43.0, "label": "Oct 16, 2026 peak at buoy 45198: 7.9 ft from NE"},
     "east": {"hs": 1.2, "tp": 5.5, "dir": 90.0, "label": "Moderate east sea: 3.9 ft at 5.5 s"},
+    # Oct 3, 2026 race in Monroe Harbor: buoy 45198 0.7-0.8 m, waves from the E (mean dir 50-90), wind ESE 5-6 m/s
+    "race": {"hs": 0.75, "tp": 4.0, "dir": 85.0, "label": "Oct 3, 2026 race: 2.5 ft at 4 s from the east"},
 }
 TOTAL, STEADY, SNAP = 420.0, 240.0, 0.5         # s: run time, start of averaging, snapshot interval
 
@@ -58,7 +65,35 @@ def depth_grid(bathy, d=None):
     J0, I0 = np.meshgrid(j0, i0, indexing="ij")
     D = (dep[J0, I0] * (1 - tx) + dep[J0, I0 + 1] * tx) * (1 - ty) + (dep[J0 + 1, I0] * (1 - tx) + dep[J0 + 1, I0 + 1] * tx) * ty
     S = src[J0, I0]
+    if d.get("fill_holes"):
+        D = fill_holes(D, S)
     return xs, ys, D.astype(np.float32), S
+
+
+def fill_holes(D, S, iters=4000):
+    """Lidar holes enclosed by lidar-surveyed water (a mooring field the laser didn't see through: NCEI's
+    interpolated 1.5-2 m there is a false shoal between 4-5 m lidar soundings): bridge them smoothly from
+    the surrounding lidar depths (Laplace fill). Holes touching the tile edge or dry land are left alone."""
+    from scipy import ndimage
+    hole = (S != 1) & (D > 0)
+    lab, n = ndimage.label(hole)
+    D = D.copy()
+    for k in range(1, n + 1):
+        m = lab == k
+        if m[0].any() or m[-1].any() or m[:, 0].any() or m[:, -1].any() or m.sum() < 50:
+            continue
+        ring = ndimage.binary_dilation(m, iterations=2) & ~m
+        if (D[ring] <= 0.3).mean() > 0.1:      # touches the shore or a wall: not an enclosed hole
+            continue
+        j0, j1 = np.where(m.any(1))[0][[0, -1]]; i0, i1 = np.where(m.any(0))[0][[0, -1]]
+        sl = (slice(max(j0 - 3, 0), j1 + 4), slice(max(i0 - 3, 0), i1 + 4))
+        sub, mm = D[sl].copy(), m[sl]
+        sub[mm] = float(D[ring].mean())
+        for _ in range(iters):
+            avg = 0.25 * (np.roll(sub, 1, 0) + np.roll(sub, -1, 0) + np.roll(sub, 1, 1) + np.roll(sub, -1, 1))
+            sub[mm] = avg[mm]
+        D[sl] = sub
+    return D
 
 
 def input_txt(m, n, case, dep_wk, d=None, tile="diversey", px=2, py=2):
@@ -185,7 +220,12 @@ def collect(run, out_path, step=2):
     eta = np.stack(frames).astype(np.float16) if frames else np.zeros((0, 1, 1), np.float16)
     # the oblique internal wavemaker in a 600 m wide domain with absorbing sides under-delivers energy:
     # scale the run so the open-water band in front of the wavemaker carries the stated offshore height
-    off = hs[60:-60, -130:-80]
+    rows = slice(60, -60)
+    nb = (meta.get("core") or {}).get("norm_y") or meta["domain"].get("norm_y")
+    if nb:                                    # the tile names where the open-water band is clean
+        y0 = meta["domain"]["y_south"]; dxm = meta["domain"]["dx"]
+        rows = slice(max(0, int((nb[0] - y0) / dxm)), int((nb[1] - y0) / dxm))
+    off = hs[rows, -130:-80]
     norm = float(meta["hs"] / max(off.mean(), 1e-3))
     hs = hs * norm; eta = (eta.astype(np.float32) * norm).astype(np.float16)
     enc = lambda a: base64.b64encode(gzip.compress(a.tobytes(), 6)).decode()

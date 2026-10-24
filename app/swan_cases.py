@@ -46,8 +46,12 @@ REFL = {"breakwater": 0.35, "groyne": 0.35, "pier": 0.5, "revetment": 0.45, "ver
         # break first and little returns (Chess Pavilion, just south of the theater)
         "deep_wall": 0.8, "shoaled": 0.25}
 TOE_DEEP, TOE_SHOAL = 3.0, 1.5             # m of water 8 m out from the waterline
-# shore known to be vertical wall rather than stepped revetment (S, W, N, E): Navy Pier's faces
-VERTICAL_ZONES = {"Navy Pier": (41.8885, -87.6150, 41.8945, -87.5955)}
+# shore and structures known to be vertical walls rather than stepped revetment or rubble mound (S, W, N, E):
+# Navy Pier's faces; Monroe Harbor's Grant Park seawall and the Easterly/Southerly Inner Breakwaters (crib
+# breakwaters with vertical faces), all in 4-8 m of water by the lidar, so waves entering through the gap come
+# back off the west wall instead of being half absorbed (a racer's GPS showed the slowdown it causes)
+VERTICAL_ZONES = {"Navy Pier": (41.8885, -87.6150, 41.8945, -87.5955),
+                  "Monroe Harbor": (41.8680, -87.6180, 41.8880, -87.6085)}
 
 
 def case_id(d, tp, hs):
@@ -110,6 +114,11 @@ def obstacles(lakefront, g, depth, fine=None):
             d += [fine_at(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n, True) for k in range(n + 1)]
         d = np.array(d, float); ok = d[np.isfinite(d)]
         return ok.size >= max(4, 0.7 * d.size) and float(np.median(ok)) > 2.5 and float((ok < 0).mean()) < 0.15
+    zones = [(bm.lf.xy(s_, w), bm.lf.xy(n, e)) for s_, w, n, e in VERTICAL_ZONES.values()]
+
+    def in_vertical_zone(pts):
+        mx, my = float(np.mean([p[0] for p in pts])), float(np.mean([p[1] for p in pts]))
+        return any(a[0] <= mx <= b[0] and a[1] <= my <= b[1] for a, b in zones)
     for f in (lakefront or {}).get("osm", []):
         kind = f.get("kind")
         if kind not in ("breakwater", "groyne", "pier"):
@@ -130,6 +139,8 @@ def obstacles(lakefront, g, depth, fine=None):
             refl, trans = 0.3, 0.5
         elif kind == "pier" and f.get("closed") and _area(f["pts"]) > 20000:   # Navy Pier: vertical faces
             refl = REFL["vertical"]
+        elif kind in ("breakwater", "groyne") and in_vertical_zone(pts):
+            refl = REFL["vertical"]
         out.append({"kind": kind, "name": name or None, "refl": refl, "trans": trans, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in pts]})
     # wall-like shore: coastline segments where the water is already > 2 m deep 15 m offshore, graded by toe depth
     def depth_at(px, py):
@@ -137,8 +148,6 @@ def obstacles(lakefront, g, depth, fine=None):
         if 0 <= j < depth.shape[0] and 0 <= i < depth.shape[1]:
             return depth[j, i]
         return np.nan
-
-    zones = [(bm.lf.xy(s_, w), bm.lf.xy(n, e)) for s_, w, n, e in VERTICAL_ZONES.values()]
 
     def toe_class(mx, my, nx, ny):
         """grade a wall segment by the depth 8 m lakeward of where the lidar puts the waterline"""

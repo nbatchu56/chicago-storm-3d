@@ -71,3 +71,26 @@ def test_wind_corrections():
     assert sw.u10(10.0, "CHII2") == 10.0
     assert sw.stability(12.0, 16.4) > 1.05 > 1.0 > sw.stability(20.0, 12.0)    # cold air over warm water grows waves faster
     assert sw.stability(None, 10) == 1.0
+
+
+def test_funwave_fill_holes():
+    D = np.full((60, 60), 4.5, np.float32); S = np.ones((60, 60), np.uint8)
+    D[20:40, 20:40] = 1.6; S[20:40, 20:40] = 2                  # NCEI false shoal inside surveyed harbour water
+    D[:, :3] = -1.0                                              # shore on the west edge
+    F = fc.fill_holes(D, S)
+    assert abs(F[30, 30] - 4.5) < 0.05 and (F[:, :3] == -1.0).all()
+    S2 = S.copy(); S2[:, 3:8] = 2                                # a hole against the shore stays as it is
+    D2 = D.copy(); D2[:, 3:8] = 1.0
+    assert (fc.fill_holes(D2, S2)[:, 3:8] == 1.0).all()
+
+
+def test_monroe_walls_vertical():
+    (x0, y0), (x1, y1) = bm.lf.xy(41.8740, -87.6175), bm.lf.xy(41.8790, -87.6165)   # Grant Park seawall
+    g = {"x0": x0 - 200, "y0": y0 - 200, "dx": 8.0, "nx": 80, "ny": 120}
+    lake = {"osm": [{"kind": "breakwater", "pts": [[x0, y0], [x0, y1]], "closed": False},
+                    {"kind": "breakwater", "pts": [[x0 + 100, y0], [x0 + 100, y1]], "closed": False}]}
+    ob = sc.obstacles(lake, g, np.full((120, 80), 5.0))
+    assert [o["refl"] for o in ob] == [sc.REFL["vertical"]] * 2
+    far = {"x0": g["x0"], "y0": g["y0"] + 20000, "dx": 8.0, "nx": 80, "ny": 120}
+    lake2 = {"osm": [{"kind": "breakwater", "pts": [[x0, y0 + 20000], [x0, y1 + 20000]], "closed": False}]}
+    assert sc.obstacles(lake2, far, np.full((120, 80), 5.0))[0]["refl"] == sc.REFL["breakwater"]
