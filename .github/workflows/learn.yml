@@ -1,0 +1,43 @@
+name: Learn waves (experimental)
+
+# Reruns the open-lake wave model over years of NDBC archive at buoys 45174 and 45198 (wind only), fits the learned
+# correction (wind direction x speed, swell) with leave-one-year-out scoring, and writes it to the `learn` branch.
+# The hourly snapshot then uses it for the page's "Learned correction" option and logs forecasts for the scorecard.
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "Years (e.g. 2012-2026, or last5)"
+        default: "2012-2026"
+
+permissions:
+  contents: write
+
+jobs:
+  learn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install numpy scipy
+      - name: Check out the learn branch
+        run: tools/learn_branch.sh checkout "$RUNNER_TEMP/L"
+      - name: Backfill model vs buoy from the NDBC archive
+        run: |
+          rm -rf "$RUNNER_TEMP/L/backfill"
+          python -m app.learn backfill --out "$RUNNER_TEMP/L" --years "${{ inputs.years }}" 2>&1 | tail -40
+      - name: Fit the correction
+        run: |
+          python -m app.learn fit --dir "$RUNNER_TEMP/L" | tee "$RUNNER_TEMP/L/report.txt"
+          echo "::notice title=learned correction::$(head -c 3000 "$RUNNER_TEMP/L/report.txt" | tr '\n' '|' | sed 's/%/%25/g')"
+      - name: Probe NOAA GLWU (second opinion for the scorecard)
+        continue-on-error: true
+        run: pip install -q eccodes && python -m app.glwu --out "$RUNNER_TEMP/glwu.json"
+      - name: Publish to the learn branch
+        run: tools/learn_branch.sh push "$RUNNER_TEMP/L" "learned correction $(date -u +%Y-%m-%dT%H:%MZ) (${{ inputs.years }})"

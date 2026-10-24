@@ -137,6 +137,13 @@ def summarize_validation(v):
             "peak_note": "%s measured %.1f ft, model %.1f ft" % (ph[0]["buoy"], s0["obs_peak"]["m"] * 3.281, s0["pred_peak"]["m"] * 3.281)}
 
 
+def summarize_learn(corr, card):
+    import sys
+    sys.path.insert(0, ROOT)
+    from app.learn import summarize
+    return summarize(corr, card)
+
+
 SPLIT = ("bathy-data", "swan-data", "funwave-data", "history-data")   # funwave: one file per run
 
 
@@ -145,6 +152,8 @@ def main():
     ap.add_argument("--out", required=True)
     for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track"):
         ap.add_argument("--" + k)
+    ap.add_argument("--learn", help="correction.json from the learn branch (experimental learned wave correction)")
+    ap.add_argument("--scorecard", help="scorecard.json from the learn branch (forecast vs buoy by lead time)")
     ap.add_argument("--funwave", nargs="*", default=[])
     ap.add_argument("--imports", nargs="*", default=[], help="forecast tables read from screenshots (examples/*.json)")
     ap.add_argument("--history", nargs="*", default=[])
@@ -158,6 +167,7 @@ def main():
         "bathy-data": thin_bathy(load(a.bathy)), "swan-data": coarsen_swan(load(a.swan)),
         "funwave-data": quantize_funwave([load(p) for p in a.funwave]) or None, "validate-data": summarize_validation(load(a.validate)),
         "import-data": [d for d in (load(p) for p in a.imports) if d] or None,
+        "learn-data": summarize_learn(load(a.learn), load(a.scorecard)),
         "meta-data": {"generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), **({"start": json.loads(a.start)} if a.start else {})},
     }
     hist = []

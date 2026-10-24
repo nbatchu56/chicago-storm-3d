@@ -42,6 +42,10 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .chip.live { color: var(--obs); } .chip.forecast { color: var(--fc); } .chip.history { color: var(--hist); } .chip.exp { color: var(--exp); }
 .readouts { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 8px; margin: 0; }
 .readouts dt { color: var(--muted); }
+table.score { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+table.score th, table.score td { padding: 2px 4px; text-align: right; border-bottom: 1px solid var(--line); }
+table.score th { color: var(--muted); font-weight: 500; } table.score td:first-child, table.score th:first-child { text-align: left; }
+table.score td.best { color: var(--fg); font-weight: 600; } table.score td { color: var(--muted); }
 .readouts dd { margin: 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; }
 .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
 #controls { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); width: 286px;
@@ -274,6 +278,12 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
       </div>
       <dl class="readouts" id="models"></dl>
       <p class="note" id="valnote"></p>
+      <div id="learn-box" hidden>
+        <label class="check"><input type="checkbox" id="learn-on"> Learned correction (experimental)</label>
+        <p class="note" id="learn-note"></p>
+        <table class="score" id="learn-score"></table>
+        <p class="note" id="learn-card"></p>
+      </div>
     </section>
     <section>
       <h2>Quality</h2>
@@ -303,6 +313,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 <script id="swan-data" type="application/json"></script>
 <script id="funwave-data" type="application/json"></script>
 <script id="validate-data" type="application/json"></script>
+<script id="learn-data" type="application/json"></script>
 <script id="meta-data" type="application/json"></script>
 <script id="import-data" type="application/json"></script>
 <script>
@@ -406,7 +417,7 @@ function lunar(date, lat = 41.88, lon = -87.63) {
 const azElDir = (o, v) => { const a = o.az * Math.PI / 180, e = o.el * Math.PI / 180; return v.set(Math.sin(a) * Math.cos(e), Math.sin(e), -Math.cos(a) * Math.cos(e)).normalize(); };
 
 // ---------------------------------------------------------------- data
-const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
+const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), learn: parseJSON("learn-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
 { const h = parseJSON("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
 const S = { mode: "live", t: 0, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, view: "overview", histIdx: 0,
   x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, hour: 14, seed: 7 } };
@@ -1568,7 +1579,8 @@ function synthFrame(params, tMin) {
 const SRC = { live: null, hist: [] };
 const supSpots = () => (DATA.sup && DATA.sup.spots) || [];
 function nearestSpot(xk, yk) { let best = null, bd = 1e9; for (const s of supSpots()) { const [x, y] = ll(s.lat, s.lon), d = (x - xk) ** 2 + (y - yk) ** 2; if (d < bd) { bd = d; best = s; } } return best; }
-function supHour(spot, tMs) { if (!spot || !spot.hourly.length) return null; const t0 = new Date(spot.hourly[0].t).getTime(); const i = clamp(Math.round((tMs - t0) / 3600e3), 0, spot.hourly.length - 1); return spot.hourly[i]; }
+function supHour(spot, tMs) { if (!spot || !spot.hourly.length) return null; const t0 = new Date(spot.hourly[0].t).getTime(); const i = clamp(Math.round((tMs - t0) / 3600e3), 0, spot.hourly.length - 1);
+  const h = spot.hourly[i]; return S.learned && h.learned ? { ...h, ...h.learned, raw: h } : h; }   // experimental: the learned correction swapped in
 function stationAt(stations, field, tMs, xk, yk) {
   // stations with a real record near this time (some lakefront sites report only now and then)
   const st = (stations || []).filter((s) => s.x != null && s.history && s.history.filter((h) => h[field] != null && Math.abs(new Date(h.t) - tMs) < 3 * 3600e3).length >= 4);
@@ -1635,7 +1647,7 @@ function conditions(tMs, xk, yk) {
       if (shore.d < 0.6 && h.components && h.components.length) { c.systems = h.components.map((q) => ({ hs: q.hs, tp: q.tp, dir: q.ang != null ? sp.normal + q.ang : q.dir, spread: q.kind === "swell" ? 12 : 28 })); c.dRef = 165; }
       else if (h.hs_offshore > 0.01) { c.systems = [{ hs: h.hs_offshore, tp: h.tp, dir: h.wave_dir, spread: 28 }]; c.dRef = 1000; }
       if (h.hs_offshore > 0.01) c.off = { hs: h.hs_offshore, tp: h.tp, dir: h.wave_dir };
-      withChop(c.systems, h.wind, h.dir); c.spot = sp; c.hour = h; c.src.push(`forecast model · ${sp.name}`); }
+      withChop(c.systems, h.wind, h.dir); c.spot = sp; c.hour = h; c.src.push(`forecast model · ${sp.name}${h.raw ? ` · learned ×${h.factor.toFixed(2)}` : ""}`); }
     if (S.mode === "live" && DATA.lake && DATA.lake.stations) { const wd = stationAt(DATA.lake.stations, "wspd", tMs, xk, yk); if (wd) { c.wind = wd.h.wspd; c.dir = wd.h.wdir ?? c.dir; c.gust = wd.h.gst ?? c.gust; c.src.unshift(`wind ${wd.st.id}`); } }
   }
   if (FW.cur) { c.off = { hs: FW.cur.hs, tp: FW.cur.tp, dir: FW.cur.dir, src: "FUNWAVE case" }; c.src.unshift(`FUNWAVE: ${FW.cur.label}`); }
@@ -1883,6 +1895,7 @@ document.querySelectorAll("[data-cam]").forEach((b) => b.onclick = () => goCam(b
 document.querySelectorAll("[data-q]").forEach((b) => b.onclick = () => { S.quality = +b.dataset.q; document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); try { localStorage.setItem("lakeworld-q", String(S.quality)); } catch (e) {} resize(); });
 document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-pressed", String(+x.dataset.q === S.quality)));
 $("#exag").oninput = (e) => setExag(+e.target.value);
+try { S.learned = localStorage.getItem("lakelocal-learned") === "1"; } catch (e) { S.learned = false; }
 $("#bolts").checked = S.bolts; $("#bolts").onchange = (e) => S.bolts = e.target.checked;
 $("#spd").onchange = (e) => S.speed = +e.target.value;
 const XFMT = { int: (v) => `${Math.round(v * 100)}%`, cov: (v) => `${Math.round(v * 100)}%`, mspd: (v) => `${v} km/h`, mdir: (v) => `${v}° ${compass(v)}`, wspd: (v) => `${mph(v)} mph`, wdir: (v) => `${v}° ${compass(v)}`,
@@ -2090,6 +2103,31 @@ function renderModels() {
     $("#valnote").textContent = `Checked against buoys ${b.map((x) => x.buoy).join(" and ")} over ${Math.round((new Date(b[0].window.end) - new Date(b[0].window.start)) / 864e5)} days, driven by wind only: ` +
       b.map((x) => `${x.buoy} RMSE ${ft(x.stats.rmse_m)} ft, r ${x.stats.r}`).join("; ") + `. Peak of Oct 16: ${V.peak_note || ""}`; }
   else $("#valnote").textContent = "";
+  renderLearn();
+}
+
+// ---------------------------------------------------------------- experimental: learned wave correction + live scorecard (app.learn)
+function renderLearn() {
+  const L = DATA.learn, has = DATA.sup && DATA.sup.spots && DATA.sup.spots.some((s) => s.hourly.some((h) => h.learned));
+  if (!L && !has) return;
+  $("#learn-box").hidden = false; const on = $("#learn-on"); on.disabled = !has; on.checked = !!S.learned;
+  on.onchange = (e) => { S.learned = e.target.checked; try { localStorage.setItem("lakelocal-learned", S.learned ? "1" : ""); } catch (err) {} };
+  const C = L && L.correction, notes = [];
+  if (C && C.cv_overall) { const r = C.cv_overall.raw, l = C.cv_overall.learned, yrs = Object.values(C.data || {}).flat(), y0 = Math.min(...yrs.map(Number)), y1 = Math.max(...yrs.map(Number));
+    notes.push(`Learned from ${Math.round(C.hours / 1000)}k buoy-hours (45174 and 45198, ${y0}–${y1}) of how the wave model misses by wind direction and speed. On years it didn't see: typical error ${ft(r.rmse_m)} → ${ft(l.rmse_m)} ft, better in ${C.years_better} of ${C.years_scored} years` +
+      (r.big_bias_m != null ? `; on 3 ft+ days the model was ${ft(Math.abs(r.big_bias_m))} ft ${r.big_bias_m > 0 ? "high" : "low"}, ${ft(Math.abs(l.big_bias_m))} ft after` : "") + "." +
+      (C.lag && C.lag.lag_h ? ` The model's waves also run about ${Math.abs(C.lag.lag_h)} h ${C.lag.lag_h > 0 ? "late" : "early"}, which this correction can't fix.` : "") +
+      (C.improves ? "" : " It hasn't clearly beaten the plain model yet, so it stays off by default."));
+  } else if (!has) notes.push("No learned correction yet: run the Learn waves workflow.");
+  $("#learn-note").textContent = notes.join(" ");
+  const K = L && L.scorecard;
+  if (K && K.stats && K.forecasts) {
+    const ms = K.methods.filter((m) => K.stats[m].some((x) => x)), cols = K.buckets.map((b, i) => i).filter((i) => ms.some((m) => K.stats[m][i]));
+    const best = cols.map((i) => Math.min(...ms.map((m) => K.stats[m][i] ? K.stats[m][i].rmse_m : Infinity)));
+    $("#learn-score").innerHTML = `<tr><th>Error (ft) by lead</th>${cols.map((i) => `<th>${K.buckets[i]}</th>`).join("")}</tr>` +
+      ms.map((m) => `<tr><td>${K.labels[m] || m}</td>${cols.map((i, j) => { const x = K.stats[m][i]; return x ? `<td class="${x.rmse_m === best[j] ? "best" : ""}" title="${x.hours} h, bias ${x.bias_m > 0 ? "+" : ""}${ft(x.bias_m)} ft">${ft(x.rmse_m)}</td>` : "<td>–</td>"; }).join("")}</tr>`).join("");
+    $("#learn-card").textContent = `Live scorecard: ${K.forecasts} forecasts from the last ${K.window_days} days checked against what buoys 45174 and 45198 measured (RMS error; bold is best). The buoy-nudged forecasts start from the buoy itself, so their first hours aren't a fair test.`;
+  } else { $("#learn-score").innerHTML = ""; $("#learn-card").textContent = "Live scorecard: starts filling in as forecasts come due (each hourly snapshot logs one)."; }
 }
 
 // ---------------------------------------------------------------- on-demand refresh (owner): fires the refresh scheduled task via the

@@ -36,7 +36,7 @@ Historical periods: `GET /api/history?start=2026-10-23T12:20Z&end=2026-10-23T12:
 
 ## Lakefront Local refresh and GitHub minutes
 
-The page is a published Claude artifact, which can't fetch data itself. The **Radar snapshot** workflow runs hourly from 5 AM to 10 PM Chicago time (about 2 minutes each) and builds `world.html` on the `snapshot` branch; a Claude scheduled task republishes it at :20. The page's **Refresh now** button fires that task on demand (it starts a new snapshot when the last one is over 20 minutes old). With the repo private this uses roughly 18 runs/day × 2 min ≈ 1,100 Actions minutes a month; CI runs tests on code pushes only (the Docker build and live smoke test run on demand). The SWAN, FUNWAVE, bathymetry and validation workflows are run by hand (SWAN ≈ 2 h of runner time, FUNWAVE ≈ 1.7 h).
+The page is a published Claude artifact, which can't fetch data itself. The **Radar snapshot** workflow runs hourly from 5 AM to 10 PM Chicago time (about 2 minutes each) and builds `world.html` on the `snapshot` branch; a Claude scheduled task republishes it at :20. The page's **Refresh now** button fires that task on demand (it starts a new snapshot when the last one is over 20 minutes old). With the repo private this uses roughly 18 runs/day × 2–3 min (the GLWU download and scorecard add under a minute) ≈ 1,100 Actions minutes a month; CI runs tests on code pushes only (the Docker build and live smoke test run on demand). The SWAN, FUNWAVE, bathymetry and validation workflows are run by hand (SWAN ≈ 2 h of runner time, FUNWAVE ≈ 1.7 h).
 
 ## Wave models and the lake bottom
 
@@ -57,6 +57,17 @@ The paddling forecast (`/sup`) uses the surveyed cross-shore profiles for North 
 To serve these from the deployed service, copy `bathy.json`, `swan.json` and `funwave.json` from those branches into `DATA_DIR` (they are served at `/api/bathy.json`, `/api/swan.json`, `/api/funwave.json`), and set `BATHY_PATH` for the forecast.
 
 Assumptions to know: inside Diversey Harbor the lidar has no returns, so unsurveyed harbour water is treated as 2 m deep; the NOAA chart's interpolated nearshore cells are floored at 1.5 m; SWAN treats obstacles as fully opaque with 35–50% reflection (85% for known vertical walls: Navy Pier, Monroe Harbor's seawall and inner breakwaters).
+
+## Learned correction and scorecard (experimental)
+
+The wave model's misses are fairly consistent (too high in some winds, too low in others), so it can learn from the buoys:
+
+- **Backfill** (`Learn waves` workflow, `python -m app.learn backfill`): reruns the open-lake model over years of NDBC archive at Wilmette (45174) and Chicago (45198), driven by observed wind only, and keeps every hour's model-vs-buoy pair (`learn` branch, `backfill/`).
+- **Fit** (`python -m app.learn fit`): a height and period factor by wind direction (12 sectors) × 10 m wind speed (<4, 4–7, 7–10, >10 m/s), plus one for swell-dominated hours, as the mean log(buoy/model), shrunk toward the sector and lake-wide averages where data is thin, clipped to 0.5–2. Scored leaving one year out at a time (`correction.json`, `report.txt`), along with the model's timing lag, which a factor can't fix.
+- **Use**: when `LEARN_PATH` points at `correction.json`, `sup.json` gets a `learned` version of every spot-hour (offshore and paddle-zone waves, period, rating), and the live buoy nudge fades toward the learned model instead of the raw one. On the page: Models & accuracy → *Learned correction (experimental)*, off by default.
+- **Scorecard**: every snapshot logs its 48 h forecast at both buoys (model, model + learned, the buoy-nudged forecast with and without it, the NWS wave grid, and NOAA's Great Lakes Wave model GLWU from NOMADS when it's reachable) to `scorecard/forecasts-YYYY-MM.jsonl`, then scores the last 45 days against what the buoys measured by lead time (`scorecard.json`, shown under the toggle).
+
+The buoys are offshore (~9–15 m deep) and come out for the winter, so the correction is learned on open-lake waves only; the paddle-zone numbers downstream of it are still unverified.
 
 ## Stand-up paddling forecast (`/sup`)
 
