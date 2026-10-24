@@ -1,0 +1,28 @@
+{
+ "version": 1,
+ "generated": "2026-10-24T22:42:57+00:00",
+ "window_days": 45,
+ "forecasts": 1,
+ "buckets": [
+  "0 h",
+  "1-3 h",
+  "4-6 h",
+  "7-12 h",
+  "13-24 h",
+  "25-48 h"
+ ],
+ "methods": [],
+ "labels": {
+  "raw": "model",
+  "learned": "model + learned",
+  "product": "forecast (buoy-nudged)",
+  "product_learned": "forecast + learned",
+  "nws": "NWS wave grid",
+  "glwu": "NOAA GLWU"
+ },
+ "stats": {},
+ "by_buoy": {
+  "45174": {},
+  "45198": {}
+ }
+}
