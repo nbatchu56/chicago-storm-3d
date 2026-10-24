@@ -363,6 +363,7 @@ const GOTO = [
   ["Oak St curve", 41.9010, -87.6215, 0.35, 230, 15],
   ["Ohio St / Navy Pier", 41.8930, -87.6110, 0.45, 250, 16],
   ["Monroe Harbor", 41.8805, -87.6130, 0.6, 260, 20],
+  ["Monroe gap and seawall", 41.8752, -87.6135, 0.55, 270, 38],
   ["Harrison-Dever crib", 41.9160, -87.5735, 0.35, 90, 12],
   ["Downtown from the lake", 41.9050, -87.6200, 1.3, 215, 7],
 ];
@@ -1190,7 +1191,8 @@ function fwChop(r, h) {
 }
 function funwaveCrossKm(xk, yk) { const r = FW.cur; if (!r || !r.crossArr || !fwIn(r, xk, yk)) return null; const g = r.grid, ds = g.dx * r.eta.step,
   i = Math.round((xk * 1000 - g.x0) / ds), j = Math.round((yk * 1000 - g.y0) / ds); if (i < 0 || j < 0 || i >= r.eta.nx || j >= r.eta.ny) return null; return r.crossArr[j * r.eta.nx + i]; }
-function funwaveHsKm(xk, yk) { const r = FW.cur; if (!r || !r.hsArr) return null; const g = r.grid, i = Math.round((xk * 1000 - g.x0) / g.dx), j = Math.round((yk * 1000 - g.y0) / g.dx);
+// FUNWAVE wave height at a point of the tile proper (not the run's up-wave extension)
+function funwaveHsKm(xk, yk) { const r = FW.cur; if (!r || !r.hsArr || !fwIn(r, xk, yk)) return null; const g = r.grid, i = Math.round((xk * 1000 - g.x0) / g.dx), j = Math.round((yk * 1000 - g.y0) / g.dx);
   if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) return null; return r.hsArr[j * g.nx + i] / 100; }
 
 // ---------------------------------------------------------------- near-camera wave patch (metres inside): refraction + shoaling per wave
