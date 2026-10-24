@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    paths: ["app/**", "tests/**", "tools/**", "requirements.txt", "Dockerfile", ".github/workflows/ci.yml"]
   pull_request:
   workflow_dispatch:
 
@@ -44,6 +45,8 @@ jobs:
           exit $status
 
   docker:
+    # the image build and live smoke test are slow: run them on demand and for pull requests, not every push
+    if: github.event_name != 'push'
     name: Docker image
     runs-on: ubuntu-latest
     timeout-minutes: 30
