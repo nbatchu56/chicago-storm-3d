@@ -18,10 +18,13 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 #app { position: fixed; inset: 0; }
 #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.lbl { position: absolute; transform: translate(-50%, -100%); font: 500 11px/1.2 var(--font-data); color: var(--fg); text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,.8); white-space: nowrap; padding-bottom: 6px; }
-.lbl::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 1px; height: 5px; background: var(--fg); opacity: .7; }
-.lbl.lake { font-family: var(--font-ui); font-style: italic; letter-spacing: .12em; text-transform: uppercase; color: #a9cde0; }
-.lbl.lake::after { display: none; }
+.lbl { position: absolute; transform: translate(-50%, -100%); white-space: nowrap; padding-bottom: 19px; transition: opacity .2s; }
+.lbl span { display: block; font: 500 11px/1.2 var(--font-data); color: var(--fg); padding: 3px 7px; border-radius: 4px; background: rgba(9, 15, 21, .66); border: 1px solid rgba(220, 230, 238, .14);
+  text-shadow: 0 0 3px #000, 0 0 1px #000; box-shadow: 0 1px 6px rgba(0, 0, 0, .35); }
+.lbl::after { content: ""; position: absolute; left: 50%; bottom: 4px; width: 1px; height: 14px; background: linear-gradient(rgba(220,230,238,.75), rgba(220,230,238,.35)); }
+.lbl::before { content: ""; position: absolute; left: 50%; bottom: 0; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(9,15,21,.7), 0 0 6px rgba(240,180,76,.6); }
+.lbl.lake { padding-bottom: 0; } .lbl.lake span { font-family: var(--font-ui); font-style: italic; letter-spacing: .12em; text-transform: uppercase; color: #a9cde0; background: none; border: 0; box-shadow: none; text-shadow: 0 0 6px rgba(0,0,0,.9), 0 1px 2px #000; }
+.lbl.lake::after, .lbl.lake::before { display: none; }
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 #hud { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); left: calc(var(--gut) + env(safe-area-inset-left, 0px)); padding: 12px 14px; width: min(330px, calc(100vw - 2 * var(--gut))); display: grid; gap: 8px; }
 #hud h1 { margin: 0; font-size: 20px; font-weight: 700; }
@@ -86,11 +89,19 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #msg p { margin: 6px 0 0; color: var(--muted); }
 [hidden] { display: none !important; }
 /* navigation */
-#goto { position: absolute; bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); left: calc(var(--gut) + 196px + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + 236px + env(safe-area-inset-right, 0px)); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 6px; width: max-content; max-width: calc(100vw - 2 * var(--gut) - 432px); margin: 0 auto; }
-#goto::-webkit-scrollbar { display: none; }
-#goto button { white-space: nowrap; font-size: 12.5px; padding: 7px 10px; border-color: transparent; background: rgba(255,255,255,.04); }
-#goto button:hover { border-color: var(--line); }
-#goto .lbl0 { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; align-self: center; padding: 0 4px; white-space: nowrap; }
+/* Go to: one compact button that opens a list of places (keeps the bottom of the world clear) */
+#goto { position: absolute; bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); padding: 0; background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; z-index: 3; }
+#goto-btn { position: relative; display: flex; align-items: center; gap: 7px; background: var(--panel); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding: 9px 14px; font-size: 13px; border-radius: 999px; }
+#goto-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#goto-btn .chev { transition: transform .15s; } #goto-btn[aria-expanded="true"] .chev { transform: rotate(180deg); }
+#goto-list { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: max-content; min-width: 220px; max-height: min(60vh, 420px); overflow-y: auto; padding: 6px; display: grid; gap: 2px; }
+#goto-list button { text-align: left; border: 0; padding: 9px 12px; font-size: 13px; white-space: nowrap; }
+#goto-list button:hover, #goto-list button:focus-visible { background: rgba(255,255,255,.07); outline-offset: -2px; }
+/* while you drag or zoom the world, the panels step back */
+.panel, #nav, #goto { transition: opacity .35s ease, transform .35s ease; }
+#app.flying #controls { opacity: .12; transform: translateX(16px); }
+#app.flying #hud, #app.flying #minimap, #app.flying #goto, #app.flying #nav, #app.flying #legend { opacity: .3; }
+@media (prefers-reduced-motion: reduce) { .panel, #nav, #goto { transition: none; } #app.flying #controls { transform: none; } }
 #nav { position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: auto auto; gap: 6px 8px; align-items: end; }
 #nav > #modeseg { grid-column: 1; grid-row: 1; } #nav > #compass { grid-column: 1; grid-row: 2; justify-self: center; } #nav > .grp { grid-column: 2; grid-row: 1 / span 3; } #nav > .row2 { grid-column: 1; grid-row: 3; justify-self: center; }
 #nav .grp { display: grid; grid-template-columns: repeat(3, 38px); gap: 4px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
@@ -115,9 +126,10 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #controls { top: calc(var(--gut) + 46px + env(safe-area-inset-top, 0px)) !important; max-height: calc(100% - 2 * var(--gut) - 46px - 270px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important; }
 .age { font: 11.5px var(--font-data); color: var(--muted); }
 .age.stale { color: var(--danger); }
-@media (max-width: 1000px) { #goto { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; scrollbar-width: none; } }
 @media (max-width: 760px) {
-  #goto { left: var(--gut); right: var(--gut); bottom: calc(var(--gut) + 74px + 190px); max-width: none; width: auto; }
+  #goto { left: var(--gut); transform: none; bottom: calc(var(--gut) + 74px + env(safe-area-inset-bottom, 0px)); }
+  #goto-list { left: 0; transform: none; }
+  #goto-btn { width: 44px; height: 44px; padding: 0; justify-content: center; } #goto-btn span, #goto-btn .chev { display: none; } #goto-btn svg { width: 19px; height: 19px; }
   #minimap { display: none; }
   #nav { bottom: calc(var(--gut) + 74px + env(safe-area-inset-bottom, 0px)); }
   #controls { top: auto !important; max-height: 55% !important; }
@@ -145,7 +157,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
     <dl class="readouts" id="readouts"></dl>
   </div>
   <button id="toggle" aria-expanded="true" aria-controls="controls">Settings</button>
-  <div id="goto" class="panel" role="group" aria-label="Go to a place"><span class="lbl0">Go to</span></div>
+  <div id="goto"><div id="goto-list" class="panel" role="menu" aria-label="Places" hidden></div><button id="goto-btn" class="panel" aria-label="Go to a place" title="Go to a place" aria-haspopup="menu" aria-expanded="false" aria-controls="goto-list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.4-6-11a6 6 0 0 1 12 0c0 5.6-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg><span>Go to a place</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button></div>
   <div id="nav" aria-label="Navigation">
     <div id="modeseg" role="group" aria-label="Movement mode"><button data-move="fly" aria-pressed="true" title="Fly: drag to orbit, scroll to zoom">Fly</button><button data-move="paddle" aria-pressed="false" title="Paddle: first person on the water">Paddle</button></div>
     <button id="compass" title="Face north" aria-label="Face north"><svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24" fill="none" stroke="#24384a"/><g id="needle"><path d="M26 6 L31 26 L26 23 L21 26 Z" fill="#f2705a"/><path d="M26 46 L21 26 L26 29 L31 26 Z" fill="#8ea2b4"/></g><text id="ndir" x="26" y="30" text-anchor="middle" font-size="0"></text></svg></button>
@@ -359,6 +371,19 @@ function solar(date, lat = 41.88, lon = -87.63) {
   const az = Math.atan2(-Math.sin(ha), Math.tan(dec) * Math.cos(lat * rad) - Math.sin(lat * rad) * Math.cos(ha));
   return { el: el / rad, az: ((az / rad) + 360) % 360 };
 }
+// moon: low-precision ephemeris (~1 deg), enough to put it in the right part of the sky with the right phase
+function lunar(date, lat = 41.88, lon = -87.63) {
+  const rad = Math.PI / 180, d = date.getTime() / 86400000 + 2440587.5 - 2451545.0;
+  const Lm = (218.316 + 13.176396 * d) * rad, M = (134.963 + 13.064993 * d) * rad, F = (93.272 + 13.229350 * d) * rad;
+  const lam = Lm + 6.289 * rad * Math.sin(M), bet = 5.128 * rad * Math.sin(F), e = 23.4397 * rad;
+  const ra = Math.atan2(Math.sin(lam) * Math.cos(e) - Math.tan(bet) * Math.sin(e), Math.cos(lam));
+  const dec = Math.asin(Math.sin(bet) * Math.cos(e) + Math.cos(bet) * Math.sin(e) * Math.sin(lam));
+  const gmst = (18.697374558 + 24.06570982441908 * d) % 24, ha = (gmst * 15 + lon) * rad - ra;
+  const el = Math.asin(Math.sin(lat * rad) * Math.sin(dec) + Math.cos(lat * rad) * Math.cos(dec) * Math.cos(ha));
+  const az = Math.atan2(-Math.sin(ha), Math.tan(dec) * Math.cos(lat * rad) - Math.sin(lat * rad) * Math.cos(ha));
+  return { el: el / rad, az: ((az / rad) + 360) % 360 };
+}
+const azElDir = (o, v) => { const a = o.az * Math.PI / 180, e = o.el * Math.PI / 180; return v.set(Math.sin(a) * Math.cos(e), Math.sin(e), -Math.cos(a) * Math.cos(e)).normalize(); };
 
 // ---------------------------------------------------------------- data
 const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
@@ -422,7 +447,7 @@ const tRamp = (() => { const d = new Uint8Array(64 * 4); for (let i = 0; i < 64;
 // ---------------------------------------------------------------- shared uniforms
 const U = {
   uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Vector3(3, 3, 3) }, uAmbTop: { value: new THREE.Vector3() }, uAmbBot: { value: new THREE.Vector3() },
-  uHor: { value: new THREE.Vector3() }, uZen: { value: new THREE.Vector3() }, uCity: { value: 0 }, uOvercast: { value: 0 }, uFlash: { value: 0 }, uFlashPos: { value: new THREE.Vector3() },
+  uHor: { value: new THREE.Vector3() }, uZen: { value: new THREE.Vector3() }, uSunTrue: { value: new THREE.Vector3(0, 1, 0) }, uMoonDir: { value: new THREE.Vector3(0, -1, 0) }, uNight: { value: 0 }, uCity: { value: 0 }, uOvercast: { value: 0 }, uFlash: { value: 0 }, uFlashPos: { value: new THREE.Vector3() },
   uTime: { value: 0 }, uCamPos: { value: new THREE.Vector3() }, uHaze: { value: 1 }, uLand: { value: new THREE.Vector3(0.075, 0.085, 0.045) },
   uCloudA: { value: emptyVol }, uCloudB: { value: emptyVol }, uDbzA: { value: emptyVol }, uDbzB: { value: emptyVol }, uNoise: { value: noiseTex },
   uMix: { value: 0 }, uShiftA: { value: new THREE.Vector2() }, uShiftB: { value: new THREE.Vector2() },
@@ -431,7 +456,7 @@ const U = {
   // lake surface
   uHs: { value: 0.3 }, uTp: { value: 3 }, uWaveDir: { value: new THREE.Vector2(0, 1) }, uWhitecap: { value: 0 }, uWindSpd: { value: 4 },
   // lakefront map
-  uMapCol: { value: blank2D }, uMapMask: { value: blank2D }, uMapMin: { value: new THREE.Vector2(1e6, 1e6) }, uMapSize: { value: new THREE.Vector2(1, 1) }, uHasMap: { value: 0 },
+  uMapCol: { value: blank2D }, uMapMask: { value: blank2D }, uMapLooks: { value: blank2D }, uMapMin: { value: new THREE.Vector2(1e6, 1e6) }, uMapSize: { value: new THREE.Vector2(1, 1) }, uHasMap: { value: 0 },
   uTempTex: { value: blank2D }, uTempMin: { value: new THREE.Vector2() }, uTempSize: { value: new THREE.Vector2(1, 1) }, uTempN: { value: new THREE.Vector2(1, 1) }, uHasTemp: { value: 0 },
   uIceTex: { value: blank2D }, uIceMin: { value: new THREE.Vector2() }, uIceSize: { value: new THREE.Vector2(1, 1) }, uIceN: { value: new THREE.Vector2(1, 1) }, uHasIce: { value: 0 },
   uBathy: { value: blank2D }, uBathyMin: { value: new THREE.Vector2() }, uBathySize: { value: new THREE.Vector2(1, 1) }, uHasBathy: { value: 0 },
@@ -442,6 +467,7 @@ const U = {
   uTempOn: { value: 0 }, uTRamp: { value: tRamp }, uLocalC: { value: new THREE.Vector2() }, uWaterC: { value: 15 }, uIceExp: { value: 0 }, uSnowCover: { value: 0 },
 };
 
+U.uCitySky = U.uCity; U.uTimeSky = U.uTime;   // same values under names the sky function can declare without clashing
 // ---------------------------------------------------------------- shared GLSL
 const GRID_GLSL = `
 precision highp sampler3D;
@@ -468,12 +494,31 @@ float cloudDensity(vec3 pk, float raw) {
   return max(d, extraLayer(pk, n2));
 }`;
 const SKY_FN = `
-uniform vec3 uSunDir, uSunCol, uHor, uZen; uniform float uOvercast, uFlash;
+uniform vec3 uSunDir, uSunCol, uHor, uZen, uSunTrue, uMoonDir; uniform float uOvercast, uFlash, uNight, uCitySky, uTimeSky;
+float skyHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
 vec3 skyColor(vec3 d, bool sun) {
   float h = d.y; vec3 c = mix(uHor, uZen, pow(clamp(h, 0.0, 1.0), 0.45));
   if (h < 0.0) c = uHor * mix(0.75, 0.45, clamp(-h * 4.0, 0.0, 1.0));
-  float mu = max(dot(d, uSunDir), 0.0); c += uSunCol * pow(mu, 6.0) * 0.08;
-  if (sun) c += uSunCol * smoothstep(0.99975, 0.99992, mu) * 8.0;
+  float mu = max(dot(d, uSunDir), 0.0), sunUp = smoothstep(-0.05, 0.0, uSunTrue.y); c += uSunCol * pow(mu, 6.0) * 0.08 * sunUp;
+  if (sun) c += uSunCol * smoothstep(0.99975, 0.99992, mu) * 8.0 * sunUp;
+  // city light dome: the city lies west and south of the lakefront; low cloud bounces it back
+  float west = 0.3 + 0.7 * smoothstep(0.3, -0.85, d.x + 0.25 * d.z);
+  c += vec3(1.0, 0.58, 0.3) * uCitySky * west * exp(-max(h, 0.0) * 9.0) * (0.22 + 0.5 * uOvercast);
+  if (sun && h > -0.02) {
+    float clear = 1.0 - uOvercast;
+    // stars: a hashed point per cell on the sky, dimmed by the city glow toward the west
+    if (uNight > 0.01 && clear > 0.05) { vec3 q = d * 260.0, cell = floor(q); float r = skyHash(cell);
+      if (r > 0.982) { vec3 sp = cell + 0.5 + (vec3(skyHash(cell + 1.7), skyHash(cell + 3.1), skyHash(cell + 5.3)) - 0.5) * 0.6;
+        float sd = length(q - sp), mag = pow(skyHash(cell + 9.2), 3.0), tw = 0.75 + 0.25 * sin(uTimeSky * (2.0 + 4.0 * r) + r * 90.0);
+        c += vec3(0.85, 0.9, 1.0) * smoothstep(0.42, 0.0, sd) * (0.05 + 0.5 * mag) * tw * uNight * clear * smoothstep(0.0, 0.2, h) * (1.15 - 0.75 * west); } }
+    // moon: real position, phase from the sun's direction, a soft halo, faint earthshine on the dark side
+    float mm = dot(d, uMoonDir);
+    if (uMoonDir.y > -0.02 && mm > 0.99) { float R = 0.0085; vec3 o = d - uMoonDir * mm; float q2 = dot(o, o) / (R * R);
+      float lit = 0.0; if (q2 < 1.0) { vec3 n = o / R - uMoonDir * sqrt(1.0 - q2); lit = smoothstep(-0.04, 0.06, dot(n, uSunTrue));
+        float mare = 0.82 + 0.18 * skyHash(floor(o * 900.0)); float disc = smoothstep(1.0, 0.92, q2);
+        c = mix(c, vec3(1.0, 0.97, 0.9) * (lit * 2.4 * mare + 0.03), disc * clear * 0.97); }
+      float illum = 0.5 - 0.5 * dot(uMoonDir, uSunTrue); c += vec3(0.75, 0.8, 0.95) * pow(max(mm, 0.0), 3000.0) * 0.18 * illum * clear * uNight; }
+  }
   c = mix(c, vec3(dot(c, vec3(0.3, 0.5, 0.2))) * 0.55, uOvercast * 0.75);
   return c + uFlash * vec3(0.35, 0.36, 0.5);
 }`;
@@ -522,7 +567,7 @@ const groundMat = new THREE.ShaderMaterial({ uniforms: U, extensions: { derivati
 uniform vec3 uCamPos, uAmbTop, uAmbBot, uFlashPos, uLand; uniform float uCity, uHaze, uTempOn, uSnowCover, uHasMap; uniform vec2 uLocalC;
 uniform vec2 uLake[${MAXP}]; uniform int uLakeN; uniform vec2 uShore[${MAXP}]; uniform int uShoreN;
 uniform float uHs, uTp, uWhitecap, uWindSpd; uniform vec2 uWaveDir;
-uniform sampler2D uMapCol, uMapMask; uniform vec2 uMapMin, uMapSize;
+uniform sampler2D uMapCol, uMapMask, uMapLooks; uniform vec2 uMapMin, uMapSize;
 varying vec3 vW;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
@@ -544,6 +589,9 @@ void main(){
   bool inMap = uHasMap > 0.5 && p.x > uMapMin.x && p.y > uMapMin.y && p.x < uMapMin.x + uMapSize.x && p.y < uMapMin.y + uMapSize.y;
   vec2 muv = (p - uMapMin) / uMapSize;
   float cls = inMap ? floor(texture2D(uMapMask, muv).r * 3.0 + 0.5) : (inLake(p) ? 1.0 : 0.0);
+  // rounded shoreline: the smoothed water fraction decides water vs land within a pixel or two of the edge
+  vec2 looks = inMap ? texture2D(uMapLooks, muv).rg : vec2(cls > 0.5 ? 1.0 : 0.0, 0.0); float wetF = looks.r, edgeN = vnoise(p * 300.0) * 0.12 - 0.06;
+  if (inMap) { if (wetF + edgeN > 0.5 && cls < 0.5) cls = 1.0; else if (wetF + edgeN <= 0.5 && cls > 0.5) cls = 0.0; }
   vec3 col;
   if (cls > 0.5) {
     float shoreD = inMap ? 0.2 : shoreDist(p);
@@ -554,11 +602,18 @@ void main(){
     float rel[8]; rel[0]=1.6; rel[1]=1.0; rel[2]=0.74; rel[3]=0.55; rel[4]=0.38; rel[5]=0.26; rel[6]=0.17; rel[7]=0.11;
     float ang[8]; ang[0]=-0.45; ang[1]=0.2; ang[2]=-0.15; ang[3]=0.6; ang[4]=-0.75; ang[5]=0.35; ang[6]=0.95; ang[7]=-0.5;
     float calm = cls > 1.5 ? 0.25 : 1.0;                       // harbours and ponds: sheltered
+    float crest = 0.0;
     float slopeT = (0.06 + 0.012 * uWindSpd) * calm;
     for (int i = 0; i < 8; i++) { float L = Lp * rel[i]; float k = 6.2832 / (L * 0.001);
       vec2 d = vec2(cos(ang[i]) * wd.x - sin(ang[i]) * wd.y, sin(ang[i]) * wd.x + cos(ang[i]) * wd.y);
       float s = slopeT * (uHs > 0.02 ? 1.0 : 0.25) * (0.55 + 0.45 * sin(float(i) * 2.1)) / 2.4, fade = clamp(1.0 - foot / (L * 0.001 * 0.6), 0.0, 1.0);
-      grad += d * s * cos(k * dot(p, d) - sqrt(9.81 * 6.2832 / L) * uTime + float(i) * 1.7) * fade; unres += s * s * (1.0 - fade); }
+      float ph = k * dot(p, d) - sqrt(9.81 * 6.2832 / L) * uTime + float(i) * 1.7;
+      grad += d * s * cos(ph) * fade; crest += sin(ph) * fade * rel[i]; unres += s * s * (1.0 - fade); }
+    // capillary ripples (metre scale) riding on the waves: wind-driven, gone in calm water, blend into roughness with distance
+    { vec2 rp = p * 1000.0, wv = uWaveDir * (0.4 + 0.08 * uWindSpd) * uTime; float ra = (0.03 + 0.012 * uWindSpd) * calm, rf = clamp(1.0 - foot * 1000.0 / 1.2, 0.0, 1.0);
+      float r0 = vnoise(rp * 1.1 - wv), rx = vnoise(rp * 1.1 - wv + vec2(0.18, 0.0)), ry = vnoise(rp * 1.1 - wv + vec2(0.0, 0.18));
+      float q0 = vnoise(rp * 2.7 + wv.yx * 1.3), qx = vnoise(rp * 2.7 + wv.yx * 1.3 + vec2(0.18, 0.0)), qy = vnoise(rp * 2.7 + wv.yx * 1.3 + vec2(0.0, 0.18));
+      grad += (vec2(rx - r0, ry - r0) + 0.5 * vec2(qx - q0, qy - q0)) / 0.18 * ra * 0.35 * rf; unres += ra * ra * 0.12 * (1.0 - rf); }
     vec3 N = normalize(vec3(-grad.x, 1.0, grad.y)); float rough = sqrt(unres) + 0.02;
     float F = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
     vec3 R = reflect(-V, N); R.y = abs(R.y);
@@ -572,10 +627,18 @@ void main(){
     vec3 body = bodyTint * (sunL + amb * 2.0) + vec3(0.0, 0.01, 0.012) * uCity;
     vec3 H = normalize(uSunDir + V); float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
     col = mix(body, refl, uTempOn > 0.5 ? F * 0.45 : F) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice);
+    // light through the thin tops of the waves: a lighter green-blue on the crests, stronger as the waves grow
+    float hsLook = (kr >= 0.0 ? uHsOff * kr : uHs) * calm;
+    col += vec3(0.02, 0.075, 0.07) * (sunL + amb * 2.0) * smoothstep(0.4, 2.2, crest) * clamp(hsLook * 2.5, 0.15, 1.0) * (uTempOn + uDepthOn + uHsOn > 0.5 ? 0.0 : 1.0);
     float hsHere = (kr >= 0.0 ? uHsOff * kr : uHs) * calm, brk = inBathy(p) && cls < 1.5 ? smoothstep(0.6, 1.0, hsHere / max(dep, 0.05)) * step(0.08, hsHere) : 0.0;
     float wc = vnoise(p * 900.0 + uTime * 0.6) * vnoise(p * 310.0 - uTime * 0.3), cover = max(clamp(uWhitecap, 0.0, 0.3) * calm, brk * 0.3 * (0.4 + 0.6 * vnoise(p * 400.0 - uTime * 0.4)));
     float foam = mix(smoothstep(1.0 - cover * 4.0, 1.0 - cover * 3.0, wc), cover, clamp(foot * 60.0, 0.0, 1.0));
     col = mix(col, (sunL + amb * 2.2) * 0.75, foam * 0.85);
+    // swash line along the beach and walls: a thin band of foam that comes and goes with the waves
+    if (inMap && cls < 1.5) { float band = smoothstep(0.92, 0.6, wetF + edgeN) * clamp(1.0 - foot * 120.0, 0.0, 1.0);
+      float pulse = 0.55 + 0.45 * sin(uTime * 6.2832 / max(uTp, 1.0) + vnoise(p * 300.0) * 6.0);
+      float swash = band * clamp(0.25 + hsHere * 2.5, 0.0, 1.0) * pulse * (0.6 + 0.4 * vnoise(p * 1500.0 + uTime * 0.5));
+      col = mix(col, (sunL + amb * 2.2) * 0.8 + vec3(0.9, 0.95, 1.0) * uCity * 0.15, swash * 0.75 * (1.0 - ice)); }
     if (ice > 0.02) { float cr = smoothstep(0.02, 0.0, abs(vnoise(p * 40.0) - 0.5)) * 0.25;
       vec3 iceC = mix(vec3(0.55, 0.62, 0.66), vec3(0.85, 0.9, 0.93), n) * (1.0 - cr) * (sunL * 0.9 + amb * 2.4);
       col = mix(col, iceC, smoothstep(0.1, 0.6, ice)); }
@@ -590,9 +653,13 @@ void main(){
     base = mix(base, vec3(0.75, 0.78, 0.8), uSnowCover * (0.6 + 0.4 * vnoise(p * 3.0)));
     vec2 g = abs(fract(p / 1.609 + 0.5) - 0.5) * 1.609;
     float line = (1.0 - smoothstep(0.012, 0.012 + max(foot, 0.002), min(g.x, g.y))) * clamp(1.0 - foot / 0.4, 0.0, 1.0) * (inMap ? 0.0 : 1.0);
+    // wet sand / splashed concrete just above the waterline
+    if (inMap) base *= 1.0 - 0.45 * smoothstep(0.12, 0.48, wetF + edgeN);
     col = base * (sunL + amb * 1.6);
+    // street lights at night: warm pools along the roads and at building bases
+    if (inMap) { float sl = looks.g * (0.55 + 0.45 * vnoise(p * 180.0)); col += vec3(1.0, 0.6, 0.28) * uCity * sl * sl * 0.35; }
     col = mix(col, col * 0.8 + vec3(0.06) * (sunL + amb), line * urban * 0.35);
-    col += vec3(1.0, 0.72, 0.42) * uCity * urban * (line * 1.6 + 0.08) * 1.4;
+    col += vec3(1.0, 0.72, 0.42) * uCity * urban * (line * 0.6 + 0.08) * 1.4;
   }
   col += flash * vec3(0.6, 0.62, 0.8);
   float hc = max(uCamPos.y, 0.001), hf = hc < 0.05 ? 1.0 : 3.0 * (1.0 - exp(-hc / 3.0)) / hc;
@@ -701,34 +768,93 @@ function buildMap(LF) {
   // one byte per pixel (class * 85); DataTexture rows run south->north, canvas rows north->south
   const flipped = new Uint8Array(WPX * HPX); for (let y = 0; y < HPX; y++) { const src = (HPX - 1 - y) * WPX, dst = y * WPX; for (let x = 0; x < WPX; x++) flipped[dst + x] = mask[src + x] * 85; }
   const maskTex = new THREE.DataTexture(flipped, WPX, HPX, THREE.RedFormat); maskTex.unpackAlignment = 1; maskTex.minFilter = maskTex.magFilter = THREE.NearestFilter; maskTex.needsUpdate = true;
+  // looks only (the mask above stays the source of truth for waves and lookups):
+  //  R = water fraction, slightly blurred and read with linear filtering: the shader takes its 0.5 contour as a rounded shoreline
+  //      (no pixel or survey-grid stair steps) and draws a foam line on the water side and wet sand on the land side
+  //  G = street light: roads and building footprints, blurred into pools of light for the night
+  const blur = (a, r, n) => { const b = new Uint8Array(a.length), k = 2 * r + 1;
+    for (let it = 0; it < n; it++) {
+      for (let y = 0; y < HPX; y++) { const o = y * WPX; let s = 0; for (let x = -r; x <= r; x++) s += a[o + clamp(x, 0, WPX - 1)];
+        for (let x = 0; x < WPX; x++) { b[o + x] = s / k; s += a[o + Math.min(x + r + 1, WPX - 1)] - a[o + Math.max(x - r, 0)]; } }
+      for (let x = 0; x < WPX; x++) { let s = 0; for (let y = -r; y <= r; y++) s += b[clamp(y, 0, HPX - 1) * WPX + x];
+        for (let y = 0; y < HPX; y++) { a[y * WPX + x] = s / k; s += b[Math.min(y + r + 1, HPX - 1) * WPX + x] - b[Math.max(y - r, 0) * WPX + x]; } } }
+    return a; };
+  const wet = new Uint8Array(WPX * HPX); for (let i = 0; i < wet.length; i++) wet[i] = mask[i] ? 255 : 0;
+  blur(wet, Math.max(1, Math.round(4.5 / MPP)), 2);   // ~5 m: rounds pixel and survey-grid steps
+  for (let i = 0; i < wet.length; i++) if (pd[i * 4] > 128) wet[i] = Math.min(wet[i], 70);   // but piers and breakwaters stay solid
+  const lc = document.createElement("canvas"); lc.width = WPX; lc.height = HPX; const lx = lc.getContext("2d", { willReadFrequently: true });
+  lx.fillStyle = "#000"; lx.fillRect(0, 0, WPX, HPX); lx.lineCap = "round"; lx.strokeStyle = "#fff";
+  feats.filter((f) => f.kind === "road").forEach((f) => { lx.lineWidth = 4 * SC; path(lx, f.pts, false); lx.stroke(); });
+  lx.strokeStyle = "#999"; lx.lineWidth = 3 * SC; feats.filter((f) => f.kind === "building" && f.closed).forEach((f) => { path(lx, f.pts, true); lx.stroke(); });
+  const ld = lx.getImageData(0, 0, WPX, HPX).data, light = new Uint8Array(WPX * HPX); for (let i = 0; i < light.length; i++) light[i] = ld[i * 4];
+  blur(light, Math.max(2, Math.round(5 / MPP)), 2);
+  const looks = new Uint8Array(WPX * HPX * 2);
+  for (let y = 0; y < HPX; y++) { const src = (HPX - 1 - y) * WPX, dst = y * WPX; for (let x = 0; x < WPX; x++) { looks[(dst + x) * 2] = wet[src + x]; looks[(dst + x) * 2 + 1] = Math.min(255, light[src + x] * 1.6); } }
+  const looksTex = new THREE.DataTexture(looks, WPX, HPX, THREE.RGFormat); looksTex.unpackAlignment = 1; looksTex.minFilter = looksTex.magFilter = THREE.LinearFilter; looksTex.needsUpdate = true;
+  U.uMapLooks.value = looksTex;
   const colTex = new THREE.CanvasTexture(cv); colTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); colTex.minFilter = THREE.LinearMipmapLinearFilter;
   U.uMapCol.value = colTex; U.uMapMask.value = maskTex; U.uMapMin.value.set(x0, y0); U.uMapSize.value.set(x1 - x0, y1 - y0); U.uHasMap.value = 1;
   Object.assign(MAP, { ok: true, x0, y0, x1, y1, WPX, HPX, mask, coast: feats.filter((f) => f.kind === "coastline").flatMap((f) => f.pts.map(m2k)) });
   // buildings, extruded to their mapped heights, merged into one mesh
-  const geos = []; let bid = 0;
+  const geos = [], tops = []; let bid = 0;
   feats.filter((f) => f.kind === "building" && f.closed && f.h).forEach((f) => {
     const sh = new THREE.Shape(f.pts.map((pt) => new THREE.Vector2(pt[0] / 1000, pt[1] / 1000)));
     const g = new THREE.ExtrudeGeometry(sh, { depth: f.h / 1000, bevelEnabled: false }); g.rotateX(-Math.PI / 2);
-    const n = g.attributes.position.count; g.setAttribute("bid", new THREE.Float32BufferAttribute(new Float32Array(n).fill(bid++), 1)); geos.push(g.toNonIndexed ? g : g); });
+    const n = g.attributes.position.count; g.setAttribute("bid", new THREE.Float32BufferAttribute(new Float32Array(n).fill(bid++), 1));
+    g.setAttribute("bh", new THREE.Float32BufferAttribute(new Float32Array(n).fill(f.h / 1000), 1)); geos.push(g);
+    // aviation warning lights on the tall ones (roof centre)
+    if (f.h >= 120) { const cx = f.pts.reduce((a, q) => a + q[0], 0) / f.pts.length / 1000, cy = f.pts.reduce((a, q) => a + q[1], 0) / f.pts.length / 1000; tops.push(cx, f.h / 1000 + 0.002, -cy, Math.random() * 6.28); } });
   if (geos.length && THREE.BufferGeometryUtils) {
     const merged = THREE.BufferGeometryUtils.mergeBufferGeometries(geos.map((g) => g.index ? g.toNonIndexed() : g));
-    const mat = new THREE.ShaderMaterial({ uniforms: U,
-      vertexShader: `${LOGV[0]} attribute float bid; varying vec3 vW; varying vec3 vN; varying float vB;
-        void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal); vB = bid; gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
-      fragmentShader: `${LOGF[0]} uniform vec3 uSunDir, uSunCol, uAmbTop, uAmbBot, uCamPos, uFlashPos; uniform float uCity, uFlash, uOvercast, uSnowCover; varying vec3 vW; varying vec3 vN; varying float vB;
+    const mat = new THREE.ShaderMaterial({ uniforms: U, extensions: { derivatives: true },
+      vertexShader: `${LOGV[0]} attribute float bid, bh; varying vec3 vW; varying vec3 vN; varying float vB, vH;
+        void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal); vB = bid; vH = bh; gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
+      fragmentShader: `${LOGF[0]} uniform vec3 uSunDir, uSunCol, uAmbTop, uAmbBot, uCamPos, uFlashPos, uHor, uZen; uniform float uCity, uFlash, uOvercast, uSnowCover; varying vec3 vW; varying vec3 vN; varying float vB, vH;
         float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
-        void main(){ ${LOGF[1]} vec3 N = normalize(vN); float tone = 0.55 + 0.45 * hash(vec3(vB));
-          vec3 albedo = mix(vec3(0.20, 0.23, 0.27), vec3(0.42, 0.40, 0.37), tone); albedo = mix(albedo, vec3(0.8), uSnowCover * step(0.9, N.y));
+        void main(){ ${LOGF[1]} vec3 N = normalize(vN); float tone = 0.55 + 0.45 * hash(vec3(vB)), style = hash(vec3(vB, 2.0, 5.0));
+          vec3 albedo = mix(vec3(0.20, 0.23, 0.27), vec3(0.42, 0.40, 0.37), tone);
+          bool roof = N.y > 0.9; float hm = vW.y * 1000.0, H = vH * 1000.0;
+          if (roof) albedo = mix(vec3(0.16, 0.16, 0.17), vec3(0.30, 0.29, 0.27), hash(vec3(vB, 9.0, 1.0)));
+          albedo = mix(albedo, vec3(0.8), uSnowCover * step(0.9, N.y));
           float sunUp = smoothstep(-0.02, 0.06, uSunDir.y);
-          vec3 c = albedo * (uSunCol * max(dot(N, uSunDir), 0.0) * sunUp * (1.0 - 0.7 * uOvercast) + mix(uAmbBot, uAmbTop, 0.5 + 0.5 * N.y) * 1.4);
-          float side = abs(N.x) > 0.5 ? vW.z : vW.x; float fl = floor(vW.y * 1000.0 / 3.8), bay = floor(side * 1000.0 / 3.0);
-          vec2 f = vec2(fract(vW.y * 1000.0 / 3.8), fract(side * 1000.0 / 3.0));
-          float win = step(0.25, f.x) * step(f.x, 0.85) * step(0.15, f.y) * step(f.y, 0.85) * (1.0 - step(0.9, abs(N.y)));
-          c += vec3(1.0, 0.8, 0.55) * win * step(0.62, hash(vec3(fl, bay, vB))) * uCity * (0.9 + 0.6 * hash(vec3(bay, fl, 3.0)));
+          // contact shadow at street level, a lighter crown at the top
+          float ao = roof ? 1.0 : mix(0.45, 1.0, smoothstep(0.0, 18.0, hm)) * (1.0 + 0.12 * smoothstep(H - 8.0, H, hm));
+          vec3 c = albedo * ao * (uSunCol * max(dot(N, uSunDir), 0.0) * sunUp * (1.0 - 0.7 * uOvercast) + mix(uAmbBot, uAmbTop, 0.5 + 0.5 * N.y) * 1.4);
+          float side = abs(N.x) > 0.5 ? vW.z : vW.x; float flH = 3.4 + 0.8 * style, bayW = 2.6 + 1.6 * hash(vec3(vB, 4.0, 4.0));
+          float fl = floor(hm / flH), bay = floor(side * 1000.0 / bayW);
+          vec2 f = vec2(fract(hm / flH), fract(side * 1000.0 / bayW));
+          float glassy = step(0.6, style);   // curtain-wall towers: tall glass panes; the rest punched windows
+          float win = (glassy > 0.5 ? step(0.12, f.x) * step(f.x, 0.95) * step(0.05, f.y) * step(f.y, 0.95) : step(0.25, f.x) * step(f.x, 0.85) * step(0.15, f.y) * step(f.y, 0.85))
+            * (1.0 - step(0.9, abs(N.y))) * step(4.0, hm) * step(hm, H - 2.5);
+          // far away a window is smaller than a pixel: blend to the average facade instead of shimmering
+          float cellPx = max(fwidth(hm / flH), fwidth(side * 1000.0 / bayW)), sharp = clamp(2.0 - cellPx * 2.0, 0.0, 1.0);
+          float winAvg = (glassy > 0.5 ? 0.75 : 0.36) * (1.0 - step(0.9, abs(N.y))) * step(4.0, hm);
+          win = mix(winAvg, win, sharp);
+          // daylight: glass reflects the sky (darker, bluer), so the facade reads as windows not paint
+          vec3 skyR = mix(uHor, uZen, 0.4) * (0.6 + 0.4 * hash(vec3(fl, bay, vB + 1.0)));
+          c = mix(c, skyR * 0.9, win * (glassy > 0.5 ? 0.7 : 0.45) * clamp(1.0 - uCity * 7.0, 0.0, 1.0));
+          // night: lights on in clusters (whole floors of offices, groups of flats), a mix of warm and cool
+          float occ = 0.15 + 0.5 * hash(vec3(vB, 7.0, 3.0)), floorOn = hash(vec3(fl, vB, 11.0)), grp = hash(vec3(fl, floor(bay / 3.0), vB));
+          float on = mix(occ * 0.6, step(1.0 - occ, mix(grp, floorOn, 0.45 + 0.35 * glassy)) * step(0.12, hash(vec3(fl, bay, vB))), sharp);
+          vec3 lc = mix(vec3(1.0, 0.78, 0.5), vec3(0.85, 0.9, 1.0), step(0.8, hash(vec3(fl, floor(bay / 3.0), vB + 3.0))));
+          lc = mix(lc, vec3(0.55, 0.65, 1.0), step(0.985, hash(vec3(bay, fl, vB + 8.0))));
+          c += lc * win * on * uCity * (0.8 + 0.6 * hash(vec3(bay, fl, 3.0)));
+          // dim unlit glass at night still catches a little city glow
+          c += vec3(0.05, 0.06, 0.09) * win * (1.0 - on) * uCity;
+          // floodlit crowns on the tallest towers
+          c += vec3(1.0, 0.85, 0.65) * uCity * 1.6 * step(150.0, H) * (1.0 - step(0.9, abs(N.y))) * smoothstep(H - 10.0, H - 1.0, hm) * step(0.5, hash(vec3(vB, 1.0, 1.0)));
           c += uFlash * 1.5 * exp(-length(vec3(vW.x, -vW.z, 0.0) - uFlashPos) / 9.0) * vec3(0.6, 0.62, 0.8) * albedo;
           float hc = max(uCamPos.y, 0.001), hf = hc < 0.05 ? 1.0 : 3.0 * (1.0 - exp(-hc / 3.0)) / hc;
           gl_FragColor = vec4(mix(c, mix(uAmbBot, uAmbTop, 0.5) * 1.2, 1.0 - exp(-length(uCamPos - vW) * hf / 70.0)), 1.0); }` });
     const mesh = new THREE.Mesh(merged, mat); mesh.frustumCulled = false; scene.add(mesh); MAP.buildings = geos.length;
+    if (tops.length) { const tg = new THREE.BufferGeometry(), n = tops.length / 4, pos = new Float32Array(n * 3), ph = new Float32Array(n);
+      for (let i = 0; i < n; i++) { pos.set(tops.slice(i * 4, i * 4 + 3), i * 3); ph[i] = tops[i * 4 + 3]; }
+      tg.setAttribute("position", new THREE.BufferAttribute(pos, 3)); tg.setAttribute("ph", new THREE.BufferAttribute(ph, 1));
+      const beacons = new THREE.Points(tg, new THREE.ShaderMaterial({ uniforms: U, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        vertexShader: `${LOGV[0]} attribute float ph; uniform float uTime; varying float vA;
+          void main(){ vec4 mv = viewMatrix * modelMatrix * vec4(position, 1.0); vA = smoothstep(0.2, 0.9, sin(uTime * 1.6 + ph)); gl_PointSize = clamp(9.0 / -mv.z, 2.0, 7.0); gl_Position = projectionMatrix * mv; ${LOGV[1]} }`,
+        fragmentShader: `${LOGF[0]} uniform float uCity; varying float vA; void main(){ ${LOGF[1]} float r = length(gl_PointCoord - 0.5) * 2.0; gl_FragColor = vec4(vec3(3.0, 0.25, 0.15) * vA * smoothstep(1.0, 0.0, r) * clamp(uCity * 10.0, 0.0, 1.0), 1.0); }` }));
+      beacons.frustumCulled = false; beacons.renderOrder = 2; scene.add(beacons); }
   }
 }
 function maskAt(xk, yk) { if (!MAP.ok) return inLakeCoarse(xk, yk) ? 1 : 0; const px = Math.floor((xk - MAP.x0) / (MAP.x1 - MAP.x0) * MAP.WPX), py = Math.floor((MAP.y1 - yk) / (MAP.y1 - MAP.y0) * MAP.HPX);
@@ -947,15 +1073,16 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
   fragmentShader: `${LOGF[0]} ${WAVE} ${SKY_FN} ${TEMP_GLSL} ${FW_GLSL}
     uniform vec3 uCamPos, uAmbTop, uAmbBot; uniform float uWindSpd, uCity, uGust, uTempOn; uniform vec2 uWindDir2;
-    uniform sampler2D uMapMask; uniform vec2 uMapMin, uMapSize; uniform float uHasMap;
+    uniform sampler2D uMapMask, uMapLooks; uniform vec2 uMapMin, uMapSize; uniform float uHasMap;
     varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
     void main() {
       ${LOGF[1]}
-      vec2 pk = vec2(vW.x, -vW.z);
+      vec2 pk = vec2(vW.x, -vW.z); float wetF = 1.0;
       if (uHasMap > 0.5 && pk.x > uMapMin.x && pk.y > uMapMin.y && pk.x < uMapMin.x + uMapSize.x && pk.y < uMapMin.y + uMapSize.y) {
-        float cls = floor(texture2D(uMapMask, (pk - uMapMin) / uMapSize).r * 3.0 + 0.5); if (cls < 0.5 || cls > 2.5) discard; }
+        vec2 muv = (pk - uMapMin) / uMapSize; float cls = floor(texture2D(uMapMask, muv).r * 3.0 + 0.5); if (cls > 2.5) discard;
+        wetF = texture2D(uMapLooks, muv).r + noise(pk * 300.0) * 0.12 - 0.06; if (wetF <= 0.5) discard; }
       if (iceAt(pk, 0.2, noise(pk * 1.7)) > 0.3) discard;
       vec2 p = vP; vec3 V = normalize(uCamPos - vW); float foot = max(length(fwidth(p)), 1e-3);
       vec2 grad = vec2(0.0); float steep = 0.0, unres = 0.0; vec2 tn = vec2(-uShoreN2.y, uShoreN2.x); float sAl = dot(p, tn), dO = distOff(p);
@@ -985,6 +1112,9 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       float surf = (1.0 - vLim) * step(0.05, vLim) * smoothstep(0.03, 0.15, uHsB) * (0.5 + 0.5 * noise(p * 0.8 - uTime * 0.5));
       surf = mix(surf, smoothstep(0.18, 0.32, fwSteep) * (0.6 + 0.4 * noise(p * 1.1 - uTime * 0.7)), vFw);
       c = mix(c, (sunL + amb * 2.2) * 0.75, clamp(max(wc, surf), 0.0, 1.0) * 0.85);
+      // swash line where the water meets the beach or wall (same as the far-field shading)
+      float band = smoothstep(0.92, 0.6, wetF), pulse = 0.55 + 0.45 * sin(uTime * 1.3 + noise(pk * 300.0) * 6.0);
+      c = mix(c, (sunL + amb * 2.2) * 0.8 + vec3(0.9, 0.95, 1.0) * uCity * 0.15, band * clamp(0.25 + uHsB * vGain * 2.5, 0.0, 1.0) * pulse * (0.6 + 0.4 * noise(p * 1.5 + uTime * 0.5)) * 0.75);
       gl_FragColor = vec4(c, vEdge);
     }` });
 const patch = new THREE.Mesh(new THREE.PlaneGeometry(660, 660, 330, 330).rotateX(-Math.PI / 2), patchMat);
@@ -1058,15 +1188,31 @@ const rainMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false,
 const rain = new THREE.LineSegments(rainGeo, rainMat); rain.frustumCulled = false; rain.visible = false; scene.add(rain);
 
 // ---------------------------------------------------------------- lightning
-const boltGeo = new THREE.BufferGeometry(); boltGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(600 * 3), 3));
-const boltMat = new THREE.LineBasicMaterial({ color: new THREE.Color(4, 4, 6), transparent: true, opacity: 1, depthWrite: false });
-const bolt = new THREE.LineSegments(boltGeo, boltMat); bolt.frustumCulled = false; bolt.visible = false; scene.add(bolt);
-function makeBolt(x, y, topKm) { const r = Math.random, pts = [];
-  const branch = (sx, sy, sz, ez, spread) => { let px = sx, py = sy, pz = sz; const steps = Math.max(4, Math.round((sz - ez) / 0.12));
-    for (let i = 0; i < steps; i++) { const nz = Math.max(ez, pz - (sz - ez) / steps), nx = px + (r() - 0.5) * spread, ny = py + (r() - 0.5) * spread; pts.push(px, pz, py, nx, nz, ny);
-      if (r() < 0.08 && pts.length < 1500) branch(nx, ny, nz, Math.max(ez, nz - 0.8 - r()), spread * 0.9); px = nx; py = ny; pz = nz; } };
-  branch(x, y, topKm, 0, 0.22); const a = boltGeo.attributes.position.array; a.fill(0); const n = Math.min(pts.length, a.length) / 3;
-  for (let i = 0; i < n; i++) { a[i * 3] = pts[i * 3]; a[i * 3 + 1] = pts[i * 3 + 1] * S.exag; a[i * 3 + 2] = -pts[i * 3 + 2]; } boltGeo.setDrawRange(0, n); boltGeo.attributes.position.needsUpdate = true; }
+// a glowing ribbon per segment, a few pixels wide whatever the distance: white-hot core, violet halo
+const BOLT_MAX = 400, boltGeo = new THREE.BufferGeometry();
+{ const idx = []; for (let i = 0; i < BOLT_MAX; i++) { const o = i * 4; idx.push(o, o + 1, o + 2, o + 2, o + 1, o + 3); }
+  boltGeo.setIndex(idx); boltGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(BOLT_MAX * 4 * 3), 3));
+  boltGeo.setAttribute("other", new THREE.BufferAttribute(new Float32Array(BOLT_MAX * 4 * 3), 3));
+  boltGeo.setAttribute("side", new THREE.BufferAttribute(new Float32Array(BOLT_MAX * 4), 1)); boltGeo.setAttribute("wgt", new THREE.BufferAttribute(new Float32Array(BOLT_MAX * 4), 1)); }
+const boltMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uBoltA: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) } },
+  vertexShader: `${LOGV[0]} attribute vec3 other; attribute float side, wgt; uniform vec2 uRes; varying float vS, vW;
+    void main(){ vec4 a = projectionMatrix * viewMatrix * vec4(position, 1.0), b = projectionMatrix * viewMatrix * vec4(other, 1.0);
+      vec2 sa = a.xy / max(a.w, 1e-4) * uRes, sb = b.xy / max(b.w, 1e-4) * uRes, dir = normalize(sb - sa + 1e-6), nrm = vec2(-dir.y, dir.x);
+      float px = 3.0 + 9.0 * wgt; gl_Position = a; gl_Position.xy += nrm * side * px / uRes * a.w; vS = side; vW = wgt; ${LOGV[1]} }`,
+  fragmentShader: `${LOGF[0]} uniform float uBoltA; varying float vS, vW;
+    void main(){ ${LOGF[1]} float r = abs(vS), core = exp(-r * r * 40.0), halo = exp(-r * r * 4.0);
+      gl_FragColor = vec4((vec3(5.0, 5.0, 6.0) * core + vec3(0.5, 0.45, 1.1) * halo * 0.6) * uBoltA * (0.45 + 0.55 * vW), 1.0); }` });
+const bolt = new THREE.Mesh(boltGeo, boltMat); bolt.frustumCulled = false; bolt.visible = false; bolt.renderOrder = 3; scene.add(bolt);
+function makeBolt(x, y, topKm) { const r = Math.random, segs = [];
+  const branch = (sx, sy, sz, ez, spread, w) => { let px = sx, py = sy, pz = sz; const steps = Math.max(4, Math.round((sz - ez) / 0.12));
+    for (let i = 0; i < steps; i++) { const nz = Math.max(ez, pz - (sz - ez) / steps), nx = px + (r() - 0.5) * spread, ny = py + (r() - 0.5) * spread; segs.push([px, pz, py, nx, nz, ny, w]);
+      if (r() < 0.08 && segs.length < BOLT_MAX - 40) branch(nx, ny, nz, Math.max(ez, nz - 0.8 - r()), spread * 0.9, w * 0.45); px = nx; py = ny; pz = nz; } };
+  branch(x, y, topKm, 0, 0.22, 1); const P = boltGeo.attributes.position.array, O = boltGeo.attributes.other.array, SD = boltGeo.attributes.side.array, W = boltGeo.attributes.wgt.array;
+  const n = Math.min(segs.length, BOLT_MAX);
+  for (let i = 0; i < n; i++) { const [ax, az, ay, bx, bz, by, w] = segs[i], A = [ax, az * S.exag, -ay], B = [bx, bz * S.exag, -by];
+    [[A, B, 1], [A, B, -1], [B, A, -1], [B, A, 1]].forEach(([p, o, sd], k) => { const v = i * 4 + k; P.set(p, v * 3); O.set(o, v * 3); SD[v] = sd; W[v] = w; }); }
+  boltGeo.setDrawRange(0, n * 6); for (const k of ["position", "other", "side", "wgt"]) boltGeo.attributes[k].needsUpdate = true; }
 
 // ---------------------------------------------------------------- board + track
 const board = new THREE.Group(); board.scale.setScalar(0.001); scene.add(board);
@@ -1332,12 +1478,17 @@ function conditions(tMs, xk, yk) {
 function setLight(date) {
   const sun = solar(date), el = sun.el, az = sun.az * Math.PI / 180, e = el * Math.PI / 180;
   U.uSunDir.value.set(Math.sin(az) * Math.cos(e), Math.sin(e), -Math.cos(az) * Math.cos(e)).normalize();
-  if (el < 0) U.uSunDir.value.set(Math.sin(az + Math.PI) * 0.8, 0.45, -Math.cos(az + Math.PI) * 0.8).normalize();   // moonlight-ish from opposite
+  U.uSunTrue.value.copy(U.uSunDir.value); const moon = lunar(date); azElDir(moon, U.uMoonDir.value);
+  const illum = 0.5 - 0.5 * U.uMoonDir.value.dot(U.uSunTrue.value);
+  // at night the key light is the moon when it's up (else a faint sky light from opposite the sun)
+  if (el < 0) { if (moon.el > 4) U.uSunDir.value.copy(U.uMoonDir.value); else U.uSunDir.value.set(Math.sin(az + Math.PI) * 0.8, 0.45, -Math.cos(az + Math.PI) * 0.8).normalize(); }
+  U.uNight.value = clamp((-el - 6) / 8, 0, 1);
   const day = clamp((el + 2) / 14, 0, 1), dusk = clamp(1 - Math.abs(el - 2) / 9, 0, 1) * (el > -7 ? 1 : 0), night = clamp((-el - 4) / 8, 0, 1);
   const mixv = (d, k, n) => d.map((v, i) => v * day + k[i] * dusk * (1 - day) + n[i] * (1 - Math.max(day, dusk)));
   const P = { sun: [[3.0, 2.88, 2.7], [2.6, 1.35, 0.6], [0.10, 0.12, 0.18]], ambTop: [[0.42, 0.52, 0.72], [0.22, 0.22, 0.34], [0.012, 0.016, 0.028]], ambBot: [[0.22, 0.24, 0.27], [0.16, 0.11, 0.11], [0.016, 0.014, 0.012]],
     hor: [[0.62, 0.70, 0.80], [0.95, 0.52, 0.34], [0.02, 0.019, 0.028]], zen: [[0.20, 0.38, 0.70], [0.12, 0.17, 0.36], [0.004, 0.005, 0.012]] };
   for (const [k, u] of [["sun", U.uSunCol], ["ambTop", U.uAmbTop], ["ambBot", U.uAmbBot], ["hor", U.uHor], ["zen", U.uZen]]) u.value.set(...mixv(...P[k]));
+  if (el < 0 && moon.el > 4) U.uSunCol.value.multiplyScalar(0.4 + 1.3 * illum);   // a full moon lights the water noticeably more than a crescent
   U.uCity.value = 0.14 * night + 0.06 * dusk * (1 - day); compMat.uniforms.uExp.value = 1.0 * day + 1.25 * dusk * (1 - day) + 2.0 * (1 - Math.max(day, dusk));
   return sun;
 }
@@ -1485,18 +1636,33 @@ function toggleHelp() { $("#help").hidden = !$("#help").hidden; hideHint(); }
 $("#helpbtn").onclick = toggleHelp; $("#helpx").onclick = () => { $("#help").hidden = true; };
 function hideHint() { const h = $("#hint"); if (!h.hidden) { h.style.opacity = "0"; setTimeout(() => { h.hidden = true; }, 600); try { localStorage.setItem("lakelocal-hint", "1"); } catch (e) {} } }
 function showHintOnce() { let seen = false; try { seen = localStorage.getItem("lakelocal-hint") === "1"; } catch (e) {} if (seen) return; const h = $("#hint"); h.hidden = false; h.style.opacity = "1"; setTimeout(hideHint, 9000); }
-GOTO.forEach((g, i) => { const b = document.createElement("button"); b.textContent = g[0]; b.onclick = () => { gotoPreset(i); hideHint(); }; $("#goto").appendChild(b); });
+{ const list = $("#goto-list"), btn = $("#goto-btn");
+  const openGoto = (o) => { list.hidden = !o; btn.setAttribute("aria-expanded", String(o)); if (o) { const f = list.querySelector("button"); f && f.focus(); } };
+  GOTO.forEach((g, i) => { const b = document.createElement("button"); b.setAttribute("role", "menuitem"); b.textContent = g[0]; b.onclick = () => { gotoPreset(i); hideHint(); openGoto(false); btn.focus(); }; list.appendChild(b); });
+  btn.onclick = (e) => { e.stopPropagation(); openGoto(list.hidden); };
+  list.addEventListener("keydown", (e) => { const items = [...list.querySelectorAll("button")], k = items.indexOf(document.activeElement);
+    if (e.key === "Escape") { openGoto(false); btn.focus(); e.stopPropagation(); } else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); e.stopPropagation(); items[(k + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); } });
+  document.addEventListener("pointerdown", (e) => { if (!list.hidden && !$("#goto").contains(e.target)) openGoto(false); }); }
+// panels step back while the world is being dragged or zoomed, and return a moment after
+{ let idle = 0; const app = $("#app"), fly = () => { app.classList.add("flying"); clearTimeout(idle); idle = setTimeout(() => app.classList.remove("flying"), 1300); };
+  canvas.addEventListener("pointermove", (e) => { if (e.buttons) fly(); }); canvas.addEventListener("wheel", fly, { passive: true }); }
 
 // ---------------------------------------------------------------- labels
 const labelsEl = $("#labels"); let labelItems = [];
 function buildLabels() { labelsEl.innerHTML = ""; labelItems = [];
-  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"); d.className = "lbl" + (cls ? " " + cls : ""); d.textContent = txt; labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y), far: cls === "lake" || h > 0.1 ? 220 : 30 }); };
+  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"), sp = document.createElement("span"); d.className = "lbl" + (cls ? " " + cls : ""); sp.textContent = txt; d.appendChild(sp); labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y), far: cls === "lake" || h > 0.1 ? 220 : 30, lake: cls === "lake" }); };
   for (const [name, la, lo, h] of PLACES) { const [x, y] = ll(la, lo); add(name, x, y, h); } add("Lake Michigan", 2.2, 4.6, 0, "lake"); }
 const tmpV = new THREE.Vector3();
-function updateLabels() { const w = canvas.clientWidth, h = canvas.clientHeight;
-  for (const it of labelItems) { tmpV.copy(it.p).project(camera); const dist = camera.position.distanceTo(it.p);
-    const vis = tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1 && dist < it.far && dist > 0.25; it.d.style.display = vis ? "" : "none";
-    if (vis) { it.d.style.left = `${(tmpV.x * 0.5 + 0.5) * w}px`; it.d.style.top = `${(-tmpV.y * 0.5 + 0.5) * h}px`; } } }
+// nearest labels win: one that would overlap a closer one is hidden (no stacked, unreadable names)
+function updateLabels() { const w = canvas.clientWidth, h = canvas.clientHeight, placed = [];
+  for (const it of labelItems) { tmpV.copy(it.p).project(camera); it.dist = camera.position.distanceTo(it.p); it.sx = (tmpV.x * 0.5 + 0.5) * w; it.sy = (-tmpV.y * 0.5 + 0.5) * h;
+    it.vis = tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1 && it.dist < it.far && it.dist > 0.25; }
+  for (const it of labelItems.slice().sort((a, b) => a.dist - b.dist)) {
+    if (it.vis) { if (!it.bw) { it.d.style.display = ""; it.bw = it.d.firstChild.offsetWidth || 80; it.bh = it.d.firstChild.offsetHeight || 18; }
+      const r = [it.sx - it.bw / 2 - 3, it.sy - (it.lake ? it.bh : it.bh + 19) - 3, it.sx + it.bw / 2 + 3, it.sy - (it.lake ? 0 : 19) + 3];
+      if (placed.some((q) => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1])) it.vis = false; else placed.push(r); }
+    it.d.style.display = it.vis ? "" : "none";
+    if (it.vis) { it.d.style.left = `${it.sx}px`; it.d.style.top = `${it.sy}px`; } } }
 
 // ---------------------------------------------------------------- resize / quality
 const QUALITY = [{ scale: 0.35, step: 0.8, max: 170 }, { scale: 0.5, step: 0.55, max: 250 }, { scale: 0.75, step: 0.4, max: 360 }];
@@ -1675,7 +1841,7 @@ function tick() {
       flashPos = [x, y, 4.5 + Math.random() * 3]; flashT = now; if (Math.random() < 0.55) { makeBolt(x, y, 1.8 + Math.random()); bolt.visible = true; } else bolt.visible = false;
       nextStrike = now + (-Math.log(1 - Math.random()) / Math.min(0.6, 0.12 + cand.length * 0.002)) * 1000 + 250; }
     const age = (now - flashT) / 1000; if (age < 0.45) flash = age < 0.06 ? 1 : age < 0.11 ? 0.25 : age < 0.18 ? 0.8 : Math.max(0, 0.5 * (1 - (age - 0.18) / 0.27)); }
-  bolt.visible = bolt.visible && flash > 0.05; boltMat.opacity = flash; U.uFlash.value = flash * 0.6; U.uFlashPos.value.set(...flashPos);
+  bolt.visible = bolt.visible && flash > 0.05; boltMat.uniforms.uBoltA.value = flash; flash *= 0.35 + 0.65 * clamp(U.uCity.value / 0.14, 0, 1); /* a flash whitens a night scene, not a sunny one */ boltMat.uniforms.uRes.value.set(rtScene.width / 2, rtScene.height / 2); U.uFlash.value = flash * 0.6; U.uFlashPos.value.set(...flashPos);
   // render
   U.uProjInv.value.copy(camera.projectionMatrixInverse); U.uCamWorld.value.copy(camera.matrixWorld); U.uFar.value = camera.far;
   renderer.setRenderTarget(rtScene); renderer.render(scene, camera);
