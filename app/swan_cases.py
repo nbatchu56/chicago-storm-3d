@@ -23,6 +23,7 @@ import gzip
 import json
 import math
 import os
+import re
 
 import numpy as np
 
@@ -40,6 +41,8 @@ DOMAINS = {
     "montrose": {"grid": "montrose", "dx": SWAN_DX},
 }
 REFL = {"breakwater": 0.35, "groyne": 0.35, "pier": 0.5, "revetment": 0.45, "vertical": 0.85}
+# shore known to be vertical wall rather than stepped revetment (S, W, N, E): Navy Pier's faces
+VERTICAL_ZONES = {"Navy Pier": (41.8885, -87.6150, 41.8945, -87.5955)}
 
 
 def case_id(d, tp, hs):
@@ -68,15 +71,39 @@ def resample(gr, z, dx):
     return {"x0": gr["x0"], "y0": gr["y0"], "dx": gr["dx"] * k, "nx": zz.shape[1], "ny": zz.shape[0]}, zz
 
 
+def _area(pts):
+    return abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))) / 2
+
+
 def obstacles(lakefront, g, depth, fine=None):
     """Polylines (local metres) for SWAN OBSTACLE: structures and wall-like shoreline.
 
-    Wall-like shore is split by type from the finest bottom available (fine = (grid, depth)): water > 3 m deep
-    6 m off the line is a near-vertical wall (bulkhead, pier face; reflects ~0.85), otherwise a stepped
-    revetment (~0.45)."""
+    Wall-like shore along the open lake is the stepped revetment of the Chicago Shoreline Protection Project
+    (reflects ~0.45); Navy Pier's faces are vertical (~0.85); floating marina docks are left out. Long
+    structures the 4 m lidar sees as open water are skipped (fine = (grid, depth, src))."""
     x0, y0, x1, y1 = g["x0"], g["y0"], g["x0"] + (g["nx"] - 1) * g["dx"], g["y0"] + (g["ny"] - 1) * g["dx"]
     inside = lambda p: x0 < p[0] < x1 and y0 < p[1] < y1
     out = []
+    fg, fd = fine[:2] if fine else (g, depth)
+    fs = fine[2] if fine and len(fine) > 2 else None
+
+    def fine_at(px, py, lidar_only=False):
+        i, j = int(round((px - fg["x0"]) / fg["dx"])), int(round((py - fg["y0"]) / fg["dx"]))
+        if 0 <= j < fd.shape[0] and 0 <= i < fd.shape[1] and (not lidar_only or (fs is not None and fs[j, i] == 1)):
+            return fd[j, i]
+        return np.nan
+
+    def submerged(pts):
+        """A long mapped structure (>= 60 m) the lidar sees as open water (median > 2.5 m, < 15% above water):
+        submerged or misplaced, not a wall. Short or narrow ones are left alone (a 4 m grid can't judge them)."""
+        if sum(math.dist(a, b) for a, b in zip(pts, pts[1:])) < 60:
+            return False
+        d = []
+        for a, b in zip(pts, pts[1:]):
+            n = max(1, int(math.dist(a, b) / 3))
+            d += [fine_at(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n, True) for k in range(n + 1)]
+        d = np.array(d, float); ok = d[np.isfinite(d)]
+        return ok.size >= max(4, 0.7 * d.size) and float(np.median(ok)) > 2.5 and float((ok < 0).mean()) < 0.15
     for f in (lakefront or {}).get("osm", []):
         kind = f.get("kind")
         if kind not in ("breakwater", "groyne", "pier"):
@@ -85,12 +112,19 @@ def obstacles(lakefront, g, depth, fine=None):
         if len(pts) < 2:
             continue
         length = sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
-        if kind == "pier" and length < 80:     # docks and slips inside harbours: ignore
+        name = f.get("name") or ""
+        if kind == "pier" and (length < 80 or re.search(r"\bdock\b", name, re.I)):   # floating marina docks, slips: transparent
             continue
         if f.get("closed"):                    # outline polygon: use its long axis as a wall
             pts = pts + [pts[0]]
-        refl = REFL[kind]
-        out.append({"kind": kind, "refl": refl, "trans": 0.0, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in pts]})
+        if submerged(pts):
+            continue
+        refl, trans = REFL[kind], 0.0
+        if re.search(r"attenuator", name, re.I):          # floating wave attenuator: partly transmits
+            refl, trans = 0.3, 0.5
+        elif kind == "pier" and f.get("closed") and _area(f["pts"]) > 20000:   # Navy Pier: vertical faces
+            refl = REFL["vertical"]
+        out.append({"kind": kind, "name": name or None, "refl": refl, "trans": trans, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in pts]})
     # wall-like shore: coastline segments where the water is already > 2 m deep 15 m offshore
     def depth_at(px, py):
         i, j = int((px - x0) / g["dx"]), int((py - y0) / g["dx"])
@@ -98,16 +132,11 @@ def obstacles(lakefront, g, depth, fine=None):
             return depth[j, i]
         return np.nan
 
-    fg, fd = fine if fine else (g, depth)
-
-    def fine_at(px, py):
-        i, j = int(round((px - fg["x0"]) / fg["dx"])), int(round((py - fg["y0"]) / fg["dx"]))
-        if 0 <= j < fd.shape[0] and 0 <= i < fd.shape[1]:
-            return fd[j, i]
-        return np.nan
+    zones = [(bm.lf.xy(s_, w), bm.lf.xy(n, e)) for s_, w, n, e in VERTICAL_ZONES.values()]
 
     def wall(run, kinds):
-        k = "vertical" if sum(kinds) > len(kinds) / 2 else "revetment"
+        mx, my = np.mean([p[0] for p in run]), np.mean([p[1] for p in run])
+        k = "vertical" if any(a[0] <= mx <= b[0] and a[1] <= my <= b[1] for a, b in zones) else "revetment"
         return {"kind": "seawall", "wall": k, "refl": REFL[k], "trans": 0.0, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in run]}
     for f in (lakefront or {}).get("osm", []):
         if f.get("kind") != "coastline":
@@ -123,8 +152,7 @@ def obstacles(lakefront, g, depth, fine=None):
             d = np.nanmax([depth_at(mx + nx * 15, my + ny * 15), depth_at(mx - nx * 15, my - ny * 15)])
             if np.isfinite(d) and d > 2.0:
                 run = run + [b] if run else [a, b]
-                toe = np.nanmax([fine_at(mx + nx * 6, my + ny * 6), fine_at(mx - nx * 6, my - ny * 6)])
-                kinds.append(bool(np.isfinite(toe) and toe > 3.0))
+                kinds.append(False)
             else:
                 if len(run) >= 2:
                     out.append(wall(run, kinds))
@@ -175,7 +203,7 @@ def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=PERIODS, 
     depth_lwd = bm.LWD - zz                    # depth below LWD (SWAN adds LEVEL)
     fine = None
     if "corridor" in bathy.get("models", {}):
-        fz, _ = bm.unpack(bathy["models"]["corridor"]); fine = (bathy["models"]["corridor"], level - fz)
+        fz, fsrc = bm.unpack(bathy["models"]["corridor"]); fine = (bathy["models"]["corridor"], level - fz, fsrc)
     obst = obstacles(lakefront, g, level - zz, fine or (gr, level - z))
     meta = {"domain": domain, "grid": g, "level_m_igld85": level, "obstacles": [{"kind": o["kind"], "n": len(o["pts"])} for o in obst]}
     os.makedirs(out_dir, exist_ok=True)

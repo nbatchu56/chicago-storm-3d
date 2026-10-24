@@ -640,8 +640,18 @@ function buildMap(LF) {
   // solid structures only: breakwaters and groynes, big piers (Navy Pier); marina docks float over open water
   const area = (pts) => { let a = 0; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]); return Math.abs(a / 2); };
   const len = (pts) => { let l = 0; for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; };
+  // a long mapped structure the 4 m lidar sees as open water (median > 2.5 m, <15% above water) is submerged or misplaced
+  // (e.g. a breakwater line drawn across Montrose Harbor's entrance): it doesn't block the water
+  const submerged = (pts, closed) => { const P = closed ? pts.concat([pts[0]]) : pts, deps = [];
+    for (let i = 1; i < P.length; i++) { const [ax, ay] = P[i - 1], [bx, by] = P[i], n = Math.max(1, Math.round(Math.hypot(bx - ax, by - ay) / 3));
+      for (let k = 0; k <= n; k++) { const s = surveyAt((ax + (bx - ax) * k / n) / 1000, (ay + (by - ay) * k / n) / 1000); deps.push(s && s.fine && s.src === 1 ? s.dep : NaN); } }
+    if (len(P) < 60) return false;   // short or narrow structures: a 4 m grid can't judge them
+    const ok = deps.filter((d) => d === d).sort((x, y) => x - y);
+    return ok.length >= deps.length * 0.7 && ok.length >= 4 && ok[ok.length >> 1] > 2.5 && ok.filter((d) => d < 0).length < 0.15 * ok.length; };
+  MAP.submerged = 0;
   ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => {
     if (kind === "pier" && (f.closed ? area(f.pts) < 4000 : len(f.pts) < 150)) return;
+    if (BATHY.det && submerged(f.pts, f.closed)) { MAP.submerged++; return; }
     if (f.closed) { path(pcx, f.pts, true); pcx.fill(); } else { pcx.lineWidth = (kind === "pier" ? 2 : 3) * SC; path(pcx, f.pts, false); pcx.stroke(); } }));
   // the 1 m lidar knows where the water is better than the map: surveyed water that the map calls land
   // (Diversey Harbor's basins, lagoons) becomes sheltered water; surveyed dry land stays land
@@ -665,7 +675,13 @@ function buildMap(LF) {
     // (Diversey Harbor's entrance channel), at most ~45 m from it -- and only on the 4 m survey: the 10 m grid would
     // eat into seawalls and breakwaters (Navy Pier, Monroe Harbor)
     const REACH = Math.round(45 / MPP), dist = new Uint8Array(WPX * HPX).fill(255), q = new Int32Array(WPX * HPX); let qh = 0, qt = 0;
-    for (let i = 0; i < cand.length; i++) if (cand[i] && !near[i]) { dist[i] = 0; q[qt++] = i; }
+    // isolated specks of survey "water" on land (wet hollows, returns off a roof) are noise: a seed region must
+    // cover at least ~1500 m2 of connected survey water
+    const minPx = Math.round(1500 / (MPP * MPP));   // cand: 1 = unvisited, 2 = small region, 3 = big region
+    for (let i0 = 0; i0 < cand.length; i0++) { if (cand[i0] !== 1) continue; let h = 0, t = 0; q[t++] = i0; cand[i0] = 2;
+      while (h < t) { const i = q[h++], x = i % WPX; for (const n of [x > 0 ? i - 1 : -1, x < WPX - 1 ? i + 1 : -1, i - WPX, i + WPX]) if (n >= 0 && n < cand.length && cand[n] === 1) { cand[n] = 2; q[t++] = n; } }
+      if (t >= minPx) for (let k = 0; k < t; k++) cand[q[k]] = 3; }
+    for (let i = 0; i < cand.length; i++) if (cand[i] === 3 && !near[i]) { dist[i] = 0; q[qt++] = i; }
     while (qh < qt) { const i = q[qh++], x = i % WPX, d1 = dist[i] + 1; if (d1 > REACH) continue;
       for (const n of [x > 0 ? i - 1 : -1, x < WPX - 1 ? i + 1 : -1, i - WPX, i + WPX]) if (n >= 0 && n < cand.length && cand[n] && near[n] && cfine[n] && dist[n] === 255) { dist[n] = d1; q[qt++] = n; } }
     let deepened = 0;
