@@ -249,8 +249,9 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
     <section>
       <h2>Models &amp; accuracy</h2>
       <div id="fw-box" hidden>
-        <div class="row"><label for="fw-pick">FUNWAVE at Diversey Harbor</label></div>
+        <div class="row"><label for="fw-pick">FUNWAVE wave-by-wave on the walls</label></div>
         <select id="fw-pick" aria-label="FUNWAVE run"><option value="">Off: use current conditions</option></select>
+        <p class="note" id="fw-tile"></p>
       </div>
       <dl class="readouts" id="models"></dl>
       <p class="note" id="valnote"></p>
@@ -833,15 +834,22 @@ function swanRatioKm(xk, yk) { const C = SWAN.cur; if (!C || C.none || U.uSwanOn
   const fx = (xk - D.x0) / D.w * (g.nx - 1), fy = (yk - D.y0) / D.h * (g.ny - 1); if (fx < 0 || fy < 0 || fx > g.nx - 1 || fy > g.ny - 1) return null; const v = C.ratio[Math.round(fy) * g.nx + Math.round(fx)]; return v > 0.005 ? v : null; }
 
 // ---------------------------------------------------------------- FUNWAVE runs (phase-resolved, harbour entrance)
-const FW = { runs: [], cur: null };
-U.uFw.value = (() => { const t = new THREE.Data3DTexture(new Uint16Array(8), 2, 2, 2); t.format = THREE.RedFormat; t.type = THREE.HalfFloatType; t.needsUpdate = true; return t; })();
+const FW = { runs: [], cur: null, byCase: {}, case: null };
+// FUNWAVE: tiles (~1 km each) along the walls, several offshore conditions. The picker chooses a condition;
+// the tile under the view is bound (tiles may live in side files and load on first use).
 async function setFunwave(list) {
-  for (const r of [].concat(list || [])) { if (!r || !r.eta || !r.eta.frames) continue; FW.runs.push(r);
-    const o = document.createElement("option"); o.value = String(FW.runs.length - 1); o.textContent = `${r.label} (${ft(r.hs)} ft, ${r.tp} s, from ${compass(r.dir)})`; $("#fw-pick").appendChild(o); }
+  for (const r of [].concat(list || [])) { if (!r || !r.eta || !r.eta.frames) continue; r.tile = r.tile || "diversey"; r.tile_label = r.tile_label || "Diversey Harbor";
+    FW.runs.push(r); const k = r.case || r.label; (FW.byCase[k] = FW.byCase[k] || []).push(r); }
+  for (const [k, rs] of Object.entries(FW.byCase)) { const r = rs[0], o = document.createElement("option"); o.value = k;
+    o.textContent = `${r.label} (${ft(r.hs)} ft, ${r.tp} s, from ${compass(r.dir)}) · ${rs.length} tile${rs.length > 1 ? "s" : ""}`; $("#fw-pick").appendChild(o); }
   $("#fw-box").hidden = !FW.runs.length;
 }
-async function selectFunwave(i) {
-  const r = FW.runs[i]; if (!r) { FW.cur = null; U.uFwOn.value = 0; WAVES.key = null; return; }
+const fwIn = (r, xk, yk) => { const g = r.grid, x = xk * 1000, y = yk * 1000; return x >= g.x0 && y >= g.y0 && x <= g.x0 + (g.nx - 1) * g.dx && y <= g.y0 + (g.ny - 1) * g.dx; };
+const fwMid = (r) => { const g = r.grid; return [(g.x0 + (g.nx - 1) * g.dx / 2) / 1000, (g.y0 + (g.ny - 1) * g.dx / 2) / 1000]; };
+function fwTileAt(xk, yk) { const rs = FW.byCase[FW.case] || []; let best = rs.find((r) => fwIn(r, xk, yk)) || null, bd = 1e9;
+  if (!best) for (const r of rs) { const [mx, my] = fwMid(r), d = Math.hypot(mx - xk, my - yk); if (d < bd) { bd = d; best = r; } } return { r: best, inside: !!best && fwIn(best, xk, yk) }; }
+async function bindFunwave(r) {
+  if (r.src && !r.hsig) { try { const res = await fetch(r.src); if (res.ok) Object.assign(r, await res.json()); } catch (e) {} if (!r.hsig) return false; }
   if (!r.tex) { const e = r.eta, raw = await gunzipB64(e.data);
     let h; if (e.format === "i8") { const q = new Int8Array(raw.buffer, raw.byteOffset, raw.byteLength); h = new Uint16Array(q.length); for (let k = 0; k < q.length; k++) h[k] = THREE.DataUtils.toHalfFloat(q[k] * e.scale); }
     else h = new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
@@ -851,12 +859,22 @@ async function selectFunwave(i) {
     for (let k = 0; k < hh.length; k++) hh[k] = THREE.DataUtils.toHalfFloat(hu[k] / 100);
     r.hsTex = new THREE.DataTexture(hh, g.nx, g.ny, THREE.RedFormat, THREE.HalfFloatType); r.hsTex.minFilter = r.hsTex.magFilter = THREE.LinearFilter; r.hsTex.needsUpdate = true;
     r.hsArr = hu; }
+  if (FW.case !== (r.case || r.label)) return false;   // the condition changed while this loaded
   const g = r.grid; U.uFw.value = r.tex; U.uFwHs.value = r.hsTex; U.uFwMin.value.set(g.x0 / 1000, g.y0 / 1000); U.uFwSize.value.set((g.nx - 1) * g.dx / 1000, (g.ny - 1) * g.dx / 1000);
-  U.uFwOn.value = 1; FW.cur = r; WAVES.key = null;
-  // fly to a view over the entrance
-  // low over the water, east of the entrance, looking in (the entrance is at about -0.30, 5.59 km)
-  camTween = { p0: camera.position.clone(), t0: controls.target.clone(), p1: new THREE.Vector3(-0.02, 0.04, -5.52), t1: new THREE.Vector3(-0.30, 0, -5.59), s: performance.now(), d: 1500 }; S.view = "fw";
+  U.uFwOn.value = 1; FW.cur = r; WAVES.key = null; $("#fw-tile").textContent = `Showing the ${r.tile_label} tile; move along the shore to switch.`; return true;
 }
+async function selectFunwave(k) {
+  if (typeof k === "number") k = (FW.runs[k] || {}).case;   // older callers passed a run index
+  if (!k || !FW.byCase[k]) { FW.case = null; FW.cur = null; U.uFwOn.value = 0; WAVES.key = null; $("#fw-tile").textContent = ""; return; }
+  FW.case = k; FW.cur = null; U.uFwOn.value = 0;
+  const t = controls.target, { r, inside } = fwTileAt(t.x, -t.z); if (!r) return;
+  await bindFunwave(r);
+  if (!inside) { const [mx, my] = fwMid(r); flyTo(mx, my, 0.45, 255, 18); S.view = "fw"; }
+}
+// called every frame: switch tiles when the view moves onto another one
+let fwBusy = false;
+function followFunwave() { if (!FW.case || fwBusy) return; const t = controls.target, { r, inside } = fwTileAt(t.x, -t.z);
+  if (r && inside && r !== FW.cur) { fwBusy = true; bindFunwave(r).finally(() => { fwBusy = false; }); } }
 function funwaveHsKm(xk, yk) { const r = FW.cur; if (!r || !r.hsArr) return null; const g = r.grid, i = Math.round((xk * 1000 - g.x0) / g.dx), j = Math.round((yk * 1000 - g.y0) / g.dx);
   if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) return null; return r.hsArr[j * g.nx + i] / 100; }
 
@@ -1511,7 +1529,7 @@ matchMedia("(max-width: 760px)").addEventListener("change", applyPanel); applyPa
 $("#gpx-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { setTrack(parseGPX(await f.text(), f.name.replace(/\.gpx$/i, ""))); } catch (err) { $("#track-note").textContent = `Couldn't read that file: ${err.message}`; } };
 $("#hist-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { await addHistory(JSON.parse(await f.text())); S.histIdx = SRC.hist.length - 1; $("#hist-pick").value = String(S.histIdx); setMode("history"); } catch (err) { $("#hist-note").textContent = `Couldn't load that file: ${err.message}`; } };
 $("#hist-pick").onchange = (e) => { S.histIdx = +e.target.value; setMode("history"); };
-$("#fw-pick").onchange = (e) => { selectFunwave(e.target.value === "" ? -1 : +e.target.value); };
+$("#fw-pick").onchange = (e) => { selectFunwave(e.target.value || null); };
 let SERVED = false;
 const localInput = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60e3).toISOString().slice(0, 16);
 $("#hist-dur").oninput = (e) => { const v = +e.target.value; $("#hist-dur-o").textContent = v < 60 ? `${v} min` : `${(v / 60).toFixed(v % 60 ? 1 : 0)} h`; };
@@ -1554,6 +1572,7 @@ function tick() {
   requestAnimationFrame(tick);
   const dt = Math.min(clock.getDelta(), 0.1), now = performance.now();
   if (!RM) U.uTime.value += dt;
+  followFunwave();
   if (FW.cur) { const n = FW.cur.eta.frames, L = n * FW.cur.eta.dt; U.uFwT.value = ((U.uTime.value % L) / L) * (n - 1) / n + 0.5 / n; }
   if (S.mode === "live" && S.follow) S.t = Date.now();
   const [t0, t1] = range();

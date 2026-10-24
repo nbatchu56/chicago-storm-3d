@@ -126,7 +126,7 @@ def summarize_validation(v):
             "peak_note": "%s measured %.1f ft, model %.1f ft" % (ph[0]["buoy"], s0["obs_peak"]["m"] * 3.281, s0["pred_peak"]["m"] * 3.281)}
 
 
-SPLIT = ("bathy-data", "swan-data", "funwave-data", "history-data")
+SPLIT = ("bathy-data", "swan-data", "funwave-data", "history-data")   # funwave: one file per run
 
 
 def main():
@@ -165,7 +165,17 @@ def main():
     for tag, obj in blocks.items():
         if obj is None:
             continue
-        if a.split and tag in SPLIT:
+        if a.split and tag == "funwave-data":   # one file per tile x condition, loaded when that tile is in view
+            stubs = []
+            for r in obj:
+                rel = f"data/fw/{r.get('tile', 'diversey')}_{r.get('case', 'run')}.json"
+                path = os.path.join(os.path.dirname(os.path.abspath(a.out)), rel)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w") as fh:
+                    txt = json.dumps(r, separators=(",", ":")); fh.write(txt); sizes[rel] = len(txt) // 1000
+                stubs.append({k: v for k, v in r.items() if k != "hsig"} | {"eta": {k: v for k, v in r["eta"].items() if k != "data"}, "src": rel})
+            html = put(html, f'<script id="{tag}" type="application/json">', stubs)
+        elif a.split and tag in SPLIT:
             rel = f"data/{tag[:-len('-data')]}.json"
             os.makedirs(os.path.join(os.path.dirname(os.path.abspath(a.out)), "data"), exist_ok=True)
             with open(os.path.join(os.path.dirname(os.path.abspath(a.out)), rel), "w") as fh:

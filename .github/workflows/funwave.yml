@@ -1,10 +1,13 @@
-name: FUNWAVE harbour entrance
+name: FUNWAVE wall tiles
 on:
   workflow_dispatch:
     inputs:
+      tiles:
+        description: "Tiles (comma list): diversey, belmont, northave, fullerton"
+        default: "diversey,belmont,northave,fullerton"
       cases:
-        description: "Cases (comma list): rough, storm"
-        default: "rough,storm"
+        description: "Cases (comma list): rough, storm, east"
+        default: "rough,storm,east"
 permissions:
   contents: write
 concurrency:
@@ -15,9 +18,12 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       cases: ${{ steps.m.outputs.cases }}
+      tiles: ${{ steps.m.outputs.tiles }}
     steps:
       - id: m
-        run: echo "cases=$(python3 -c "import json,sys; print(json.dumps([c.strip() for c in sys.argv[1].split(',') if c.strip()]))" '${{ inputs.cases }}')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "cases=$(python3 -c "import json,sys; print(json.dumps([c.strip() for c in sys.argv[1].split(',') if c.strip()]))" '${{ inputs.cases }}')" >> "$GITHUB_OUTPUT"
+          echo "tiles=$(python3 -c "import json,sys; print(json.dumps([c.strip() for c in sys.argv[1].split(',') if c.strip()]))" '${{ inputs.tiles }}')" >> "$GITHUB_OUTPUT"
   run:
     needs: setup
     runs-on: ubuntu-latest
@@ -25,6 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        tile: ${{ fromJson(needs.setup.outputs.tiles) }}
         case: ${{ fromJson(needs.setup.outputs.cases) }}
     steps:
       - uses: actions/checkout@v4
@@ -51,19 +58,19 @@ jobs:
       - name: Prepare
         run: |
           git fetch -q --depth 1 origin bathy && git show origin/bathy:bathy.json > bathy.json
-          python -m app.funwave_case prepare --bathy bathy.json --case ${{ matrix.case }} --out fw
+          python -m app.funwave_case prepare --bathy bathy.json --tile ${{ matrix.tile }} --case ${{ matrix.case }} --out fw --procs $(nproc)
       - name: Run
         run: |
-          cd fw && (time timeout 18000 mpirun --oversubscribe -np 2 ~/funwave/funwave input.txt > run.log 2>&1) 2>&1 | tail -3
+          cd fw && (time timeout 19000 mpirun --oversubscribe -np $(nproc) ~/funwave/funwave input.txt > run.log 2>&1) 2>&1 | tail -3
           tail -15 run.log; ls output | head; ls output | wc -l
-          echo "::notice title=FUNWAVE ${{ matrix.case }}::$(tail -c 1500 run.log | tr '\n' '|') files=$(ls output | wc -l)"
+          echo "::notice title=FUNWAVE ${{ matrix.tile }} ${{ matrix.case }}::$(tail -c 1500 run.log | tr '\n' '|') files=$(ls output | wc -l)"
       - name: Collect
-        run: python -m app.funwave_case collect --run fw --out funwave_${{ matrix.case }}.json
+        run: python -m app.funwave_case collect --run fw --out funwave_${{ matrix.tile }}_${{ matrix.case }}.json
       - uses: actions/upload-artifact@v4
         with:
-          name: funwave-${{ matrix.case }}
+          name: funwave-${{ matrix.tile }}-${{ matrix.case }}
           path: |
-            funwave_${{ matrix.case }}.json
+            funwave_${{ matrix.tile }}_${{ matrix.case }}.json
             fw/run.log
           retention-days: 3
   publish:
@@ -76,7 +83,11 @@ jobs:
           path: parts
       - name: Publish to the funwave branch
         run: |
-          mkdir -p out && find parts -name 'funwave_*.json' -exec cp {} out/ \; && find parts -name run.log | head -2 | while read f; do cp "$f" "out/$(basename $(dirname $(dirname $f)))-run.log"; done
+          # keep earlier tiles' results that this run didn't redo (a run can be limited to some tiles/cases)
+          mkdir -p out && git init -q prev && cd prev && git fetch -q --depth 1 "https://github.com/${{ github.repository }}.git" funwave 2>/dev/null && git checkout -q FETCH_HEAD -- . 2>/dev/null; cd ..
+          find prev -maxdepth 1 -name 'funwave_*_*.json' -exec cp {} out/ \;
+          [ -n "$(find parts -name 'funwave_*.json')" ] || { echo "::warning title=FUNWAVE::no runs finished; the funwave branch is left as it was"; exit 0; }
+          find parts -name 'funwave_*.json' -exec cp {} out/ \; && find parts -name run.log | head -2 | while read f; do cp "$f" "out/$(basename $(dirname $(dirname $f)))-run.log"; done
           ls -la out; cd out
           git init -q -b funwave
           git config user.name "github-actions[bot]"
