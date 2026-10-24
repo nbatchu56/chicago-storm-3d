@@ -117,6 +117,7 @@ jobs:
           ls -la out; for f in runs/*/d*/PRINT; do tail -1 "$f"; done | sort | uniq -c | head
       - name: Publish to the swan branch
         run: |
+          python3 -c "import json,sys; d=json.load(open('out/swan.json')); sys.exit(0 if d.get('domains') else 1)" || { echo "::warning title=SWAN::no cases collected; the swan branch is left as it was"; exit 0; }
           cd out
           git init -q -b swan
           git config user.name "github-actions[bot]"

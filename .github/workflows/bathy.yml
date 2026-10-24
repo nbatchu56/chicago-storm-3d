@@ -30,6 +30,9 @@ jobs:
         if: always()
         run: |
           cd "$RUNNER_TEMP/out"
+          # never replace a good lake bottom with an empty or partial run (only the log would be left)
+          if [ ! -s bathy.json ] || ! python3 -c "import json,sys; d=json.load(open('bathy.json')); sys.exit(0 if d.get('world') else 1)"; then
+            echo "::warning title=Bathymetry::no bathy.json built; the bathy branch is left as it was"; exit 0; fi
           git init -q -b bathy
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
