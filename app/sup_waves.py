@@ -108,6 +108,10 @@ def http_get(url, accept="application/json", timeout=20):
         return r.read().decode("utf-8", "replace")
 
 
+MISSING = {"WSPD": (99.0,), "GST": (99.0,), "WVHT": (99.0,), "DPD": (99.0,), "APD": (99.0,), "WDIR": (999.0,), "MWD": (999.0,),
+           "ATMP": (999.0,), "WTMP": (999.0,), "PRES": (9999.0,)}
+
+
 def parse_ndbc(text, station):
     """NDBC realtime2 standard met file -> list of dicts, newest first."""
     lines = text.splitlines()
@@ -126,7 +130,11 @@ def parse_ndbc(text, station):
         def v(k):
             try:
                 x = row[idx[k]]
-                return None if x == "MM" else float(x)
+                if x == "MM":
+                    return None
+                f = float(x)
+                # the monthly/yearly archive files mark missing data with 99, 999 or 9999 instead of MM
+                return None if f in MISSING.get(k, ()) else f
             except (KeyError, IndexError, ValueError):
                 return None
         out.append({"t": t, "station": station, "wspd": v("WSPD"), "wdir": v("WDIR"), "gst": v("GST"),
