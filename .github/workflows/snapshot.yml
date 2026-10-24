@@ -61,13 +61,15 @@ jobs:
           ls -la "$M"
           python tools/build_world.py --out "$OUT/world.html" --scene "$OUT/scene.json" --sup "$OUT/sup.json" --lakefront "$OUT/lakefront.json" \
             --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M/funwave_rough.json" "$M/funwave_storm.json" --validate "$M/validate.json" \
-            --history "$M"/history-*.json --imports examples/*.json
+            --history "$M"/history-*.json --imports examples/*.json --split \
+            --start '{"mode":"import","view":[41.93,-87.633,0.45,250,14]}'
       - name: Publish to the snapshot branch
         env:
           OUT: ${{ runner.temp }}/storm
         run: |
           mkdir -p "$RUNNER_TEMP/pub" && cd "$RUNNER_TEMP/pub"
           for f in scene.json status.json sup.json lakefront.json probe.json world.html; do [ -f "$OUT/$f" ] && cp "$OUT/$f" .; done
+          [ -d "$OUT/data" ] && cp -r "$OUT/data" .   # the page's side files (lake bottom, SWAN, FUNWAVE, history)
           ls -la
           git init -q -b snapshot
           git config user.name "github-actions[bot]"

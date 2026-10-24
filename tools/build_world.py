@@ -124,6 +124,9 @@ def summarize_validation(v):
             "peak_note": "%s measured %.1f ft, model %.1f ft" % (ph[0]["buoy"], s0["obs_peak"]["m"] * 3.281, s0["pred_peak"]["m"] * 3.281)}
 
 
+SPLIT = ("bathy-data", "swan-data", "funwave-data", "history-data")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
@@ -132,6 +135,8 @@ def main():
     ap.add_argument("--funwave", nargs="*", default=[])
     ap.add_argument("--imports", nargs="*", default=[], help="forecast tables read from screenshots (examples/*.json)")
     ap.add_argument("--history", nargs="*", default=[])
+    ap.add_argument("--split", action="store_true",
+                    help="write the big, slow-changing blocks (" + ", ".join(SPLIT) + ") to data/*.json beside the page instead of inline")
     ap.add_argument("--start", help='open on a history period: JSON {"label":..,"t":ISO,"view":[lat,lon,km,heading,pitch]}')
     a = ap.parse_args()
     html = open(TEMPLATE).read()
@@ -154,12 +159,23 @@ def main():
     hist.sort(key=lambda h: 0 if "derecho" in h["label"] else 1)
     if hist:
         blocks["history-data"] = hist
+    sizes = {}
     for tag, obj in blocks.items():
-        if obj is not None:
+        if obj is None:
+            continue
+        if a.split and tag in SPLIT:
+            rel = f"data/{tag[:-len('-data')]}.json"
+            os.makedirs(os.path.join(os.path.dirname(os.path.abspath(a.out)), "data"), exist_ok=True)
+            with open(os.path.join(os.path.dirname(os.path.abspath(a.out)), rel), "w") as fh:
+                txt = json.dumps(obj, separators=(",", ":")); fh.write(txt); sizes[rel] = len(txt) // 1000
+            old = f'<script id="{tag}" type="application/json">'
+            html = html.replace(old, f'<script id="{tag}" type="application/json" data-src="{rel}">', 1)
+        else:
             html = put(html, f'<script id="{tag}" type="application/json">', obj)
     with open(a.out, "w") as fh:
         fh.write(html)
-    print(f"built {a.out}: {len(html) // 1000} KB; " + ", ".join(k for k, v in blocks.items() if v is not None))
+    print(f"built {a.out}: {len(html) // 1000} KB; " + ", ".join(k for k, v in blocks.items() if v is not None)
+          + "".join(f"; {k} {v} KB" for k, v in sizes.items()))
 
 
 if __name__ == "__main__":

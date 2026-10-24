@@ -1803,6 +1803,11 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
     }
     if (live) { const get2 = async (u) => { try { const r = await fetch(u, { cache: "no-store" }); return r.ok ? await r.json() : null; } catch (e) { return null; } };
       [DATA.bathy, DATA.swan, DATA.funwave] = await Promise.all([DATA.bathy || get2("api/bathy.json"), DATA.swan || get2("api/swan.json"), DATA.funwave || get2("api/funwave.json")]); }
+    // big, slow-changing data can sit beside the page as files (build_world --split): <script id=... data-src="data/x.json">
+    const split = async (id) => { const el = document.getElementById(id); if (!el || !el.dataset.src) return null;
+      try { const r = await fetch(el.dataset.src); return r.ok ? await r.json() : null; } catch (e) { return null; } };
+    [DATA.bathy, DATA.swan, DATA.funwave] = await Promise.all([DATA.bathy || split("bathy-data"), DATA.swan || split("swan-data"), DATA.funwave || split("funwave-data")]);
+    if (!DATA.hist.length) { const h = await split("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
     await setBathy(DATA.bathy); await setSwan(DATA.swan); await setFunwave(DATA.funwave); renderModels();
     if (DATA.lake) { buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
     buildMinimap(); showHintOnce(); initRefresh(); await initImport();
