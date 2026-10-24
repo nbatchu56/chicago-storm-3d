@@ -1150,10 +1150,11 @@ const supSpots = () => (DATA.sup && DATA.sup.spots) || [];
 function nearestSpot(xk, yk) { let best = null, bd = 1e9; for (const s of supSpots()) { const [x, y] = ll(s.lat, s.lon), d = (x - xk) ** 2 + (y - yk) ** 2; if (d < bd) { bd = d; best = s; } } return best; }
 function supHour(spot, tMs) { if (!spot || !spot.hourly.length) return null; const t0 = new Date(spot.hourly[0].t).getTime(); const i = clamp(Math.round((tMs - t0) / 3600e3), 0, spot.hourly.length - 1); return spot.hourly[i]; }
 function stationAt(stations, field, tMs, xk, yk) {
-  const st = (stations || []).filter((s) => s.history && s.history.some((h) => h[field] != null) && s.x != null);
+  // stations with a real record near this time (some lakefront sites report only now and then)
+  const st = (stations || []).filter((s) => s.x != null && s.history && s.history.filter((h) => h[field] != null && Math.abs(new Date(h.t) - tMs) < 3 * 3600e3).length >= 4);
   st.sort((a, b) => Math.hypot(a.x / 1000 - xk, a.y / 1000 - yk) - Math.hypot(b.x / 1000 - xk, b.y / 1000 - yk));
   for (const s of st.slice(0, 4)) { let best = null; for (const h of s.history) { if (h[field] == null) continue; const d = Math.abs(new Date(h.t) - tMs); if (!best || d < best.d) best = { d, h }; }
-    if (best && best.d < 3 * 3600e3) return { st: s, h: best.h }; }
+    if (best && best.d < 75 * 60e3) return { st: s, h: best.h }; }
   return null;
 }
 function range() {   // [t0, t1] ms for the current mode
