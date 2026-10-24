@@ -28,6 +28,13 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 #hud { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); left: calc(var(--gut) + env(safe-area-inset-left, 0px)); padding: 12px 14px; width: min(330px, calc(100vw - 2 * var(--gut))); display: grid; gap: 8px; }
 #hud h1 { margin: 0; font-size: 20px; font-weight: 700; }
+.hudhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#hudmin { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-color: transparent; color: var(--muted); flex: none; }
+#hudmin:hover { color: var(--fg); border-color: var(--line); }
+#hudmin svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s; }
+/* minimized: just the title, time and status chip */
+#hud.min { width: auto; } #hud.min .src, #hud.min .age, #hud.min #refreshbox, #hud.min .readouts { display: none !important; }
+#hud.min #hudmin svg { transform: rotate(180deg); }
 .src { color: var(--muted); font-size: 12.5px; }
 .timebox { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 #clock { font: 500 21px/1 var(--font-data); font-variant-numeric: tabular-nums; }
@@ -149,7 +156,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
   <canvas id="gl" tabindex="0" aria-label="3D Chicago lakefront world: radar weather, lake waves and your paddle track. Drag to orbit, scroll to zoom, right-drag to pan."></canvas>
   <div id="labels"></div>
   <div id="hud" class="panel" aria-live="polite">
-    <h1>Lakefront Local</h1>
+    <div class="hudhead"><h1>Lakefront Local</h1><button id="hudmin" aria-expanded="true" aria-controls="readouts" title="Minimize" aria-label="Minimize the conditions box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button></div>
     <div class="src" id="source">Loading…</div>
     <div class="timebox"><span id="clock">--:--</span><span class="chip live" id="status">Live</span><button id="nowbtn" hidden style="padding:4px 8px;font-size:11px">Back to now</button></div>
     <div class="age" id="age"></div>
@@ -1643,6 +1650,10 @@ function showHintOnce() { let seen = false; try { seen = localStorage.getItem("l
   list.addEventListener("keydown", (e) => { const items = [...list.querySelectorAll("button")], k = items.indexOf(document.activeElement);
     if (e.key === "Escape") { openGoto(false); btn.focus(); e.stopPropagation(); } else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); e.stopPropagation(); items[(k + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); } });
   document.addEventListener("pointerdown", (e) => { if (!list.hidden && !$("#goto").contains(e.target)) openGoto(false); }); }
+// the conditions box folds down to title, time and status (remembered per browser)
+{ const hud = $("#hud"), b = $("#hudmin"), set = (m) => { hud.classList.toggle("min", m); b.setAttribute("aria-expanded", String(!m)); b.title = m ? "Show conditions" : "Minimize";
+    b.setAttribute("aria-label", m ? "Show the conditions box" : "Minimize the conditions box"); try { localStorage.setItem("lakelocal-hudmin", m ? "1" : "0"); } catch (e) {} };
+  let m0 = false; try { m0 = localStorage.getItem("lakelocal-hudmin") === "1"; } catch (e) {} set(m0); b.onclick = () => set(!hud.classList.contains("min")); }
 // panels step back while the world is being dragged or zoomed, and return a moment after
 { let idle = 0; const app = $("#app"), fly = () => { app.classList.add("flying"); clearTimeout(idle); idle = setTimeout(() => app.classList.remove("flying"), 1300); };
   canvas.addEventListener("pointermove", (e) => { if (e.buttons) fly(); }); canvas.addEventListener("wheel", fly, { passive: true }); }
