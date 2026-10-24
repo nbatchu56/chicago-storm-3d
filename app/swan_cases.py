@@ -183,14 +183,33 @@ def obstacles(lakefront, g, depth, fine=None):
             continue
         run, kinds = [], []
         pts = f["pts"]
-        for a, b in zip(pts, pts[1:]):
+        # harbour mouths: runs of open segments, kept open only when wide enough for the grid (>= 60 m and 4 cells):
+        # a gap of 1-2 cells is narrower than SWAN can resolve and its diffraction term goes unstable there
+        segs = list(zip(pts, pts[1:]))
+        op = []
+        for a, b in segs:
+            L = math.dist(a, b) or 1
+            op.append(inside(a) and inside(b) and opening(a, b, (b[1] - a[1]) / L, -(b[0] - a[0]) / L))
+        k = 0
+        while k < len(op):
+            if op[k]:
+                e = k
+                while e + 1 < len(op) and op[e + 1]:
+                    e += 1
+                if sum(math.dist(*segs[q]) for q in range(k, e + 1)) < max(60.0, 4 * g["dx"]):
+                    for q in range(k, e + 1):
+                        op[q] = False
+                k = e + 1
+            else:
+                k += 1
+        for (a, b), is_open in zip(segs, op):
             if not (inside(a) and inside(b)):
                 continue
             mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
             L = math.dist(a, b) or 1
             nx, ny = (b[1] - a[1]) / L, -(b[0] - a[0]) / L            # one side's normal; test both
             d = np.nanmax([depth_at(mx + nx * 15, my + ny * 15), depth_at(mx - nx * 15, my - ny * 15)])
-            if np.isfinite(d) and d > 2.0 and not opening(a, b, nx, ny):
+            if np.isfinite(d) and d > 2.0 and not is_open:
                 k = toe_class(mx, my, nx, ny)
                 if run and kinds and k != kinds[0]:          # a new wall grade starts a new obstacle line
                     out.append(wall(run, kinds)); run, kinds = [], []
@@ -293,6 +312,9 @@ def collect(runs_dir, out_path):
             if not os.path.exists(os.path.join(cdir, "out.mat")):
                 continue
             hs, di = read_case(cdir)
+            if not (hs > 0).any():             # blew up (NaN read as zero): leave it out rather than show calm water
+                print(f"::warning title=SWAN::{dom} {c['id']} has no waves anywhere; left out")
+                continue
             ratio.append(np.clip(np.round(hs / c["hs"] * 100), 0, 255).astype(np.uint8))
             dirs.append((np.mod(di, 360) * 256 / 360).astype(np.uint8))
             got.append(c)

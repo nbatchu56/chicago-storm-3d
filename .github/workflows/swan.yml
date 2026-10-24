@@ -72,6 +72,20 @@ jobs:
           echo "SWAN: $EXE"
           export OMP_NUM_THREADS=2
           ls -d runs/*/d* | xargs -P 1 -I{} sh -c "cd {} && timeout 9000 $EXE > swan.log 2>&1; tail -3 PRINT 2>/dev/null | tr '\n' ' '; ls out.mat >/dev/null 2>&1 && echo ' ok {}' || echo ' FAILED {}'"
+          # a case that blew up (NaN in the output, read as zero waves everywhere) runs again without the
+          # diffraction term, which is what goes unstable at narrow openings
+          for c in $(python - <<'PY'
+          import glob, os, numpy as np
+          from scipy.io import loadmat
+          for f in sorted(glob.glob("runs/*/d*/out.mat")):
+              hs = loadmat(f)["Hsig"]
+              if np.isnan(hs).mean() > 0.001 or np.nanmax(hs) <= 0:
+                  print(os.path.dirname(f))
+          PY
+          ); do
+            echo "::warning title=SWAN ${{ matrix.dir }}::$c blew up; rerunning without diffraction"
+            sed -i '/^DIFFRACTION/d' "$c/INPUT"; (cd "$c" && rm -f out.mat && timeout 9000 $EXE > swan.log 2>&1); ls "$c/out.mat" >/dev/null 2>&1 && echo " rerun ok $c" || echo " rerun FAILED $c"
+          done
           first=$(ls -d runs/*/d* | head -1)
           msg="exe=$EXE | $(ls $first | tr '\n' ' ') | log: $(tail -c 800 $first/swan.log 2>/dev/null) | PRINT: $(grep -i -B2 -A3 'error\|severe\|warning' $first/PRINT 2>/dev/null | head -40) | tail: $(tail -c 1200 $first/PRINT 2>/dev/null)"
           echo "::warning title=SWAN ${{ matrix.dir }}::$(echo "$msg" | tr '\n' '|' | sed 's/%/%25/g' | cut -c1-3800)"
