@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          pytest -q -rfE --tb=short -p no:cacheprovider tests 2>&1 | tee pytest.txt
+          python -m pytest -q -rfE --tb=short -p no:cacheprovider tests 2>&1 | tee pytest.txt
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             # surface the failure text as annotations (readable without downloading logs)
