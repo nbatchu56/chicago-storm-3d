@@ -822,8 +822,7 @@ function buildMap(LF) {
   ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => {
     // marina docks (named "Dock A"... or short) float over open water: drawn in 3-D below, not a wall in the mask
     if (kind === "pier" && (/\bdock\b/i.test(f.name || "") || (f.closed ? area(f.pts) < 4000 : len(f.pts) < 150))) { floating.push(f); return; }
-    // (not the steel groynes: a sheet-pile wall ~0.6 m thick never shows in a 1 m lidar DEM, so the survey reads open water along it)
-    if (kind !== "groyne" && BATHY.det && submerged(f.pts, f.closed)) { MAP.submerged++; return; }
+    if (BATHY.det && submerged(f.pts, f.closed)) { MAP.submerged++; return; }
     if (kind === "groyne") { steel.push(f); path(scx, f.pts, f.closed); f.closed ? (scx.fill(), scx.stroke()) : scx.stroke(); }
     if (kind === "groyne") { pcx.lineWidth = 1.5; path(pcx, f.pts, f.closed); f.closed ? pcx.fill() : pcx.stroke(); }
     else if (f.closed) { path(pcx, f.pts, true); pcx.fill(); } else { pcx.lineWidth = (kind === "pier" ? 2 : 3) * SC; path(pcx, f.pts, false); pcx.stroke(); } }));
