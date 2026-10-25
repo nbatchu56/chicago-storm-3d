@@ -385,6 +385,9 @@ const PLACES = [["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Theater on th
   // Montrose (Kayak Chicago): read off satellite screenshots registered to the map's breakwaters (~1 m fit), so within ~2 m.
   ["Chicago SUP · Diversey Harbor", 41.926465, -87.632958, 0.01, "rental"], ["Chicago SUP · North Ave Beach", 41.91312, -87.62293, 0.01, "rental"],
   ["Kayak Chicago · Montrose Beach", 41.96450, -87.63487, 0.01, "rental"]];
+// pier-head navigation lights (steady red towers, landmarks from the water): at the tip of the North Ave Beach hook and of
+// the Montrose hook pier (the ends of the mapped breakwaters)
+const PIER_LIGHTS = [["North Ave Beach pier light", 41.91477, -87.62099], ["Montrose Beach pier light", 41.96817, -87.63180]];
 // the local world: the Lake Michigan Water Trail from Monroe Harbor to Montrose, out past the Harrison-Dever crib
 const LB = (() => { const [x0, y0] = ll(41.870, -87.650), [x1, y1] = ll(41.970, -87.562); return { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; })();
 // camera presets: target (lat, lon), distance km, view heading (deg, compass), pitch (deg below horizontal)
@@ -795,8 +798,8 @@ function buildMap(LF) {
   fillKind("park", "#86a96c"); fillKind("beach", "#e3cf98");
   c.lineCap = "round"; c.strokeStyle = "#7c776a"; feats.filter((f) => f.kind === "road").forEach((f) => { c.lineWidth = 6 * SC; path(c, f.pts, false); c.stroke(); });
   c.strokeStyle = "#d9d5ca"; feats.filter((f) => f.kind === "road").forEach((f) => { c.lineWidth = 3 * SC; path(c, f.pts, false); c.stroke(); });
-  ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => { c.fillStyle = c.strokeStyle = kind === "pier" ? "#d0ccc2" : "#aaa598";
-    if (f.closed) { path(c, f.pts, true); c.fill(); } else { c.lineWidth = 4 * SC; path(c, f.pts, false); c.stroke(); } }));
+  ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => { c.fillStyle = c.strokeStyle = kind === "pier" ? "#d0ccc2" : kind === "groyne" ? "#5a4e44" : "#aaa598";
+    if (f.closed) { path(c, f.pts, true); c.fill(); } else { c.lineWidth = (kind === "groyne" ? 1.2 : 4 * SC); path(c, f.pts, false); c.stroke(); } }));
   c.fillStyle = "#5f5d59"; feats.filter((f) => f.kind === "building" && f.closed).forEach((f) => { path(c, f.pts, true); c.fill(); });
   // piers/breakwaters are land in the mask too (so waves stop at them)
   const pc = document.createElement("canvas"); pc.width = WPX; pc.height = HPX; const pcx = pc.getContext("2d", { willReadFrequently: true }); pcx.fillStyle = pcx.strokeStyle = "#fff"; pcx.lineWidth = 3 * SC;
@@ -811,12 +814,18 @@ function buildMap(LF) {
     if (len(P) < 60) return false;   // short or narrow structures: a 4 m grid can't judge them
     const ok = deps.filter((d) => d === d).sort((x, y) => x - y);
     return ok.length >= deps.length * 0.7 && ok.length >= 4 && ok[ok.length >> 1] > 2.5 && ok.filter((d) => d < 0).length < 0.15 * ok.length; };
-  MAP.submerged = 0; const floating = [];
+  MAP.submerged = 0; const floating = [], steel = [];
+  // groynes along the Chicago lakefront are steel sheet-pile breakers (North Ave Beach's offshore line and its spurs): fixed,
+  // under a metre wide, standing just out of the water. They still stop waves in the mask, on a line 1-2 pixels wide, but the
+  // water is drawn right up to them and the wall itself is a 3-D steel mesh (stroked 3-SC wide they read as 10 m sand spits)
+  const sc = document.createElement("canvas"); sc.width = WPX; sc.height = HPX; const scx = sc.getContext("2d", { willReadFrequently: true }); scx.fillStyle = scx.strokeStyle = "#fff"; scx.lineWidth = 1.5;
   ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => {
     // marina docks (named "Dock A"... or short) float over open water: drawn in 3-D below, not a wall in the mask
     if (kind === "pier" && (/\bdock\b/i.test(f.name || "") || (f.closed ? area(f.pts) < 4000 : len(f.pts) < 150))) { floating.push(f); return; }
     if (BATHY.det && submerged(f.pts, f.closed)) { MAP.submerged++; return; }
-    if (f.closed) { path(pcx, f.pts, true); pcx.fill(); } else { pcx.lineWidth = (kind === "pier" ? 2 : 3) * SC; path(pcx, f.pts, false); pcx.stroke(); } }));
+    if (kind === "groyne") { steel.push(f); path(scx, f.pts, f.closed); f.closed ? (scx.fill(), scx.stroke()) : scx.stroke(); }
+    if (kind === "groyne") { pcx.lineWidth = 1.5; path(pcx, f.pts, f.closed); f.closed ? pcx.fill() : pcx.stroke(); }
+    else if (f.closed) { path(pcx, f.pts, true); pcx.fill(); } else { pcx.lineWidth = (kind === "pier" ? 2 : 3) * SC; path(pcx, f.pts, false); pcx.stroke(); } }));
   // the 1 m lidar knows where the water is better than the map: surveyed water that the map calls land
   // (Diversey Harbor's basins, lagoons) becomes sheltered water; surveyed dry land stays land
   if (BATHY.ok && BATHY.src) { const G = BATHY.g; let fixed = 0;
@@ -919,9 +928,10 @@ function buildMap(LF) {
       for (let x = 0; x < WPX; x++) { let s = 0; for (let y = -r; y <= r; y++) s += b[clamp(y, 0, HPX - 1) * WPX + x];
         for (let y = 0; y < HPX; y++) { a[y * WPX + x] = s / k; s += b[Math.min(y + r + 1, HPX - 1) * WPX + x] - b[Math.max(y - r, 0) * WPX + x]; } } }
     return a; };
-  const wet = new Uint8Array(WPX * HPX); for (let i = 0; i < wet.length; i++) wet[i] = mask[i] ? 255 : 0;
+  const sd = scx.getImageData(0, 0, WPX, HPX).data;   // steel breakers: the water is drawn right up to (and over) them; the 3-D wall stands out of it
+  const wet = new Uint8Array(WPX * HPX); for (let i = 0; i < wet.length; i++) wet[i] = mask[i] || sd[i * 4] > 64 ? 255 : 0;
   blur(wet, Math.max(1, Math.round(4.5 / MPP)), 2);   // ~5 m: rounds pixel and survey-grid steps
-  for (let i = 0; i < wet.length; i++) if (pd[i * 4] > 128) wet[i] = Math.min(wet[i], 70);   // but piers and breakwaters stay solid
+  for (let i = 0; i < wet.length; i++) if (pd[i * 4] > 128 && sd[i * 4] <= 64) wet[i] = Math.min(wet[i], 70);   // but piers and breakwaters stay solid (steel breakers: water to the wall)
   const lc = document.createElement("canvas"); lc.width = WPX; lc.height = HPX; const lx = lc.getContext("2d", { willReadFrequently: true });
   lx.fillStyle = "#000"; lx.fillRect(0, 0, WPX, HPX); lx.lineCap = "round"; lx.strokeStyle = "#fff";
   feats.filter((f) => f.kind === "road").forEach((f) => { lx.lineWidth = 4 * SC; path(lx, f.pts, false); lx.stroke(); });
@@ -935,7 +945,7 @@ function buildMap(LF) {
   const colTex = new THREE.CanvasTexture(cv); colTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); colTex.minFilter = THREE.LinearMipmapLinearFilter;
   U.uMapCol.value = colTex; U.uMapMask.value = maskTex; U.uMapMin.value.set(x0, y0); U.uMapSize.value.set(x1 - x0, y1 - y0); U.uHasMap.value = 1;
   Object.assign(MAP, { ok: true, x0, y0, x1, y1, WPX, HPX, mask, coast: feats.filter((f) => f.kind === "coastline").flatMap((f) => f.pts.map(m2k)) });
-  buildDocksAndBridges(floating, feats.filter((f) => f.kind === "road"), (xm, ym) => { const px = Math.floor((xm / 1000 - x0) / (x1 - x0) * WPX), py = Math.floor((y1 - ym / 1000) / (y1 - y0) * HPX);
+  buildDocksAndBridges(floating, feats.filter((f) => f.kind === "road"), steel, (xm, ym) => { const px = Math.floor((xm / 1000 - x0) / (x1 - x0) * WPX), py = Math.floor((y1 - ym / 1000) / (y1 - y0) * HPX);
     return px < 0 || py < 0 || px >= WPX || py >= HPX ? 0 : mask[py * WPX + px]; });
   // buildings, extruded to their mapped heights, merged into one mesh
   const geos = [], tops = []; let bid = 0;
@@ -1000,7 +1010,7 @@ function buildMap(LF) {
   }
 }
 // ---------------------------------------------------------------- floating docks and road bridges (3-D, metres in, km out)
-function buildDocksAndBridges(docks, roads, maskM) {
+function buildDocksAndBridges(docks, roads, steel, maskM) {
   const pos = [], nrm = [], tint = [];
   // a box along a->b (metres east/north), w wide, from yBot to yTop metres above the water; c: colour index
   const box = (ax, ay, bx, by, w, yTop, yBot, c) => { const L = Math.hypot(bx - ax, by - ay); if (L < 0.05) return; const ux = (bx - ax) / L, uy = (by - ay) / L, nx = -uy * w / 2, ny = ux * w / 2;
@@ -1018,6 +1028,23 @@ function buildDocksAndBridges(docks, roads, maskM) {
       const pa = ng.attributes.position.array, na = ng.attributes.normal.array; for (let i = 0; i < pa.length; i += 3) { pos.push(pa[i], pa[i + 1], pa[i + 2]); nrm.push(na[i], na[i + 1], na[i + 2]); tint.push(2); }
       nd++; continue; }
     for (let i = 1; i < P.length; i++) box(P[i - 1][0], P[i - 1][1], P[i][0], P[i][1], w, 0.45, -0.1, 0); nd++; }
+  // steel sheet-pile breakers (groynes): a wall ~0.6 m thick standing ~0.9 m out of the water; the wider spur groynes
+  // (mapped as outlines, ~5 m) are steel cells: their outline walled, capped at the same height
+  for (const f of steel) { const P = f.closed ? f.pts.concat([f.pts[0]]) : f.pts;
+    for (let i = 1; i < P.length; i++) box(P[i - 1][0], P[i - 1][1], P[i][0], P[i][1], 0.6, 0.9, -1.5, 3);
+    if (f.closed) { const g = new THREE.ExtrudeGeometry(new THREE.Shape(f.pts.map((q) => new THREE.Vector2(q[0] / 1000, q[1] / 1000))), { depth: 0.05 / 1000, bevelEnabled: false });
+      g.rotateX(-Math.PI / 2); g.translate(0, 0.82 / 1000, 0); const ng = g.index ? g.toNonIndexed() : g; ng.computeVertexNormals();
+      const pa = ng.attributes.position.array, na = ng.attributes.normal.array; for (let i = 0; i < pa.length; i += 3) { pos.push(pa[i], pa[i + 1], pa[i + 2]); nrm.push(na[i], na[i + 1], na[i + 2]); tint.push(3); } } }
+  MAP.steel = steel.length;
+  // navigation light towers at the pier heads (red, steady): a concrete footing, a red steel tower, a lantern on top
+  const cyl = (cx, cy, r, yBot, yTop, c, n = 18) => { const K = (a, h) => [(cx + Math.cos(a) * r) / 1000, h / 1000, -(cy + Math.sin(a) * r) / 1000];
+    for (let i = 0; i < n; i++) { const a0 = i / n * 2 * Math.PI, a1 = (i + 1) / n * 2 * Math.PI, am = (a0 + a1) / 2, nS = [Math.cos(am), 0, -Math.sin(am)];
+      for (const v of [K(a0, yBot), K(a1, yBot), K(a1, yTop), K(a0, yBot), K(a1, yTop), K(a0, yTop)]) { pos.push(...v); nrm.push(...nS); tint.push(c); }
+      for (const v of [[cx / 1000, yTop / 1000, -cy / 1000], K(a1, yTop), K(a0, yTop)]) { pos.push(...v); nrm.push(0, 1, 0); tint.push(c); } } };
+  MAP.lights = [];
+  for (const [name, la, lo] of PIER_LIGHTS) { const [xk, yk] = ll(la, lo), x = xk * 1000, y = yk * 1000;
+    cyl(x, y, 1.8, -0.5, 1.4, 2); cyl(x, y, 0.85, 1.4, 8.2, 4); cyl(x, y, 1.15, 8.2, 8.5, 4); cyl(x, y, 0.45, 8.5, 9.4, 5); cyl(x, y, 0.6, 9.4, 9.6, 4);
+    MAP.lights.push({ name, x: xk, y: yk, h: 8.95 / 1000 }); }
   // bridges: a stretch of a main road that crosses water (8-90 m, water on both sides of the road) gets a deck over it;
   // Lake Shore Drive over the Diversey Harbor inlet: 1940 steel frame, ~21 m span, ~9 ft clearance at mean high water
   let nb = 0; MAP.bridges = [];
@@ -1044,13 +1071,22 @@ function buildDocksAndBridges(docks, roads, maskM) {
     vertexShader: `${LOGV[0]} attribute float tint; varying vec3 vW, vN; varying float vT; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vN = normal; vT = tint; gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
     fragmentShader: `${LOGF[0]} uniform vec3 uSunDir, uSunCol, uAmbTop, uAmbBot, uCamPos; uniform float uCity, uOvercast, uSnowCover; varying vec3 vW, vN; varying float vT;
       void main(){ ${LOGF[1]} vec3 N = normalize(vN); float sunUp = smoothstep(-0.02, 0.06, uSunDir.y);
-        vec3 alb = vT < 0.5 ? vec3(0.42, 0.40, 0.36) : vT < 1.5 ? vec3(0.36, 0.36, 0.37) : vec3(0.30, 0.29, 0.27);   // dock decking, concrete deck, abutment
+        vec3 alb = vT < 0.5 ? vec3(0.42, 0.40, 0.36) : vT < 1.5 ? vec3(0.36, 0.36, 0.37) : vT < 2.5 ? vec3(0.30, 0.29, 0.27)   // dock decking, concrete deck, abutment
+          : vT < 3.5 ? vec3(0.17, 0.13, 0.10) : vT < 4.5 ? vec3(0.55, 0.06, 0.05) : vec3(0.35, 0.05, 0.04);                     // weathered steel, red tower, lantern
         alb = mix(alb, vec3(0.8), uSnowCover * step(0.9, N.y));
         float under = vT > 0.5 && N.y < -0.5 ? 0.35 : 1.0;
         vec3 c = alb * under * (uSunCol * max(dot(N, uSunDir), 0.0) * sunUp * (1.0 - 0.7 * uOvercast) + mix(uAmbBot, uAmbTop, 0.5 + 0.5 * N.y) * 1.4);
         c += vec3(1.0, 0.75, 0.45) * uCity * (vT > 0.5 && vT < 1.5 && N.y > 0.9 ? 0.5 : vT < 0.5 && N.y > 0.9 ? 0.18 : 0.0);   // lit roadway and dock lamps at night
+        if (vT > 4.5) c += vec3(1.0, 0.08, 0.05) * mix(0.35, 2.2, clamp(uCity * 3.0, 0.0, 1.0));   // the lantern: always lit, steady
         float hc = max(uCamPos.y, 0.001), hf = hc < 0.05 ? 1.0 : 3.0 * (1.0 - exp(-hc / 3.0)) / hc;
         gl_FragColor = vec4(mix(c, mix(uAmbBot, uAmbTop, 0.5) * 1.2, 1.0 - exp(-length(uCamPos - vW) * hf / 70.0)), 1.0); }` });
+  if (MAP.lights.length) {   // the lights themselves: a steady red glow that carries for miles at night (a small point by day)
+    const lg = new THREE.BufferGeometry(); lg.setAttribute("position", new THREE.Float32BufferAttribute(MAP.lights.flatMap((L) => [L.x, L.h, -L.y]), 3));
+    const glow = new THREE.Points(lg, new THREE.ShaderMaterial({ uniforms: U, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: `${LOGV[0]} uniform float uCity; void main(){ vec4 mv = viewMatrix * modelMatrix * vec4(position, 1.0); gl_PointSize = clamp(16.0 / -mv.z, 3.0, 14.0) * mix(0.6, 1.0, clamp(uCity * 3.0, 0.0, 1.0)); gl_Position = projectionMatrix * mv; ${LOGV[1]} }`,
+      fragmentShader: `${LOGF[0]} uniform float uCity; void main(){ ${LOGF[1]} float r = length(gl_PointCoord - 0.5) * 2.0; float k = mix(0.35, 1.0, clamp(uCity * 3.0, 0.0, 1.0));
+        gl_FragColor = vec4(vec3(3.0, 0.18, 0.1) * k * (smoothstep(1.0, 0.0, r) * 0.6 + smoothstep(0.35, 0.0, r)), 1.0); }` }));
+    glow.frustumCulled = false; glow.renderOrder = 2; scene.add(glow); }
   const m = new THREE.Mesh(g, mat); m.frustumCulled = false; scene.add(m); MAP.bridgeCount = nb;
 }
 function maskAt(xk, yk) { if (!MAP.ok) return inLakeCoarse(xk, yk) ? 1 : 0; const px = Math.floor((xk - MAP.x0) / (MAP.x1 - MAP.x0) * MAP.WPX), py = Math.floor((MAP.y1 - yk) / (MAP.y1 - MAP.y0) * MAP.HPX);
