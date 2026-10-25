@@ -33,7 +33,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 #hudmin:hover { color: var(--fg); border-color: var(--line); }
 #hudmin svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s; }
 /* minimized: just the title, time and status chip */
-#hud.min { width: auto; } #hud.min .src, #hud.min .age, #hud.min #refreshbox, #hud.min .readouts { display: none !important; }
+#hud.min { width: auto; } #hud.min .src, #hud.min .age, #hud.min #refreshbox, #hud.min .readouts, #hud.min .launches { display: none !important; }
 #hud.min #hudmin svg { transform: rotate(180deg); }
 .src { color: var(--muted); font-size: 12.5px; }
 .timebox { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
@@ -42,6 +42,13 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .chip.live { color: var(--obs); } .chip.forecast { color: var(--fc); } .chip.history { color: var(--hist); } .chip.exp { color: var(--exp); }
 .readouts { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 8px; margin: 0; }
 .readouts dt { color: var(--muted); }
+.launches { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; display: grid; grid-template-columns: auto auto 1fr; gap: 4px 8px; align-items: center; font-size: 12px; }
+.launches b { grid-column: 1 / -1; font: 600 11px var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.launches button { all: unset; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.launches .cr { font: 600 11px var(--font-data); padding: 1px 6px; border-radius: 3px; color: #10161c; white-space: nowrap; }
+.launches .strip { display: flex; gap: 2px; justify-content: flex-end; }
+.launches .strip i { width: 9px; height: 12px; border-radius: 2px; display: block; }
+.launches .note { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
 .readouts dd { margin: 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; }
 .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
 #controls { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); width: 286px;
@@ -162,6 +169,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
     <div class="age" id="age"></div>
     <div id="refreshbox" hidden style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button id="refreshbtn" style="padding:6px 10px;font-size:12px">Refresh now</button><span class="age" id="refreshmsg"></span></div>
     <dl class="readouts" id="readouts"></dl>
+    <div class="launches" id="launches" hidden></div>
   </div>
   <button id="toggle" aria-expanded="true" aria-controls="controls">Settings</button>
   <div id="goto"><div id="goto-list" class="panel" role="menu" aria-label="Places" hidden></div><button id="goto-btn" class="panel" aria-label="Go to a place" title="Go to a place" aria-haspopup="menu" aria-expanded="false" aria-controls="goto-list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.4-6-11a6 6 0 0 1 12 0c0 5.6-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg><span>Go to a place</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button></div>
@@ -1079,18 +1087,26 @@ async function setSwan(sw) {
 }
 function swanDomainAt(xk, yk) { return SWAN.domains.find((d) => xk >= d.x0 && yk >= d.y0 && xk <= d.x0 + d.w && yk <= d.y0 + d.h) || null; }
 // blend the library for an offshore condition: linear in direction (circular), period and height class
-function swanBlend(D, hs, tp, dir) {
+// the library at one point for any offshore condition (no texture or uniform changes): same weights as swanBlend
+function swanPointAt(xk, yk, off) {
+  const D = swanDomainAt(xk, yk); if (!D || !off || off.hs < 0.02) return null;
+  const g = D.g, i = clamp(Math.round((xk - D.x0) / D.w * (g.nx - 1)), 0, g.nx - 1), j = clamp(Math.round((yk - D.y0) / D.h * (g.ny - 1)), 0, g.ny - 1), k = j * g.nx + i;
+  const b = swanBlend(D, off.hs, off.tp, off.dir, k); if (!b.ok || !(b.ratio[0] > 0.005)) return null;
+  return { ratio: b.ratio[0], dir: (Math.atan2(b.dir[0], b.dir[1]) * 180 / Math.PI + 360) % 360, domain: D.name };
+}
+function swanBlend(D, hs, tp, dir, only) {   // only: one cell index -> 1-cell result
   const dirs = [...new Set(D.cases.map((c) => c.dir))].sort((a, b) => a - b), tps = [...new Set(D.cases.map((c) => c.tp))].sort((a, b) => a - b), hss = [...new Set(D.cases.map((c) => c.hs))].sort((a, b) => a - b);
   const brk = (arr, v) => { if (v <= arr[0]) return [[arr[0], 1]]; if (v >= arr[arr.length - 1]) return [[arr[arr.length - 1], 1]]; let i = 0; while (arr[i + 1] < v) i++; const f = (v - arr[i]) / (arr[i + 1] - arr[i]); return [[arr[i], 1 - f], [arr[i + 1], f]]; };
   const dn = ((dir % 360) + 360) % 360;
   // directions outside the modelled sector (offshore winds' waves never reach shore): weight 0
   const wd = dn > dirs[dirs.length - 1] + 15 && dn < 345 ? [] : brk(dirs, dn >= 345 ? 0 : dn);
-  const idx = new Map(D.cases.map((c, i) => [`${c.dir}|${c.tp}|${c.hs}`, i])), out = new Float32Array(D.n), dout = new Float32Array(D.n * 2);
+  const idx = D.idx || (D.idx = new Map(D.cases.map((c, i) => [`${c.dir}|${c.tp}|${c.hs}`, i]))), n = only != null ? 1 : D.n, k0 = only != null ? only : 0;
+  const out = new Float32Array(n), dout = new Float32Array(n * 2);
   let wsum = 0;
   for (const [dv, wa] of wd) for (const [tv, wb] of brk(tps, tp)) for (const [hv, wc] of brk(hss, hs)) {
     const ci = idx.get(`${dv}|${tv}|${hv}`); if (ci == null) continue; const w = wa * wb * wc; wsum += w; const off = ci * D.n;
-    for (let i = 0; i < D.n; i++) { out[i] += w * D.ratio[off + i] / 100; const a = D.dir[off + i] / 256 * 2 * Math.PI; dout[2 * i] += w * Math.sin(a); dout[2 * i + 1] += w * Math.cos(a); } }
-  if (wsum > 0) for (let i = 0; i < D.n; i++) out[i] /= wsum;
+    for (let i = 0; i < n; i++) { out[i] += w * D.ratio[off + k0 + i] / 100; const a = D.dir[off + k0 + i] / 256 * 2 * Math.PI; dout[2 * i] += w * Math.sin(a); dout[2 * i + 1] += w * Math.cos(a); } }
+  if (wsum > 0) for (let i = 0; i < n; i++) out[i] /= wsum;
   return { ratio: out, dir: dout, ok: wsum > 0 };
 }
 function swanUpdate(xk, yk, off) {   // off: {hs, tp, dir} offshore; returns local {ratio, dir} at (xk, yk) or null
@@ -1599,10 +1615,10 @@ function radarState(tMs) {   // which frames to show, blend and motion shift
   const mot = src.meta.motion_km_per_min || [0, 0], dtm = (F[j].t - F[i].t) / 60000;
   return { A: F[i], B: F[j], f, shiftA: [mot[0] * f * dtm, mot[1] * f * dtm], shiftB: [-mot[0] * (1 - f) * dtm, -mot[1] * (1 - f) * dtm], grid: src.grid, label: src.meta.source, lead: F[f < 0.5 ? i : j].kind === "fc" ? F[f < 0.5 ? i : j].lead : 0 };
 }
-function conditions(tMs, xk, yk) {
+function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN texture/uniforms (launch ratings)
   const c = { wind: 0, dir: 0, gust: null, airC: null, sky: 0, pop: 0, systems: [], dRef: 1000, waterC: null, src: [] };
   let shore = nearestShore(xk, yk);
-  if (!inLakeCoarse(xk, yk) && maskAt(xk, yk) !== 1) { xk += shore.nx * (shore.d + 1.2); yk += shore.ny * (shore.d + 1.2); shore = nearestShore(xk, yk); }   // over land: report the lake just offshore
+  if (!inLakeCoarse(xk, yk) && maskAt(xk, yk) === 0) { xk += shore.nx * (shore.d + 1.2); yk += shore.ny * (shore.d + 1.2); shore = nearestShore(xk, yk); }   // over land: report the lake just offshore (harbour water reports itself)
   const fetchAt = (dir) => rayFetchKm(xk, yk, dir) * 1000;
   const withChop = (sys, U10, dir) => { const ch = cem(U10, 300, 1); if (ch.hm0 > 0.01) sys.push({ hs: Math.max(ch.hm0, 0.02 + 0.006 * U10), tp: Math.max(0.9, ch.tp), dir, spread: 50 }); return sys; };
   if (S.mode === "import") {
@@ -1640,15 +1656,46 @@ function conditions(tMs, xk, yk) {
   }
   if (FW.cur) { c.off = { hs: FW.cur.hs, tp: FW.cur.tp, dir: FW.cur.dir, src: "FUNWAVE case" }; c.src.unshift(`FUNWAVE: ${FW.cur.label}`); }
   // SWAN: inside a modelled domain, the local sea comes from the library for this offshore condition
-  const sw = swanUpdate(xk, yk, c.off);
+  const sw = pure ? swanPointAt(xk, yk, c.off) : swanUpdate(xk, yk, c.off);
   if (sw) { const chop = c.systems.filter((q) => q.spread >= 50); c.systems = (c.off.hs * sw.ratio > 0.01 ? [{ hs: c.off.hs * sw.ratio, tp: c.off.tp, dir: sw.dir, spread: 22 }] : []).concat(chop);
-    c.swan = sw; c.dRef = Math.max(20, shore.d * 1000); c.src.push(`SWAN ${sw.domain}`); U.uSwanRef.value = Math.max(sw.ratio, 0.02); }
+    c.swan = sw; c.dRef = Math.max(20, shore.d * 1000); c.src.push(`SWAN ${sw.domain}`); if (!pure) U.uSwanRef.value = Math.max(sw.ratio, 0.02); }
+  // harbour or lagoon water the library leaves at zero (an enclosed basin): no lake waves get in, only the chop
+  // the wind raises over the basin itself
+  else if (c.off && swanDomainAt(xk, yk) && maskAt(xk, yk) === 2) { c.systems = c.systems.filter((q) => q.spread >= 50); c.src.push("sheltered basin"); }
   const dHere = depthAtKm(xk, yk); if (dHere != null) c.depth = dHere;
   const fwx = funwaveCrossKm(xk, yk); if (fwx != null) c.fwCross = fwx;
   const fwh = funwaveHsKm(xk, yk); if (fwh != null) { c.fwHs = fwh; c.systems = c.systems.length ? c.systems : [{ hs: fwh, tp: FW.cur.tp, dir: FW.cur.dir, spread: 20 }]; }
   if (c.waterC == null && GRIDS.temp) c.waterC = gridValue(GRIDS.temp, xk, yk);
   c.snow = c.airC != null && c.airC < 1 || (S.mode === "exp" && S.x.type === "lakeeffect");
   c.shore = shore; return c;
+}
+
+// ---------------------------------------------------------------- Chicago SUP launches: chop rating now and the next hours
+// paddle zone just off each launch. The rating is the wave energy there (SWAN, so wall reflection is in it, plus the
+// local wind chop), weighted for steepness: the same energy in short waves is choppier (x 4 s / period, 0.6-2), and
+// raised by the crossing index where a FUNWAVE condition is shown. Bands in J/m2 of that chop energy.
+const LAUNCHES = [["Montrose", 41.9675, -87.6340], ["North Ave", 41.9146, -87.6233], ["Diversey", 41.9269, -87.6327]];   // 1.5-2 m of water off each
+const CHOP_BANDS = [[25, "Calm", "#5fc9a8"], [70, "Light chop", "#a6d96a"], [160, "Choppy", "#f7d940"], [350, "Rough", "#f39c45"], [Infinity, "Very rough", "#eb4d26"]];
+function chopRating(c) {
+  const hs = c.fwHs != null ? c.fwHs : Math.sqrt(c.systems.reduce((a, q) => a + q.hs * q.hs, 0)), tp = c.systems[0] ? c.systems[0].tp : 3;
+  const E = 613 * hs * hs, Ec = E * clamp(4 / Math.max(tp, 1), 0.6, 2) * (1 + (c.fwCross || 0));
+  const [, label, color] = CHOP_BANDS.find(([v]) => Ec < v); return { hs, tp, E, Ec, label, color };
+}
+let LAUNCH_KEY = "";
+function renderLaunches() {
+  const el = $("#launches"); if (!supSpots().length && !SWAN.domains.length) { el.hidden = true; return; }
+  const key = `${S.mode}|${Math.round(S.t / 600e3)}|${FW.case || ""}|${SWAN.domains.length}`; if (key === LAUNCH_KEY) return; LAUNCH_KEY = key;
+  const ahead = S.mode === "live" || S.mode === "forecast" ? 12 : 0, sp0 = supSpots()[0], hl = sp0 && sp0.hourly.length ? sp0.hourly[sp0.hourly.length - 1].t : null;
+  const t1 = hl ? new Date(hl).getTime() : range()[1];   // the forecast model's last hour
+  let h = `<b>Chicago SUP launches · chop</b>`;
+  for (const [name, lat, lon] of LAUNCHES) { const [x, y] = ll(lat, lon), r = chopRating(conditions(S.t, x, y, true));
+    let strip = "";
+    for (let k = 1; k <= ahead; k++) { const t = S.t + k * 3600e3; if (t > t1) break; const q = chopRating(conditions(t, x, y, true));
+      strip += `<i style="background:${q.color}" title="${fmtHM.format(new Date(t))}: ${q.label}, ${ft(q.hs)} ft, ${Math.round(q.E)} J/m²"></i>`; }
+    h += `<button data-launch="${lat},${lon}" title="Go there">${name}</button><span class="cr" style="background:${r.color}" title="${Math.round(r.E)} J/m² of waves · ${r.tp.toFixed(1)} s">${r.label} · ${ft(r.hs)} ft</span><span class="strip">${strip}</span>`; }
+  if (ahead) h += `<span class="note">Squares: the next ${ahead} hours. Energy from the wave model; short, steep waves count more.</span>`;
+  el.innerHTML = h; el.hidden = false;
+  el.querySelectorAll("[data-launch]").forEach((b) => b.onclick = () => { const [la, lo] = b.dataset.launch.split(",").map(Number), [x, y] = ll(la, lo); S.view = "free"; flyTo(x, y, 0.35, 250, 22); });
 }
 
 // ---------------------------------------------------------------- light from the sun's position
@@ -1984,6 +2031,7 @@ function tick() {
   // conditions (a few times a second)
   if (now - lastCond > 250) { lastCond = now;
     const cx = paddle ? bx : camera.position.y < 0.6 ? camera.position.x : tgt.x, cy = paddle ? by : camera.position.y < 0.6 ? -camera.position.z : -tgt.z;
+    renderLaunches();
     COND = conditions(S.t, cx, cy); const C = COND;
     const date = S.mode === "exp" ? new Date(S.t) : new Date(S.t); const sun = setLight(date); COND.sun = sun;
     const sys = C.systems.length ? C.systems : [];
@@ -2231,6 +2279,6 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
       if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { NAV, setMove, gotoPreset, viewState, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
+window.__world = { conditions, chopRating, NAV, setMove, gotoPreset, viewState, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
 })();
 </script>
