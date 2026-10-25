@@ -125,7 +125,17 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #modeseg button { border: 0; border-radius: 0; padding: 8px 12px; font-size: 12.5px; }
 #minimap { position: absolute; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); padding: 6px; }
 #minimap canvas { display: block; width: 150px; height: 222px; border-radius: 3px; cursor: crosshair; }
-#minimap .cap { font: 10.5px var(--font-ui); color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; }
+#minimap .cap { font: 10.5px var(--font-ui); color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+#minimap { width: 162px; box-sizing: border-box; } #minimap .cap span { text-align: right; }
+#mmview { white-space: nowrap; flex: none; font: 600 10.5px var(--font-ui); color: var(--fg); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 3px; padding: 2px 6px; cursor: pointer; }
+#mmview:hover { border-color: var(--muted); }
+.mmstat { position: absolute; left: 12px; top: 12px; font: 600 10.5px var(--font-data); padding: 2px 6px; border-radius: 3px; background: rgba(9,15,21,.78); color: var(--obs); border: 1px solid rgba(92,200,232,.4); }
+.mmstat.fc { color: var(--fc); border-color: rgba(184,146,245,.45); } .mmstat.exp { color: var(--exp); border-color: rgba(240,138,108,.45); } .mmstat.hist { color: var(--hist); border-color: rgba(127,211,154,.45); }
+.segs { position: relative; height: 4px; border-radius: 2px; background: rgba(220,230,238,.08); margin-top: -2px; }
+.segs i { position: absolute; top: 0; bottom: 0; border-radius: 2px; } .segs i.o { background: var(--obs); opacity: .75; } .segs i.f { background: var(--fc); } .segs i.f2 { background: var(--fc); opacity: .3; }
+.segs b { position: absolute; top: -4px; width: 2px; height: 12px; margin-left: -1px; background: var(--fg); border-radius: 1px; }
+.ticks.abs { display: block; position: relative; height: 14px; } .ticks.abs span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.ticks.abs span.l { transform: none; } .ticks.abs span.r { transform: translateX(-100%); } .ticks span.now { color: var(--fg); } .ticks span.fct { color: var(--fc); }
 #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; bottom: calc(var(--gut) + 300px + env(safe-area-inset-bottom, 0px)) !important; }
 #help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 32px)); padding: 16px 18px; z-index: 5; }
 #help h2 { margin: 0 0 8px; font-size: 16px; }
@@ -186,7 +196,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
     </div>
     <div class="row2" style="display:flex;gap:6px"><button class="solo" data-nav="tilt" title="Top-down / back to angled (T)" aria-label="Toggle top-down view"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M5 12h14M12 5v14"/></svg></button><button class="solo" id="helpbtn" title="Controls help (?)" aria-label="Controls help">?</button></div>
   </div>
-  <div id="minimap" class="panel"><canvas id="mm" width="300" height="444" aria-label="Map: click to go there"></canvas><div class="cap"><span>Click to go there</span><span id="mmscale"></span></div></div>
+  <div id="minimap" class="panel"><canvas id="mm" width="300" height="444" aria-label="Map: click to go there"></canvas><div class="mmstat" id="mmstat" hidden></div><div class="cap"><button id="mmview" type="button" title="Switch between the radar map and the local map">Local map</button><span id="mmscale"></span></div></div>
   <div id="help" class="panel" hidden role="dialog" aria-label="Controls">
     <button class="x" id="helpx" aria-label="Close">×</button>
     <h2>Getting around</h2>
@@ -296,7 +306,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
   <div id="attr"></div>
   <div id="timeline" class="panel">
     <button id="play" aria-label="Play"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="play-icon" d="M3 1.5v13l11-6.5z"/></svg></button>
-    <div class="track"><input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Time"><div class="ticks" id="ticks"></div></div>
+    <div class="track"><input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Time"><div class="segs" id="segs" aria-hidden="true"></div><div class="ticks" id="ticks"></div></div>
     <div class="speed"><label for="spd">Speed</label><select id="spd"><option value="0.4">Slow</option><option value="1" selected>Normal</option><option value="2.5">Fast</option></select></div>
   </div>
   <div id="msg" class="panel" hidden></div>
@@ -1983,15 +1993,95 @@ function buildMinimap() {
   for (const [n, la, lo] of [["North Ave", 41.9145, -87.6235], ["Diversey Hbr", 41.9310, -87.6385], ["Fullerton", 41.9255, -87.6400]]) { const [x, y] = mmXY(...ll(la, lo)); g.fillText(n, x - 70, y); }
   MM.base = c; const km = (LB.x1 - LB.x0); $("#mmscale").textContent = `${(km * 0.621).toFixed(1)} mi across`;
 }
+// ---------------------------------------------------------------- mini map, radar view: the region around Chicago (~120 x 180 km)
+// with the radar reflectivity for the timeline's time (scans, then the nowcast), where the echoes are heading, and the local area
+const MMR = { view: "auto", x0: -62, x1: 58, y0: -86, y1: 92, base: null, rc: null, key: "", comp: new WeakMap(), track: null };
+const DBZ_LUT = (() => { const t = new Uint8ClampedArray(256 * 4); for (let b = 0; b < 256; b++) { const dbz = b / 3 - 10; let c = null; for (const [lv, col] of DBZ_STOPS) if (dbz >= lv) c = col;   // the NWS colours, as the 3-D radar view
+  if (c) { const k = parseInt(c.slice(1), 16); t.set([k >> 16, (k >> 8) & 255, k & 255, dbz < 15 ? 150 : 225], b * 4); } } return t; })();
+function mmRadarOn() { if (MMR.view === "local") return false; if (MMR.view === "radar") return true;
+  return S.mode === "live" || S.mode === "forecast" || S.mode === "history" || (S.mode === "exp" && S.x.type !== "clear" && S.x.type !== "cumulus"); }
+const mmRXY = (x, y) => { const W = MM.el.width, H = MM.el.height; return [(x - MMR.x0) / (MMR.x1 - MMR.x0) * W, (MMR.y1 - y) / (MMR.y1 - MMR.y0) * H]; };
+function mmRadarBase() { const W = MM.el.width, H = MM.el.height, c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d"), img = g.createImageData(W, H);
+  // the lake from the satellite temperature grid's water cells (~1.4 km, the whole south basin); the rough outline outside it
+  const T = GRIDS.temp, tg = T && T.g, wetAt = (x, y) => { if (tg) { const fx = (x - T.min[0]) / T.size[0] * (T.n[0] - 1), fy = (y - T.min[1]) / T.size[1] * (T.n[1] - 1);
+      if (fx >= 0 && fy >= 0 && fx <= T.n[0] - 1 && fy <= T.n[1] - 1) { const i0 = Math.min(Math.floor(fx), T.n[0] - 2), j0 = Math.min(Math.floor(fy), T.n[1] - 2), u = fx - i0, v = fy - j0, w = (j, i) => tg.v[j * T.n[0] + i] != null ? 1 : 0;
+        return (w(j0, i0) * (1 - u) + w(j0, i0 + 1) * u) * (1 - v) + (w(j0 + 1, i0) * (1 - u) + w(j0 + 1, i0 + 1) * u) * v > 0.5; } }
+    return inLakeCoarse(x, y); };
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) { const x = MMR.x0 + (px + 0.5) / W * (MMR.x1 - MMR.x0), y = MMR.y1 - (py + 0.5) / H * (MMR.y1 - MMR.y0);
+    img.data.set(wetAt(x, y) ? [17, 42, 64, 255] : [46, 50, 53, 255], (py * W + px) * 4); }
+  g.putImageData(img, 0, 0); MMR.base = c; }
+// column maximum of a frame's reflectivity (what a radar map shows), cached per frame
+function composite(fr, grid) { let c = MMR.comp.get(fr); if (c) return c; const { nx, ny, nz } = grid; c = new Uint8Array(nx * ny);
+  for (let k = 0; k < nz; k++) { const o = k * nx * ny; for (let q = 0; q < nx * ny; q++) { const v = fr.dbz[o + q]; if (v > c[q]) c[q] = v; } } MMR.comp.set(fr, c); return c; }
+function compAt(c, grid, x, y) { const fx = (x - grid.x0_km) / grid.dx_km, fy = (y - grid.y0_km) / grid.dx_km, i = Math.floor(fx), j = Math.floor(fy);
+  if (i < 0 || j < 0 || i >= grid.nx - 1 || j >= grid.ny - 1) return 0; const u = fx - i, v = fy - j, n = grid.nx;
+  return (c[j * n + i] * (1 - u) + c[j * n + i + 1] * u) * (1 - v) + (c[(j + 1) * n + i] * (1 - u) + c[(j + 1) * n + i + 1] * u) * v; }
+function stormMotion() {   // km/min (x east, y north) of the echoes on show, or null
+  if (S.mode === "exp") { const mv = S.x.mdir * Math.PI / 180; return [Math.sin(mv) * S.x.mspd / 60, Math.cos(mv) * S.x.mspd / 60]; }
+  const src = S.mode === "history" ? (SRC.hist[S.histIdx] && SRC.hist[S.histIdx].scene) : SRC.live; return src && src.meta.motion_km_per_min ? src.meta.motion_km_per_min : null; }
+function mmRadarLayer() { const W = MM.el.width, H = MM.el.height, rs = RS;
+  const key = rs ? [rs.A.t, rs.B.t, Math.round(rs.f * 40), S.mode, S.mode === "exp" ? JSON.stringify(S.x) : ""].join("|") : "none|" + S.mode;
+  if (key === MMR.key && MMR.rc) return; MMR.key = key;
+  if (!MMR.rc) { MMR.rc = document.createElement("canvas"); MMR.rc.width = W; MMR.rc.height = H; }
+  const g = MMR.rc.getContext("2d"); g.clearRect(0, 0, W, H); MMR.track = null; if (!rs) return;
+  const cA = composite(rs.A, rs.grid), cB = composite(rs.B, rs.grid), img = g.createImageData(W, H), d = img.data;
+  let best = 0, bx = 0, by = 0;
+  for (let py = 0; py < H; py++) { const y = MMR.y1 - (py + 0.5) / H * (MMR.y1 - MMR.y0);
+    for (let px = 0; px < W; px++) { const x = MMR.x0 + (px + 0.5) / W * (MMR.x1 - MMR.x0);
+      const a = compAt(cA, rs.grid, x - rs.shiftA[0], y - rs.shiftA[1]), b = compAt(cB, rs.grid, x - rs.shiftB[0], y - rs.shiftB[1]);
+      const v = Math.round(a && b ? a + (b - a) * rs.f : rs.f < 0.5 ? a : b); if (v < 45) continue;   // < 5 dBZ: nothing drawn
+      const o = (py * W + px) * 4; d[o] = DBZ_LUT[v * 4]; d[o + 1] = DBZ_LUT[v * 4 + 1]; d[o + 2] = DBZ_LUT[v * 4 + 2]; d[o + 3] = DBZ_LUT[v * 4 + 3];
+      if (v > best) { best = v; bx = x; by = y; } } }
+  g.putImageData(img, 0, 0);
+  // the storm track: the strongest echo on the map (20 dBZ or more) and where the motion carries it over the next 2 hours
+  const m = stormMotion(); if (m && best >= 90 && Math.hypot(m[0], m[1]) > 0.02) MMR.track = { x: bx, y: by, m, dbz: Math.round(best / 3 - 10) };
+}
+function drawRadarMap() { const W = MM.el.width, H = MM.el.height, g = MM.el.getContext("2d"); if (!MMR.base) mmRadarBase();
+  g.drawImage(MMR.base, 0, 0); mmRadarLayer(); g.drawImage(MMR.rc, 0, 0);
+  g.font = "600 17px IBM Plex Sans Condensed, sans-serif"; g.textAlign = "left";
+  const lab = (txt, la, lo, dx = 8, dy = 6, col = "rgba(220,230,238,.85)") => { const [x, y] = mmRXY(...ll(la, lo)); g.fillStyle = col; g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill(); g.fillText(txt, x + dx, y + dy); };
+  lab("Chicago", 41.8781, -87.6298, -70, 22); lab("Evanston", 42.0451, -87.6877, -78, 6); lab("Gary", 41.5934, -87.3464, 8, 6); lab("Waukegan", 42.3636, -87.8448, 8, 6);
+  const rxy = SRC.live && SRC.live.meta.radar_xy_km; if (rxy) { const [x, y] = mmRXY(rxy[0], rxy[1]); g.strokeStyle = "rgba(220,230,238,.9)"; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 6, y); g.lineTo(x + 6, y); g.moveTo(x, y - 6); g.lineTo(x, y + 6); g.stroke(); g.fillStyle = "rgba(220,230,238,.8)"; g.fillText("KLOT radar", x + 8, y + 16); }
+  // the local area (what the 3-D world covers)
+  { const [a, b] = mmRXY(LB.x0, LB.y1), [c, e] = mmRXY(LB.x1, LB.y0); g.strokeStyle = "#f0b44c"; g.lineWidth = 2; g.strokeRect(a, b, c - a, e - b); }
+  const T = MMR.track;
+  if (T) { const pts = [0, 30, 60, 90, 120].map((mn) => mmRXY(T.x + T.m[0] * mn, T.y + T.m[1] * mn));
+    g.strokeStyle = "rgba(255,255,255,.9)"; g.lineWidth = 2.5; g.setLineDash([7, 5]); g.beginPath(); g.moveTo(...pts[0]); for (const q of pts.slice(1)) g.lineTo(...q); g.stroke(); g.setLineDash([]);
+    const [ex, ey] = pts[4], [px, py] = pts[3], an = Math.atan2(ey - py, ex - px); g.fillStyle = "#fff"; g.beginPath(); g.moveTo(ex + Math.cos(an) * 10, ey + Math.sin(an) * 10);
+    g.lineTo(ex + Math.cos(an + 2.5) * 10, ey + Math.sin(an + 2.5) * 10); g.lineTo(ex + Math.cos(an - 2.5) * 10, ey + Math.sin(an - 2.5) * 10); g.closePath(); g.fill();
+    g.font = "600 15px IBM Plex Sans Condensed, sans-serif";
+    pts.slice(1).forEach(([x, y], i) => { g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fill(); if (i % 2 === 1) { g.fillText(`+${(i + 1) / 2}h`, x + 7, y - 6); } });
+    g.strokeStyle = "#fff"; g.lineWidth = 2; g.beginPath(); g.arc(...pts[0], 7, 0, 7); g.stroke(); }
+  else { const m = stormMotion(); if (m && Math.hypot(m[0], m[1]) > 0.02) { const an = Math.atan2(-m[1], m[0]), cx = W - 34, cy = 34; g.strokeStyle = "rgba(220,230,238,.8)"; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(cx - Math.cos(an) * 14, cy - Math.sin(an) * 14); g.lineTo(cx + Math.cos(an) * 14, cy + Math.sin(an) * 14); g.stroke();
+    g.beginPath(); g.moveTo(cx + Math.cos(an) * 14, cy + Math.sin(an) * 14); g.lineTo(cx + Math.cos(an + 2.6) * 7 + Math.cos(an) * 14, cy + Math.sin(an + 2.6) * 7 + Math.sin(an) * 14); g.stroke(); } }
+  // you: the camera
+  const v = viewState(), [qx, qy] = mmRXY(camera.position.x, -camera.position.z); g.fillStyle = "#f0b44c"; g.strokeStyle = "#1b1305"; g.lineWidth = 2; g.beginPath(); g.arc(clamp(qx, 6, W - 6), clamp(qy, 6, H - 6), 6, 0, 7); g.fill(); g.stroke();
+  // status chip and caption
+  const st = $("#mmstat"), rs = RS; st.hidden = false;
+  if (!rs) { st.className = "mmstat"; st.textContent = S.mode === "forecast" ? "Beyond the radar forecast" : "No radar for this time"; }
+  else if (S.mode === "exp") { st.className = "mmstat exp"; st.textContent = "Your storm"; }
+  else if (S.mode === "history") { st.className = "mmstat hist"; st.textContent = `Radar ${fmtHM.format(new Date(rs.f < 0.5 ? rs.A.t : rs.B.t))}`; }
+  else if (rs.lead > 0) { st.className = "mmstat fc"; st.textContent = `Forecast +${rs.lead} min`; }
+  else { st.className = "mmstat"; st.textContent = `Radar ${fmtHM.format(new Date(rs.f < 0.5 ? rs.A.t : rs.B.t))}`; }
+  $("#mmscale").textContent = T ? `${T.dbz} dBZ → ${compass(Math.atan2(T.m[0], T.m[1]) * 180 / Math.PI)} ${mph(Math.hypot(T.m[0], T.m[1]) * 1000 / 60)} mph` : `${((MMR.x1 - MMR.x0) * 0.621).toFixed(0)} mi across`;
+}
 function drawMinimap() {
-  if (!MM.base) return; const g = MM.el.getContext("2d"); g.drawImage(MM.base, 0, 0);
+  if (!MM.base) return; const radar = mmRadarOn(); $("#mmview").textContent = radar ? "Local map" : "Radar map";
+  if (radar) { drawRadarMap(); return; }
+  $("#mmstat").hidden = true; $("#mmscale").textContent = `${((LB.x1 - LB.x0) * 0.621).toFixed(1)} mi across`;
+  const g = MM.el.getContext("2d"); g.drawImage(MM.base, 0, 0);
   const P = NAV.move === "paddle" ? { x: NAV.pad.x, y: NAV.pad.y, h: NAV.pad.yaw } : (() => { const v = viewState(); return { x: camera.position.x, y: -camera.position.z, h: v.hdg, tx: v.tx, ty: v.ty }; })();
   const [cx, cy] = mmXY(P.x, P.y), h = P.h * Math.PI / 180, L = 60;
   g.fillStyle = "rgba(240,180,76,.25)"; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.sin(h - 0.45) * L, cy - Math.cos(h - 0.45) * L); g.lineTo(cx + Math.sin(h + 0.45) * L, cy - Math.cos(h + 0.45) * L); g.closePath(); g.fill();
   g.fillStyle = "#f0b44c"; g.strokeStyle = "#1b1305"; g.lineWidth = 2; g.beginPath(); g.arc(clamp(cx, 6, MM.el.width - 6), clamp(cy, 6, MM.el.height - 6), 7, 0, 7); g.fill(); g.stroke();
   if (P.tx != null) { const [tx, ty] = mmXY(P.tx, P.ty); g.strokeStyle = "#fff"; g.lineWidth = 2; g.beginPath(); g.arc(tx, ty, 5, 0, 7); g.stroke(); }
 }
-MM.el.addEventListener("click", (ev) => { const r = MM.el.getBoundingClientRect(), x = LB.x0 + (ev.clientX - r.left) / r.width * (LB.x1 - LB.x0), y = LB.y1 - (ev.clientY - r.top) / r.height * (LB.y1 - LB.y0); hideHint();
+$("#mmview").onclick = () => { MMR.view = mmRadarOn() ? "local" : "radar"; drawMinimap(); };
+MM.el.addEventListener("click", (ev) => { const r = MM.el.getBoundingClientRect(); hideHint();
+  if (mmRadarOn()) { const x = MMR.x0 + (ev.clientX - r.left) / r.width * (MMR.x1 - MMR.x0), y = MMR.y1 - (ev.clientY - r.top) / r.height * (MMR.y1 - MMR.y0);
+    if (x > LB.x0 && x < LB.x1 && y > LB.y0 && y < LB.y1) { const v = viewState(); S.view = "free"; flyTo(x, y, clamp(v.dist, 0.15, 2.5), v.hdg, Math.max(v.pitch, 15)); } return; }
+  const x = LB.x0 + (ev.clientX - r.left) / r.width * (LB.x1 - LB.x0), y = LB.y1 - (ev.clientY - r.top) / r.height * (LB.y1 - LB.y0);
   if (NAV.move === "paddle") { if (maskAt(x, y) !== 0) { NAV.pad.x = x; NAV.pad.y = y; } return; }
   const v = viewState(); S.view = "free"; flyTo(x, y, clamp(v.dist, 0.15, 2.5), v.hdg, Math.max(v.pitch, 15)); });
 function toggleHelp() { $("#help").hidden = !$("#help").hidden; hideHint(); }
@@ -2097,7 +2187,22 @@ $("#hist-go").onclick = async () => {
     throw new Error("still building after 20 minutes; try again later");
   } catch (err) { note.textContent = `Couldn't build that period: ${err.message}`; } finally { btn.disabled = false; }
 };
-function buildTicks() { const [t0, t1] = range(), tk = $("#ticks"), span = t1 - t0, f = span > 6 * 3600e3 ? fmtDH : fmtHM; tk.innerHTML = "";
+// timeline: what's observed and what's forecast. Live: the last hour or so of radar scans (blue), then the radar nowcast carried
+// 2 h past the latest scan (purple), with now marked. Forecast: the radar's 2 h (purple), then the NWS-driven forecast (faint).
+function buildTicks() { const [t0, t1] = range(), tk = $("#ticks"), sg = $("#segs"), span = Math.max(t1 - t0, 1), f = span > 6 * 3600e3 ? fmtDH : fmtHM;
+  tk.innerHTML = ""; sg.innerHTML = ""; tk.classList.remove("abs"); const pc = (t) => clamp((t - t0) / span * 100, 0, 100);
+  const seg = (a, b, cls) => { if (b <= a) return; const i = document.createElement("i"); i.className = cls; i.style.left = `${pc(a)}%`; i.style.width = `${pc(b) - pc(a)}%`; sg.appendChild(i); };
+  const tick = (t, txt, cls) => { const s = document.createElement("span"); s.textContent = txt; const x = pc(t); s.style.left = `${x}%`; s.className = (cls || "") + (x < 8 ? " l" : x > 92 ? " r" : ""); tk.appendChild(s); return x; };
+  const L = SRC.live, H = S.mode === "history" ? SRC.hist[S.histIdx] : null;
+  if (S.mode === "live" && L && L.frames.length) { const lastObs = L.frames[L.nObs - 1].t, lastF = L.frames[L.frames.length - 1].t, lead = Math.round((lastF - lastObs) / 60000);
+    tk.classList.add("abs"); seg(t0, lastObs, "o"); seg(lastObs, lastF, "f");
+    const now = Date.now(); if (now > t0 && now < t1) { const b = document.createElement("b"); b.id = "segnow"; b.style.left = `${pc(now)}%`; sg.appendChild(b); }
+    const xs = [tick(t0, fmtHM.format(new Date(t0)))];
+    const xL = pc(lastObs); if (xL - xs[0] > 16) xs.push(tick(lastObs, `Latest scan ${fmtHM.format(new Date(lastObs))}`, "now"));
+    if (lead > 0 && pc(lastF) - xs[xs.length - 1] > 16) tick(lastF, `+${lead >= 90 ? Math.round(lead / 60) + " h" : lead + " min"} ${fmtHM.format(new Date(lastF))}`, "fct");
+    return; }
+  if (S.mode === "forecast" && L && L.frames.length) { const lastF = L.frames[L.frames.length - 1].t; seg(t0, lastF, "f"); seg(lastF, t1, "f2"); }
+  if (S.mode === "history" && H && H.scene && H.scene.frames.length) seg(H.scene.frames[0].t, H.scene.frames[H.scene.nObs - 1].t, "o");
   [t0, t0 + span / 2, t1].forEach((t) => { const s = document.createElement("span"); s.textContent = f.format(new Date(t)); tk.appendChild(s); }); }
 async function addHistory(raw) { const scene = raw.scene ? await decodeScene(raw.scene) : null; SRC.hist.push({ raw, scene });
   const sel = $("#hist-pick"), o = document.createElement("option"); o.value = String(SRC.hist.length - 1);
@@ -2240,6 +2345,7 @@ function updateHud(rr, tp) {
     el.className = "age" + (age > 75 ? " stale" : ""); } else $("#age").textContent = "";
   chip.textContent = { import: "From screenshot", live: S.follow ? "Live" : "Live · paused", forecast: `Forecast${S.t > t0 ? " +" + Math.round((S.t - t0) / 3600e3 * 10) / 10 + " h" : ""}`, history: "Historical", exp: "Experimental" }[S.mode];
   const sc = $("#scrub"); if (document.activeElement !== sc) sc.value = Math.round((S.t - t0) / Math.max(t1 - t0, 1) * 1000);
+  if (Date.now() - (MM.ticksAt || 0) > 60e3) { MM.ticksAt = Date.now(); buildTicks(); }   // live: the range grows with the clock; keep "now" and the ticks in place
   const tot = Math.sqrt(C.systems.reduce((a, q) => a + q.hs * q.hs, 0)), tpk = C.systems[0] ? C.systems[0].tp : 0;
   const wx = rr > 0.2 ? `${C.snow ? "snow" : "rain"} ${rr.toFixed(1)} mm/h` : U.uOvercast.value > 0.6 ? "overcast" : U.uOvercast.value > 0.25 ? "partly cloudy" : C.sun && C.sun.el < -6 ? "clear night" : "clear";
   const rows = [["Weather here", wx], ["Wind", `${mph(C.wind)} mph ${compass(C.dir)}${C.gust ? ` · gusts ${mph(C.gust)}` : ""}`], ["Waves", tot > 0.01 ? `${ft(tot)} ft · ${tpk.toFixed(1)} s` : "calm"],
