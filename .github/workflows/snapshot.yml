@@ -31,7 +31,22 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/storm"
           git fetch -q --depth 1 origin bathy 2>/dev/null && git show origin/bathy:bathy.json > "$RUNNER_TEMP/bathy.json" && export BATHY_PATH="$RUNNER_TEMP/bathy.json" || echo "no bathymetry yet"
+          git fetch -q --depth 1 origin learn 2>/dev/null && git show origin/learn:correction.json > "$RUNNER_TEMP/correction.json" && export LEARN_PATH="$RUNNER_TEMP/correction.json" || echo "no learned correction yet"
           python -m app.sup_waves --out "$RUNNER_TEMP/storm/sup.json"
+      - name: NOAA GLWU at the buoys (scorecard second opinion)
+        continue-on-error: true
+        timeout-minutes: 6
+        run: pip install -q eccodes && python -m app.glwu --out "$RUNNER_TEMP/glwu.json"
+      - name: Scorecard (log this forecast at the buoys, score past ones)
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tools/learn_branch.sh checkout "$RUNNER_TEMP/L"
+          python -m app.learn log --sup "$RUNNER_TEMP/storm/sup.json" --glwu "$RUNNER_TEMP/glwu.json" --dir "$RUNNER_TEMP/L"
+          python -m app.learn score --dir "$RUNNER_TEMP/L"
+          tools/learn_branch.sh push "$RUNNER_TEMP/L" "scorecard $(date -u +%Y-%m-%dT%H:%MZ)"
       - name: Lakefront map, lake temperature and stations
         continue-on-error: true
         env:
@@ -61,7 +76,8 @@ jobs:
           python tools/build_world.py --out "$OUT/world.html" --scene "$OUT/scene.json" --sup "$OUT/sup.json" --lakefront "$OUT/lakefront.json" \
             --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M"/funwave_*.json --validate "$M/validate.json" \
             --history "$M"/history-*.json --imports examples/*.json --split \
-            --start '{"mode":"import","view":[41.92,-87.61,6.5,285,40]}'
+            --learn "$RUNNER_TEMP/correction.json" --scorecard "$RUNNER_TEMP/L/scorecard.json" \
+            --start '{"mode":"import","view":[41.9203,-87.6195,1.58,284,34]}'
       - name: Publish to the snapshot branch
         env:
           OUT: ${{ runner.temp }}/storm

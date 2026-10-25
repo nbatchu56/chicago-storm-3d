@@ -566,7 +566,11 @@ def build(now=None, hours=48, get=http_get):
         raise RuntimeError("No wind observation or forecast for the current hour")
 
     # calibration against the wave buoy, if one is reporting: hindcast the sea at the buoy the same way
-    calib = 1.0
+    calib = calib_l = 1.0
+    from . import learn                                   # experimental learned correction (learn branch), if present
+    corr = learn.load_correction()
+    lfac = lambda s_, comps, what="hs": learn.factor(corr, s_["dir"], s_["u_wave"], swell_share(comps), what,  # noqa: E731
+                                                     m=math.sqrt(sum(c["hs"] ** 2 for c in comps))) if corr else 1.0
     if wave_now and wave_now["wvht"]:
         bt = fetch_table(wave_now["lat"], wave_now["lon"], 90)
         sea = SeaState()
@@ -575,6 +579,10 @@ def build(now=None, hours=48, get=http_get):
         hs_model = sea.total_hs()
         if hs_model > 0.1:
             calib = float(np.clip(wave_now["wvht"] / hs_model, 0.5, 2.0))
+            calib_l = float(np.clip(wave_now["wvht"] / (hs_model * lfac(series[i_now], sea.components())), 0.5, 2.0))
+    # the learned correction is worked out where it was learned (at the buoys, from the sea there) and carried to each
+    # spot from its nearer buoy, like the live buoy nudge: the regression's wind terms belong to the buoys' fetch
+    ratios = learned_ratios(series, lfac) if corr else {}
     hist_hours = sum(1 for k in range(0, i_now) if series[k]["wind"] is not None)
     if hist_hours < 6:
         sources["errors"].append(f"only {hist_hours} h of wind history: waves already on the lake may be underestimated")
@@ -592,14 +600,21 @@ def build(now=None, hours=48, get=http_get):
                 continue
             lead = k - i_now
             c_t = 1 + (calib - 1) * math.exp(-lead / 6.0)          # buoy correction fades over ~6 h
-            comps, pz = [], []
-            for c in sea.components():
-                hs_off = c["hs"] * c_t * shelter_factor(spot, c["dir"])
-                tp = c["tp"] * c_t ** (2 / 3)                        # growth laws: Tp ~ Hs^(2/3)
-                theta0 = angdiff(c["dir"], spot["normal"])
-                hs_pz, brk_depth, brk_dist, ang = nearshore(hs_off, tp, theta0, spot["id"])
-                comps.append({"kind": c["kind"], "hs_off": hs_off, "tp": tp, "dir": c["dir"], "hs": hs_pz,
-                              "ang": ang, "brk": (brk_depth, brk_dist), "left": c["kind"] == "swell" or c.get("left", False)})
+            c_tl = 1 + (calib_l - 1) * math.exp(-lead / 6.0)       # ... toward the learned model, when there is one
+            raw = sea.components()
+            fh, ft = ratios[nearest_buoy(spot["lat"], spot["lon"])][k] if corr else (1.0, 1.0)
+
+            def xform(cf, fh_=1.0, ft_=1.0):
+                out = []
+                for c in raw:
+                    hs_off = c["hs"] * fh_ * cf * shelter_factor(spot, c["dir"])
+                    tp = c["tp"] * ft_ * cf ** (2 / 3)                     # growth laws: Tp ~ Hs^(2/3)
+                    theta0 = angdiff(c["dir"], spot["normal"])
+                    hs_pz, brk_depth, brk_dist, ang = nearshore(hs_off, tp, theta0, spot["id"])
+                    out.append({"kind": c["kind"], "hs_off": hs_off, "tp": tp, "dir": c["dir"], "hs": hs_pz,
+                                "ang": ang, "brk": (brk_depth, brk_dist), "left": c["kind"] == "swell" or c.get("left", False)})
+                return out
+            comps = xform(c_t)
             chop, chop_tp, _ = cem_wave_growth(s_["wind"], 300.0, 1)      # last ~300 m of water
             hs_paddle = math.sqrt(sum(c["hs"] ** 2 for c in comps) + chop ** 2)
             hs_off_tot = math.sqrt(sum(c["hs_off"] ** 2 for c in comps))
@@ -625,7 +640,19 @@ def build(now=None, hours=48, get=http_get):
                                 "ang": None if c["ang"] is None else round(c["ang"], 1)} for c in comps if c["hs"] >= 0.01],
                 "nws_wave_m": s_["wave_nws"], "air_c": s_["temp"], "sky": s_["sky"], "pop": s_["pop"],
             })
+            if corr:                                                         # experimental: same hour with the learned correction
+                cl = xform(c_tl, fh, ft)
+                hp = math.sqrt(sum(c["hs"] ** 2 for c in cl) + chop ** 2)
+                dl = max(cl, key=lambda c: c["hs"], default=None)
+                lv, rs = rate(hp, s_["wind"], s_["gust"], offshore, theta_w)
+                hourly[-1]["learned"] = {
+                    "factor": round(fh, 3), "hs_offshore": round(math.sqrt(sum(c["hs_off"] ** 2 for c in cl)), 2), "hs_paddle": round(hp, 2),
+                    "tp": round(dl["tp"] if dl is not None and dl["hs"] > chop else chop_tp, 1), "rating": lv, "reasons": rs,
+                    "components": [{"kind": c["kind"], "hs": round(c["hs"], 3), "tp": round(c["tp"], 1), "dir": round(c["dir"]),
+                                    "ang": None if c["ang"] is None else round(c["ang"], 1)} for c in cl if c["hs"] >= 0.01]}
         spots_out.append({k: spot[k] for k in ("id", "name", "lat", "lon", "normal", "zone", "note")} | {"hourly": hourly})
+
+    buoy_fc = buoy_forecasts(series, i_now, calib, calib_l, corr, lfac, nws, get)
 
     marine = {}
     for zone in sorted({s["zone"] for s in SPOTS}):
@@ -642,8 +669,78 @@ def build(now=None, hours=48, get=http_get):
         "wind_now": {"speed": series[i_now]["wind"], "dir": series[i_now]["dir"], "gust": series[i_now]["gust"],
                      "source": sources["wind"] or "NWS forecast"},
         "water_temp": wtmp, "cold_water_c": COLD_WATER_C, "thresholds": SUP, "paddle_depth_m": PADDLE_DEPTH_M,
-        "marine": marine, "spots": spots_out,
+        "marine": marine, "spots": spots_out, "buoy_fc": buoy_fc,
+        "learned": None if not corr else {"generated": corr.get("generated"), "hours": corr.get("hours"), "calibration": round(calib_l, 2),
+                                          "improves": (corr.get("cv") or {}).get("improves")},
     }
+
+
+def nearest_buoy(lat, lon):
+    from . import learn
+    return min(learn.BUOYS, key=lambda b: (learn.BUOYS[b][0] - lat) ** 2 + ((learn.BUOYS[b][1] - lon) * 0.74) ** 2)
+
+
+def learned_ratios(series, lfac):
+    """Learned height and period factors, hour by hour, from the sea at each buoy."""
+    from . import learn
+    out = {}
+    for b, (la, lo) in learn.BUOYS.items():
+        table = fetch_table(la, lo, 90)
+        sea, r = SeaState(), []
+        for s_ in series:
+            sea.step(s_["u_wave"], s_["dir"], lambda d, t=table: interp_dir(t, d) * 1000)
+            comps = sea.components()
+            r.append((lfac(s_, comps), lfac(s_, comps, "tp")) if s_["dir"] is not None and s_["u_wave"] is not None else (1.0, 1.0))
+        out[b] = r
+    return out
+
+
+def swell_share(comps):
+    e = sum(c["hs"] ** 2 for c in comps)
+    return sum(c["hs"] ** 2 for c in comps if c["kind"] == "swell" or c.get("left")) / e if e > 0 else 0.0
+
+
+def buoy_forecasts(series, i_now, calib, calib_l, corr, lfac, nws, get):
+    """What this run forecasts at the wave buoys, hour by hour from now: the scorecard (app.learn) checks
+    these against what the buoys measure later."""
+    from . import learn
+    out = {}
+    for b, (la, lo) in learn.BUOYS.items():
+        table = fetch_table(la, lo, 90)
+        fetch = lambda d, t=table: interp_dir(t, d) * 1000  # noqa: E731
+        try:                                                   # the NWS wave grid at the buoy (else the lakefront grid's)
+            wave = fetch_nws(la, lo, get)["series"]["wave"]
+        except Exception:  # noqa: BLE001
+            wave = nws["series"].get("wave", {})
+        sea = SeaState()
+        d = {"t0": series[i_now]["t"].isoformat(), "raw": [], "tp_raw": [], "product": [], "nws": []}
+        if corr:
+            d.update(learned=[], tp_learned=[], product_learned=[])
+        for k, s_ in enumerate(series):
+            sea.step(s_["u_wave"], s_["dir"], fetch)
+            if k < i_now:
+                continue
+            lead = k - i_now
+            comps = sea.components()
+            hs = sea.total_hs()
+            dom = max(comps, key=lambda c: c["hs"], default=None)
+            tp = dom["tp"] if dom else 0.0
+            c_t = 1 + (calib - 1) * math.exp(-lead / 6.0)
+            d["raw"].append(round(hs, 3))
+            d["tp_raw"].append(round(tp, 2))
+            d["product"].append(round(hs * c_t, 3))
+            w = wave.get(s_["t"])
+            d["nws"].append(None if w is None else round(w, 2))
+            if corr:
+                f = lfac(s_, comps)
+                c_tl = 1 + (calib_l - 1) * math.exp(-lead / 6.0)
+                d["learned"].append(round(hs * f, 3))
+                d["tp_learned"].append(round(tp * lfac(s_, comps, "tp"), 2))
+                d["product_learned"].append(round(hs * f * c_tl, 3))
+        if not any(v is not None for v in d["nws"]):
+            del d["nws"]
+        out[b] = d
+    return out
 
 
 class SupForecaster:

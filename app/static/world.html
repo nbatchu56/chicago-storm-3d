@@ -23,6 +23,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
   text-shadow: 0 0 3px #000, 0 0 1px #000; box-shadow: 0 1px 6px rgba(0, 0, 0, .35); }
 .lbl::after { content: ""; position: absolute; left: 50%; bottom: 4px; width: 1px; height: 14px; background: linear-gradient(rgba(220,230,238,.75), rgba(220,230,238,.35)); }
 .lbl::before { content: ""; position: absolute; left: 50%; bottom: 0; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(9,15,21,.7), 0 0 6px rgba(240,180,76,.6); }
+.lbl.rental span { border-color: rgba(92, 200, 170, .55); } .lbl.rental::before { background: #5cc8aa; box-shadow: 0 0 0 2px rgba(9,15,21,.7), 0 0 6px rgba(92,200,170,.7); }
 .lbl.lake { padding-bottom: 0; } .lbl.lake span { font-family: var(--font-ui); font-style: italic; letter-spacing: .12em; text-transform: uppercase; color: #a9cde0; background: none; border: 0; box-shadow: none; text-shadow: 0 0 6px rgba(0,0,0,.9), 0 1px 2px #000; }
 .lbl.lake::after, .lbl.lake::before { display: none; }
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
@@ -49,6 +50,10 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .launches .strip { display: flex; gap: 2px; justify-content: flex-end; }
 .launches .strip i { width: 9px; height: 12px; border-radius: 2px; display: block; }
 .launches .note { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
+table.score { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+table.score th, table.score td { padding: 2px 4px; text-align: right; border-bottom: 1px solid var(--line); }
+table.score th { color: var(--muted); font-weight: 500; } table.score td:first-child, table.score th:first-child { text-align: left; }
+table.score td.best { color: var(--fg); font-weight: 600; } table.score td { color: var(--muted); }
 .readouts dd { margin: 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; }
 .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
 #controls { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); width: 286px;
@@ -127,7 +132,17 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #modeseg button { border: 0; border-radius: 0; padding: 8px 12px; font-size: 12.5px; }
 #minimap { position: absolute; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); padding: 6px; }
 #minimap canvas { display: block; width: 150px; height: 222px; border-radius: 3px; cursor: crosshair; }
-#minimap .cap { font: 10.5px var(--font-ui); color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; }
+#minimap .cap { font: 10.5px var(--font-ui); color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+#minimap { width: 162px; box-sizing: border-box; } #minimap .cap span { text-align: right; }
+#mmview { white-space: nowrap; flex: none; font: 600 10.5px var(--font-ui); color: var(--fg); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 3px; padding: 2px 6px; cursor: pointer; }
+#mmview:hover { border-color: var(--muted); }
+.mmstat { position: absolute; left: 12px; top: 12px; font: 600 10.5px var(--font-data); padding: 2px 6px; border-radius: 3px; background: rgba(9,15,21,.78); color: var(--obs); border: 1px solid rgba(92,200,232,.4); }
+.mmstat.fc { color: var(--fc); border-color: rgba(184,146,245,.45); } .mmstat.exp { color: var(--exp); border-color: rgba(240,138,108,.45); } .mmstat.hist { color: var(--hist); border-color: rgba(127,211,154,.45); }
+.segs { position: relative; height: 4px; border-radius: 2px; background: rgba(220,230,238,.08); margin-top: -2px; }
+.segs i { position: absolute; top: 0; bottom: 0; border-radius: 2px; } .segs i.o { background: var(--obs); opacity: .75; } .segs i.f { background: var(--fc); } .segs i.f2 { background: var(--fc); opacity: .3; }
+.segs b { position: absolute; top: -4px; width: 2px; height: 12px; margin-left: -1px; background: var(--fg); border-radius: 1px; }
+.ticks.abs { display: block; position: relative; height: 14px; } .ticks.abs span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.ticks.abs span.l { transform: none; } .ticks.abs span.r { transform: translateX(-100%); } .ticks span.now { color: var(--fg); } .ticks span.fct { color: var(--fc); }
 #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; bottom: calc(var(--gut) + 300px + env(safe-area-inset-bottom, 0px)) !important; }
 #help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 32px)); padding: 16px 18px; z-index: 5; }
 #help h2 { margin: 0 0 8px; font-size: 16px; }
@@ -189,7 +204,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
     </div>
     <div class="row2" style="display:flex;gap:6px"><button class="solo" data-nav="tilt" title="Top-down / back to angled (T)" aria-label="Toggle top-down view"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M5 12h14M12 5v14"/></svg></button><button class="solo" id="helpbtn" title="Controls help (?)" aria-label="Controls help">?</button></div>
   </div>
-  <div id="minimap" class="panel"><canvas id="mm" width="300" height="444" aria-label="Map: click to go there"></canvas><div class="cap"><span>Click to go there</span><span id="mmscale"></span></div></div>
+  <div id="minimap" class="panel"><canvas id="mm" width="300" height="444" aria-label="Map: click to go there"></canvas><div class="mmstat" id="mmstat" hidden></div><div class="cap"><button id="mmview" type="button" title="Switch between the radar map and the local map">Local map</button><span id="mmscale"></span></div></div>
   <div id="help" class="panel" hidden role="dialog" aria-label="Controls">
     <button class="x" id="helpx" aria-label="Close">×</button>
     <h2>Getting around</h2>
@@ -282,6 +297,12 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
       </div>
       <dl class="readouts" id="models"></dl>
       <p class="note" id="valnote"></p>
+      <div id="learn-box" hidden>
+        <label class="check"><input type="checkbox" id="learn-on"> Learned correction (experimental)</label>
+        <p class="note" id="learn-note"></p>
+        <table class="score" id="learn-score"></table>
+        <p class="note" id="learn-card"></p>
+      </div>
     </section>
     <section>
       <h2>Quality</h2>
@@ -293,7 +314,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
   <div id="attr"></div>
   <div id="timeline" class="panel">
     <button id="play" aria-label="Play"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="play-icon" d="M3 1.5v13l11-6.5z"/></svg></button>
-    <div class="track"><input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Time"><div class="ticks" id="ticks"></div></div>
+    <div class="track"><input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Time"><div class="segs" id="segs" aria-hidden="true"></div><div class="ticks" id="ticks"></div></div>
     <div class="speed"><label for="spd">Speed</label><select id="spd"><option value="0.4">Slow</option><option value="1" selected>Normal</option><option value="2.5">Fast</option></select></div>
   </div>
   <div id="msg" class="panel" hidden></div>
@@ -311,6 +332,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 <script id="swan-data" type="application/json"></script>
 <script id="funwave-data" type="application/json"></script>
 <script id="validate-data" type="application/json"></script>
+<script id="learn-data" type="application/json"></script>
 <script id="meta-data" type="application/json"></script>
 <script id="import-data" type="application/json"></script>
 <script>
@@ -351,14 +373,20 @@ const WATERWAYS = [
   ["Channel south of Diversey Harbor (east side)", 18, 1.2, [[41.92330, -87.63110], [41.92288, -87.63096], [41.92215, -87.63082], [41.92179, -87.63063]]],
   ["Channel south of Diversey Harbor", 26, 1.2, [[41.92438, -87.63175], [41.92368, -87.63150], [41.92294, -87.63118], [41.92221, -87.63072], [41.92172, -87.63048]]],
 ];
-const PLACES = [["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Theater on the Lake", 41.9262, -87.6318, 0.02], ["Diversey Harbor", 41.9300, -87.6342, 0.02], ["Chicago SUP launch", 41.9269, -87.6327, 0.01],
+const PLACES = [["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Theater on the Lake", 41.9262, -87.6318, 0.02], ["Diversey Harbor", 41.9300, -87.6342, 0.02],
   ["Lincoln Park", 41.9215, -87.6370, 0.02], ["Fullerton Ave", 41.9255, -87.6400, 0.015], ["Downtown", 41.8820, -87.6278, 0.25], ["Navy Pier", 41.8917, -87.6043, 0.03],
   ["Montrose Harbor", 41.9620, -87.6345, 0.03], ["Belmont Harbor", 41.9405, -87.6370, 0.03], ["Oak Street Beach", 41.9030, -87.6232, 0.02], ["Ohio Street Beach", 41.8935, -87.6135, 0.02],
-  ["Monroe Harbor", 41.8810, -87.6150, 0.03], ["Harrison-Dever Crib", 41.9160, -87.5720, 0.04]];
+  ["Monroe Harbor", 41.8810, -87.6150, 0.03], ["Harrison-Dever Crib", 41.9160, -87.5720, 0.04],
+  // launch containers (pins), from the Chicago SUP team's satellite pins (Oct 2026). Diversey: Google's coordinate for the
+  // container at the south end of the boat-launch lot, by the kayak/boat ramp (exact). North Ave (Chicago SUP's shop) and
+  // Montrose (Kayak Chicago): read off satellite screenshots registered to the map's breakwaters (~1 m fit), so within ~2 m.
+  ["Chicago SUP · Diversey Harbor", 41.926465, -87.632958, 0.01, "rental"], ["Chicago SUP · North Ave Beach", 41.91312, -87.62293, 0.01, "rental"],
+  ["Kayak Chicago · Montrose Beach", 41.96450, -87.63487, 0.01, "rental"]];
 // the local world: the Lake Michigan Water Trail from Monroe Harbor to Montrose, out past the Harrison-Dever crib
 const LB = (() => { const [x0, y0] = ll(41.870, -87.650), [x1, y1] = ll(41.970, -87.562); return { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; })();
 // camera presets: target (lat, lon), distance km, view heading (deg, compass), pitch (deg below horizontal)
 const GOTO = [
+  ["Lakefront view", 41.9203, -87.6195, 1.58, 284, 34],      // the opening view: North Ave Beach to Belmont Harbor
   ["Skyline view", 41.9200, -87.6100, 6.5, 285, 40],
   ["Montrose Harbor", 41.9615, -87.6310, 0.45, 250, 18],
   ["Belmont Harbor mouth", 41.9418, -87.6335, 0.32, 250, 16],
@@ -366,7 +394,10 @@ const GOTO = [
   ["Fullerton revetment", 41.9258, -87.6312, 0.28, 300, 14],
   ["Diversey Harbor mouth", 41.9322, -87.6318, 0.26, 245, 15],
   ["Inside the harbor", 41.9290, -87.6342, 0.20, 190, 22],
-  ["Chicago SUP launch", 41.9269, -87.6327, 0.18, 20, 20],
+  // launch quick views: from behind each container, looking out over the launch to the water
+  ["Chicago SUP · Diversey launch", 41.92654, -87.63285, 0.12, 51, 30],      // the ramp is ~25 m NE of the container
+  ["Chicago SUP · North Ave launch", 41.91337, -87.62279, 0.2, 28, 26],      // the beach in front of the shop, ~70 m to the water
+  ["Kayak Chicago · Montrose launch", 41.96540, -87.63487, 0.34, 15, 26],    // across Montrose Beach to the lake
   ["Out on the lake", 41.9220, -87.6150, 0.05, 265, 4],
   ["Oak St curve", 41.9010, -87.6215, 0.35, 230, 15],
   ["Ohio St / Navy Pier", 41.8930, -87.6110, 0.45, 250, 16],
@@ -414,7 +445,7 @@ function lunar(date, lat = 41.88, lon = -87.63) {
 const azElDir = (o, v) => { const a = o.az * Math.PI / 180, e = o.el * Math.PI / 180; return v.set(Math.sin(a) * Math.cos(e), Math.sin(e), -Math.cos(a) * Math.cos(e)).normalize(); };
 
 // ---------------------------------------------------------------- data
-const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
+const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), learn: parseJSON("learn-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
 { const h = parseJSON("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
 const S = { mode: "live", t: 0, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, view: "overview", histIdx: 0,
   x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, hour: 14, seed: 7 } };
@@ -437,6 +468,8 @@ const scene = new THREE.Scene();
 const rtScene = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType });
 rtScene.depthTexture = new THREE.DepthTexture(4, 4); rtScene.depthTexture.type = THREE.UnsignedIntType;
 const rtVol = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false });
+// glare: what is brighter than white (sun glitter, the sun) bleeds into its neighbours, as in a camera lens
+const rtBloomA = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false }), rtBloomB = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false });
 rtVol.texture.minFilter = rtVol.texture.magFilter = THREE.LinearFilter;
 const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), quadGeo = new THREE.PlaneGeometry(2, 2);
 // includes must sit on their own lines: three expands them line by line
@@ -526,10 +559,25 @@ float cloudDensity(vec3 pk, float raw) {
 const SKY_FN = `
 uniform vec3 uSunDir, uSunCol, uHor, uZen, uSunTrue, uMoonDir; uniform float uOvercast, uFlash, uNight, uCitySky, uTimeSky;
 float skyHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+// clear daytime sky: Preetham et al. (1999) analytic daylight (Rayleigh + Mie scattering), as in three.js Sky.js; scaled so
+// noon matches the page's exposure. Sunset reds, the bright band at the horizon and the haze around the sun come from it.
+float pskyHG(float c, float g) { float g2 = g * g; return 0.07957747 * (1.0 - g2) / pow(1.0 - 2.0 * g * c + g2, 1.5); }
+vec3 physSky(vec3 d, vec3 sd) {
+  const vec3 totR = vec3(5.804542996261093E-6, 1.3562911419845635E-5, 3.0265902468824876E-5), mieC = vec3(1.8399918514433978E14, 2.7798023919660528E14, 4.0790479543861094E14);
+  float zc = clamp(sd.y, -1.0, 1.0), sunE = 1000.0 * max(0.0, 1.0 - exp(-((1.6110731556870734 - acos(zc)) / 1.5)));
+  vec3 bR = totR * 2.0, bM = 0.434 * (0.2 * 3.0 * 10E-18) * mieC * 0.005;
+  float za = acos(max(0.0, d.y)), inv = 1.0 / (cos(za) + 0.15 * pow(93.885 - za * 57.29578, -1.253));
+  vec3 Fex = exp(-(bR * 8.4E3 * inv + bM * 1.25E3 * inv)); float ct = dot(d, sd);
+  vec3 base = sunE * ((bR * 0.0596831 * (1.0 + pow(ct * 0.5 + 0.5, 2.0)) + bM * pskyHG(ct, 0.8)) / (bR + bM));
+  vec3 Lin = pow(base * (1.0 - Fex), vec3(1.5)); Lin *= mix(vec3(1.0), pow(base * Fex, vec3(0.5)), clamp(pow(1.0 - sd.y, 5.0), 0.0, 1.0));
+  vec3 t = (Lin + 0.1 * Fex) * 0.04 + vec3(0.0, 0.0003, 0.00075); return pow(t, vec3(1.0 / 2.4)) * 0.33; }
 vec3 skyColor(vec3 d, bool sun) {
   float h = d.y; vec3 c = mix(uHor, uZen, pow(clamp(h, 0.0, 1.0), 0.45));
   if (h < 0.0) c = uHor * mix(0.75, 0.45, clamp(-h * 4.0, 0.0, 1.0));
-  float mu = max(dot(d, uSunDir), 0.0), sunUp = smoothstep(-0.05, 0.0, uSunTrue.y); c += uSunCol * pow(mu, 6.0) * 0.08 * sunUp;
+  // the physical sky by day; the tuned gradient keeps overcast, dusk into night, and night
+  float wP = smoothstep(-0.10, 0.03, uSunTrue.y) * (1.0 - 0.85 * uOvercast);
+  if (wP > 0.0) { vec3 ps = physSky(normalize(vec3(d.x, max(h, 0.0), d.z)), uSunTrue); if (h < 0.0) ps *= mix(0.75, 0.45, clamp(-h * 4.0, 0.0, 1.0)); c = mix(c, ps, wP); }
+  float mu = max(dot(d, uSunDir), 0.0), sunUp = smoothstep(-0.05, 0.0, uSunTrue.y); c += uSunCol * pow(mu, 6.0) * 0.08 * sunUp * (1.0 - wP);
   if (sun) c += uSunCol * smoothstep(0.99975, 0.99992, mu) * 8.0 * sunUp;
   // city light dome: the city lies west and south of the lakefront; low cloud bounces it back
   float west = 0.3 + 0.7 * smoothstep(0.3, -0.85, d.x + 0.25 * d.z);
@@ -1211,13 +1259,100 @@ function funwaveCrossKm(xk, yk) { const r = FW.cur; if (!r || !r.crossArr || !fw
 function funwaveHsKm(xk, yk) { const r = FW.cur; if (!r || !r.hsArr || !fwIn(r, xk, yk)) return null; const g = r.grid, i = Math.round((xk * 1000 - g.x0) / g.dx), j = Math.round((yk * 1000 - g.y0) / g.dx);
   if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) return null; return r.hsArr[j * g.nx + i] / 100; }
 
+// ---------------------------------------------------------------- spectral detail ocean (FFT, Tessendorf): the short waves
+// The 28 refracted components above carry the energetic part of the sea (they shoal, refract and break). Waves shorter
+// than ~half the peak wavelength come from a continuous wind-wave spectrum instead, synthesized on a 64 m tile by FFT
+// every frame: a random, never-repeating surface that disperses properly (long waves outrun short ones). Two grids:
+// 32x32 (2 m cells) for the geometry and 128x128 (0.5 m) for slopes and crest foam.
+const OCEAN = (() => {
+  const L = 64, NF = 128, NC = 32, g = 9.81, dk = 2 * Math.PI / L;
+  const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  function fftPlan(n) { const bits = Math.log2(n), rev = new Uint32Array(n), cs = new Float32Array(n / 2), sn = new Float32Array(n / 2);
+    for (let i = 0; i < n; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); rev[i] = r; }
+    for (let i = 0; i < n / 2; i++) { cs[i] = Math.cos(2 * Math.PI * i / n); sn[i] = Math.sin(2 * Math.PI * i / n); } return { n, rev, cs, sn }; }
+  // in-place inverse FFT (sign +, no 1/n) of n points at stride s starting at o
+  function ifft1(P, re, im, o, s) { const { n, rev, cs, sn } = P;
+    for (let i = 0; i < n; i++) { const j = rev[i]; if (j > i) { const a = o + i * s, b = o + j * s; let t = re[a]; re[a] = re[b]; re[b] = t; t = im[a]; im[a] = im[b]; im[b] = t; } }
+    for (let size = 2; size <= n; size <<= 1) { const half = size >> 1, step = n / size;
+      for (let st = 0; st < n; st += size) for (let k = 0; k < half; k++) { const wr = cs[k * step], wi = sn[k * step], a = o + (st + k) * s, b = a + half * s;
+        const xr = re[b] * wr - im[b] * wi, xi = re[b] * wi + im[b] * wr; re[b] = re[a] - xr; im[b] = im[a] - xi; re[a] += xr; im[a] += xi; } } }
+  function ifft2(P, re, im) { const n = P.n; for (let r = 0; r < n; r++) ifft1(P, re, im, r * n, 1); for (let c = 0; c < n; c++) ifft1(P, re, im, c, n); }
+  // fast float -> half (for HalfFloat textures, which filter everywhere WebGL2 runs)
+  const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
+  const toHalf = (v) => { f32[0] = v; const x = u32[0], s = (x >>> 16) & 0x8000, e = ((x >>> 23) & 0xff) - 112, m = x & 0x7fffff;
+    if (e <= 0) return s; if (e >= 31) return s | 0x7bff; return s | (e << 10) | (m >>> 13); };
+  function grid(n) { const P = fftPlan(n), N2 = n * n;
+    return { n, P, h0r: new Float32Array(N2), h0i: new Float32Array(N2), w: new Float32Array(N2), kx: new Float32Array(N2), kz: new Float32Array(N2),
+      bufs: [0, 1, 2, 3].map(() => [new Float32Array(N2), new Float32Array(N2)]) }; }
+  const F = grid(NF), C = grid(NC);
+  const mk = (n) => { const t = new THREE.DataTexture(new Uint16Array(n * n * 4), n, n, THREE.RGBAFormat, THREE.HalfFloatType);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.minFilter = t.magFilter = THREE.LinearFilter; t.needsUpdate = true; return t; };
+  const texC = mk(NC), texF = mk(NF), heightC = new Float32Array(NC * NC);
+  const st = { on: false, t: -1, varLo: 0, varHi: 0, rmsH: 0, key: "" };
+  let seed = 1; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const gauss = () => { const u = Math.max(rnd(), 1e-9), v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  // wind-wave spectrum (Pierson-Moskowitz shape for this wind, cos^2 spreading about the wind) above omegaCut, tapered in
+  function setSea(wind, windTo, wpMain) {
+    const U = Math.max(wind, 0), key = [U.toFixed(1), windTo[0].toFixed(2), windTo[1].toFixed(2), wpMain.toFixed(2)].join();
+    if (key === st.key) return; st.key = key;
+    const wWind = 0.877 * g / Math.max(U, 0.3), wCut = 2.3 * wpMain, gate = clamp((U - 0.4) / 2.6, 0, 1), alpha = 0.0081;
+    const spec = (kx, kz) => { const k = Math.hypot(kx, kz); if (k < 1e-6) return 0; const w = Math.sqrt(g * k);
+      const S = alpha * g * g / Math.pow(w, 5) * Math.exp(-1.25 * Math.pow(wWind / w, 4)) * smooth(0.85 * wCut, 1.15 * wCut, w);
+      const c = (kx * windTo[0] + kz * windTo[1]) / k, D = c > 0 ? (2 / Math.PI) * c * c * 0.92 + 0.08 / (2 * Math.PI) : 0.08 / (2 * Math.PI);
+      return S * D * (g / (2 * w)) / k * gate; };   // E(kx, kz) = S(w) D(theta) (dw/dk) / k
+    let vLo = 0, vHi = 0; seed = 1;
+    for (const G of [F, C]) { const n = G.n;
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const q = j * n + i, mi = i < n / 2 ? i : i - n, mj = j < n / 2 ? j : j - n;
+        const kx = mi * dk, kz = mj * dk, E = spec(kx, kz), amp = Math.sqrt(E * dk * dk) / 2;
+        G.kx[q] = kx; G.kz[q] = kz; G.w[q] = Math.sqrt(g * Math.hypot(kx, kz)); G.h0r[q] = gauss() * amp; G.h0i[q] = gauss() * amp;
+        if (G === F) { const kk = kx * kx + kz * kz; if (Math.abs(mi) < NC / 2 && Math.abs(mj) < NC / 2) vLo += E * dk * dk * kk; else vHi += E * dk * dk * kk; } } }
+    // the coarse grid uses the same modes as the fine one (same random draws for |k| inside it), so near and far agree
+    for (let j = 0; j < NC; j++) for (let i = 0; i < NC; i++) { const mi = i < NC / 2 ? i : i - NC, mj = j < NC / 2 ? j : j - NC, qf = ((mj + NF) % NF) * NF + ((mi + NF) % NF), qc = j * NC + i;
+      C.h0r[qc] = F.h0r[qf]; C.h0i[qc] = F.h0i[qf]; }
+    st.varLo = vLo; st.varHi = vHi; st.on = gate > 0;
+  }
+  // spectra at time t -> fields; two real fields share one complex IFFT (A + iB): coarse (h, Dx) (Dz, -); fine (Sx, Sz) (Jxx, Jzz) (Jxz, -)
+  // multipliers on h(k): -i k/|k| (horizontal displacement), i k (slope), k k/|k| (Jacobian terms)
+  function synth(G, t, fine) { const n = G.n, N2 = n * n, b0r = G.bufs[0][0], b0i = G.bufs[0][1], b1r = G.bufs[1][0], b1i = G.bufs[1][1], b2r = G.bufs[2][0], b2i = G.bufs[2][1];
+    const h0r = G.h0r, h0i = G.h0i, W = G.w, KX = G.kx, KZ = G.kz;
+    for (let q = 0; q < N2; q++) { const mi = q % n, mj = (q / n) | 0, qn = ((n - mj) % n) * n + ((n - mi) % n);
+      const c = Math.cos(W[q] * t), s = Math.sin(W[q] * t);
+      // h(k,t) = h0(k) e^{-iwt} + conj(h0(-k)) e^{iwt}
+      const hr = (h0r[q] + h0r[qn]) * c + (h0i[q] + h0i[qn]) * s, hi = (h0i[q] - h0i[qn]) * c - (h0r[q] - h0r[qn]) * s;
+      const kx = KX[q], kz = KZ[q], ik = 1 / Math.max(Math.sqrt(kx * kx + kz * kz), 1e-6);
+      if (!fine) { const ux = kx * ik, uz = kz * ik;      // A = h, B = Dx = (ux hi, -ux hr); A = Dz
+        b0r[q] = hr + ux * hr; b0i[q] = hi + ux * hi; b1r[q] = uz * hi; b1i[q] = -uz * hr; }
+      else { // A = Sx = (-kx hi, kx hr), B = Sz = (-kz hi, kz hr): A + iB = (-kx hi - kz hr, kx hr - kz hi)
+        b0r[q] = -kx * hi - kz * hr; b0i[q] = kx * hr - kz * hi;
+        const axx = kx * kx * ik, azz = kz * kz * ik, axz = kx * kz * ik;
+        b1r[q] = axx * hr - azz * hi; b1i[q] = axx * hi + azz * hr; b2r[q] = axz * hr; b2i[q] = axz * hi; } }
+    ifft2(G.P, b0r, b0i); ifft2(G.P, b1r, b1i); if (fine) ifft2(G.P, b2r, b2i); }
+  function update(t, chop) {
+    if (!st.on) return;
+    if (Math.abs(t - st.t) < 1 / 30) return; st.t = t;          // 30 updates a second (~5 ms each)
+    synth(C, t, false); synth(F, t, true);
+    { const d = texC.image.data, b = C.bufs; let s2 = 0;
+      for (let q = 0; q < NC * NC; q++) { const h = b[0][0][q]; heightC[q] = h; s2 += h * h;
+        d[4 * q] = toHalf(-chop * b[0][1][q]); d[4 * q + 1] = toHalf(h); d[4 * q + 2] = toHalf(-chop * b[1][0][q]); d[4 * q + 3] = 0; }
+      st.rmsH = Math.sqrt(s2 / (NC * NC)); texC.needsUpdate = true; }
+    { const d = texF.image.data, b = F.bufs;
+      for (let q = 0; q < NF * NF; q++) { const jxx = -chop * b[1][0][q], jzz = -chop * b[1][1][q], jxz = -chop * b[2][0][q];
+        d[4 * q] = toHalf(b[0][0][q]); d[4 * q + 1] = toHalf(b[0][1][q]); d[4 * q + 2] = toHalf((1 + jxx) * (1 + jzz) - jxz * jxz); d[4 * q + 3] = 0; }
+      texF.needsUpdate = true; } }
+  // height of the detail sea at (x east, z south) metres, for the board
+  function heightAt(x, z) { if (!st.on) return 0; const u = ((x / L) % 1 + 1) % 1 * NC, v = ((z / L) % 1 + 1) % 1 * NC, i0 = Math.floor(u), j0 = Math.floor(v), fu = u - i0, fv = v - j0;
+    const at = (i, j) => heightC[(j % NC) * NC + (i % NC)]; return (at(i0, j0) * (1 - fu) + at(i0 + 1, j0) * fu) * (1 - fv) + (at(i0, j0 + 1) * (1 - fu) + at(i0 + 1, j0 + 1) * fu) * fv; }
+  return { L, NF, NC, texC, texF, setSea, update, heightAt, st, _F: F, _C: C };
+})();
+
 // ---------------------------------------------------------------- near-camera wave patch (metres inside): refraction + shoaling per wave
 const NW = 28, TABW = 256, DMAX = 1500;
 const tabData = new Float32Array(TABW * NW * 4), tabTex = new THREE.DataTexture(tabData, TABW, NW, THREE.RGBAFormat, THREE.FloatType);
 tabTex.minFilter = tabTex.magFilter = THREE.NearestFilter; tabTex.needsUpdate = true;
 const WU = { uA: { value: new Float32Array(NW) }, uKy: { value: new Float32Array(NW) }, uW: { value: new Float32Array(NW) }, uP: { value: new Float32Array(NW) }, uQ: { value: 0.5 },
   uTab: { value: tabTex }, uShoreN2: { value: new THREE.Vector2(1, 0) }, uShoreD2: { value: 165 }, uPatchRel: { value: new THREE.Vector2() }, uHsB: { value: 0.3 },
-  uWindDir2: { value: new THREE.Vector2(1, 0) }, uGust: { value: 0.3 }, uPatchR: { value: 330 } };
+  uWindDir2: { value: new THREE.Vector2(1, 0) }, uGust: { value: 0.3 }, uPatchR: { value: 330 },
+  uOcC: { value: OCEAN.texC }, uOcF: { value: OCEAN.texF }, uOcL: { value: OCEAN.L }, uOcOn: { value: 0 }, uOcVarLo: { value: 0 }, uOcVarHi: { value: 0 } };
 Object.assign(WU, U);
 const WAVE = `
 #define N ${NW}
@@ -1240,7 +1375,8 @@ float fwEta(vec2 pk) { vec2 f = clamp((pk - uFwMin) / uFwSize, 0.0, 1.0); return
 const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, extensions: { derivatives: true },
   vertexShader: `${LOGV[0]} ${WAVE} ${TEMP_GLSL} ${FW_GLSL}
     uniform sampler2D uMapMask; uniform vec2 uMapMin, uMapSize; uniform float uHasMap; uniform float uPatchR;
-    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw;
+    uniform sampler2D uOcC; uniform float uOcL, uOcOn;
+    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD;
     void main() {
       vec2 loc = position.xz; vec2 p = loc + uPatchRel;
       vec4 wk = modelMatrix * vec4(position, 1.0); vec2 pk = vec2(wk.x, -wk.z);
@@ -1259,13 +1395,17 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
         float q = min(uQ, 1.0 / max(kk * a * float(N), 1e-4)); disp += vec3(q * a * dir.x * cos(th), a * sin(th), q * a * dir.y * cos(th)); }
       float fw = fwWeight(pk); vFw = fw;
       if (fw > 0.0) disp = mix(disp, vec3(0.0, fwEta(pk), 0.0), fw);
+      // short wind waves from the spectral tile: everywhere the wind reaches (less in the harbours), fading out on the beach
+      float gD = uOcOn * (cls < 0.5 ? 0.0 : cls > 1.5 ? 0.55 : 1.0) * smoothstep(0.05, 0.6, dep); vGD = gD;
+      if (gD > 0.0) disp += texture(uOcC, p / uOcL).xyz * gD;
       vec3 local = vec3(loc.x + disp.x, disp.y, loc.y + disp.z);
       vec4 w = modelMatrix * vec4(local, 1.0); vW = w.xyz; vGain = lim; vSw = sw; vDep = dep; vLim = clamp(0.62 * max(dep, 0.0) / max(uHsB * (sw > 0.5 ? G : 1.0), 0.02), 0.0, 1.0); vP = p; vEdge = 1.0 - smoothstep(uPatchR * 0.75, uPatchR, max(abs(loc.x), abs(loc.y)));
       gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
   fragmentShader: `${LOGF[0]} ${WAVE} ${SKY_FN} ${TEMP_GLSL} ${FW_GLSL}
     uniform vec3 uCamPos, uAmbTop, uAmbBot; uniform float uWindSpd, uCity, uGust, uTempOn; uniform vec2 uWindDir2;
     uniform sampler2D uMapMask, uMapLooks; uniform vec2 uMapMin, uMapSize; uniform float uHasMap;
-    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw;
+    uniform sampler2D uOcC, uOcF; uniform float uOcL, uOcOn, uOcVarLo, uOcVarHi;
+    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
     void main() {
@@ -1283,7 +1423,18 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       if (vFw > 0.0) { float ek = 0.0015, e0 = fwEta(pk), ex = fwEta(pk + vec2(ek, 0.0)), en = fwEta(pk + vec2(0.0, ek));
         vec2 gfw = vec2(ex - e0, -(en - e0)) / 1.5; grad = mix(grad, gfw, vFw); fwSteep = length(gfw); steep = mix(steep, fwSteep * 1.6, vFw); }
       vec2 gq = p / 45.0 - uWindDir2 * uTime * max(uWindSpd, 1.0) * 1.2 / 45.0; float gust = smoothstep(0.45, 0.85, noise(gq) * 0.65 + noise(gq * 2.3 + 7.1) * 0.35) * uGust;
-      vec2 o = uWindDir2 * uTime * 0.6; float e = 0.03, rs = (0.01 + 0.006 * uWindSpd) * (1.0 + 1.6 * gust) * clamp(1.0 - foot * 6.0, 0.0, 1.0) * max(vLim, 0.2);
+      // spectral short waves: 0.5 m slopes up close, 2 m geometry further out, a 2.7x finer rotated copy for ripples; what
+      // the pixel can't resolve goes into the sun glitter's roughness
+      float crest = 1.0, wfF = 0.0, wfC = 0.0;
+      if (vGD > 0.0) { vec2 uv = p / uOcL; wfF = clamp(1.0 - foot / 0.45, 0.0, 1.0); wfC = clamp(1.0 - foot / 2.5, 0.0, 1.0);
+        vec4 tf = texture2D(uOcF, uv); float eC = 1.0 / 32.0;
+        vec2 sC = vec2(texture2D(uOcC, uv + vec2(eC, 0.0)).y - texture2D(uOcC, uv - vec2(eC, 0.0)).y, texture2D(uOcC, uv + vec2(0.0, eC)).y - texture2D(uOcC, uv - vec2(0.0, eC)).y) / (2.0 * eC * uOcL);
+        vec2 uv2 = mat2(0.799, 0.602, -0.602, 0.799) * uv * 2.71 + 0.37; float wf2 = clamp(1.0 - foot * 2.71 / 0.45, 0.0, 1.0);
+        vec2 sD = mix(sC * wfC, tf.xy, wfF) + texture2D(uOcF, uv2).xy * 0.35 * wf2;
+        grad += sD * vGD * (1.0 + 0.8 * gust);
+        unres += (uOcVarHi * (1.0 - wfF) + uOcVarLo * (1.0 - wfC)) * vGD * vGD;
+        crest = mix(1.0, tf.z, wfF); }
+      vec2 o = uWindDir2 * uTime * 0.6; float e = 0.03, rs = (0.01 + 0.006 * uWindSpd) * (1.0 + 1.6 * gust) * clamp(1.0 - foot * 6.0, 0.0, 1.0) * max(vLim, 0.2) * (vGD > 0.0 ? 0.35 : 1.0);
       float n0 = noise(p * 4.0 - o * 4.0), nx = noise((p + vec2(e, 0.0)) * 4.0 - o * 4.0), nz = noise((p + vec2(0.0, e)) * 4.0 - o * 4.0); grad += vec2(nx - n0, nz - n0) / e * rs;
       vec3 Nn = normalize(vec3(-grad.x, 1.0, -grad.y)); float F = 0.02 + 0.98 * pow(1.0 - max(dot(Nn, V), 0.0), 5.0);
       vec3 R = reflect(-V, Nn); R.y = abs(R.y); float sunUp = smoothstep(-0.05, 0.08, uSunDir.y);
@@ -1300,7 +1451,11 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       vec3 Hv = normalize(uSunDir + V); float rough = 0.05 + 0.008 * uWindSpd + sqrt(unres);
       c += uSunCol * pow(max(dot(Nn, Hv), 0.0), 2.0 / (rough * rough)) / (1.0 + rough * 20.0) * sunUp * (1.0 - 0.8 * uOvercast) * 0.6;
       float W = clamp(3.84e-6 * pow(uWindSpd * (1.0 + 0.5 * gust), 3.41), 0.0, 0.25);
-      float wc = smoothstep(1.0 - 3.0 * W, 1.0 - 1.5 * W, smoothstep(0.08, 0.3, steep) * noise(p * 1.3 + uTime * 0.3)) * step(0.002, W);
+      // whitecaps: on the steep faces of the big waves, broken up by where the short waves bunch (their Jacobian), plus
+      // the short-wave crests themselves breaking in a fresh wind
+      float brk = mix(noise(p * 1.3 + uTime * 0.3), 0.3 + 0.7 * smoothstep(1.0, 0.8, crest), wfF);
+      float wc = smoothstep(1.0 - 3.0 * W, 1.0 - 1.5 * W, smoothstep(0.08, 0.3, steep) * brk) * step(0.002, W);
+      wc = max(wc, smoothstep(0.78, 0.55, crest) * clamp((uWindSpd - 6.0) / 6.0, 0.0, 1.0) * 0.8);
       float surf = (1.0 - vLim) * step(0.05, vLim) * smoothstep(0.03, 0.15, uHsB) * (0.5 + 0.5 * noise(p * 0.8 - uTime * 0.5));
       surf = mix(surf, smoothstep(0.18, 0.32, fwSteep) * (0.6 + 0.4 * noise(p * 1.1 - uTime * 0.7)), vFw);
       c = mix(c, (sunL + amb * 2.2) * 0.75, clamp(max(wc, surf), 0.0, 1.0) * 0.85);
@@ -1348,6 +1503,10 @@ function setWaves(systems, shoreFrame, dRef, wind) {
   WU.uShoreN2.value.set(nx, nz); WU.uShoreD2.value = dRef; WU.uHsB.value = Math.sqrt(sys.reduce((a, c) => a + c.hs * c.hs, 0));
   WU.uQ.value = Math.min(0.8, 0.3 + WU.uHsB.value * 0.6);
   const wp = (wind.dir + 180) * Math.PI / 180; WU.uWindDir2.value.set(Math.sin(wp), -Math.cos(wp));
+  // short-wave spectrum above the components' band (they reach ~2.3x the main peak frequency)
+  const main = sys.filter((c) => c.spread < 50).sort((a, b) => b.hs - a.hs)[0];     // not the local chop (spread 50): it is a few components only
+  OCEAN.setSea(wind.speed || 0, [Math.sin(wp), -Math.cos(wp)], main ? 2 * Math.PI / main.tp : 0);
+  WU.uOcOn.value = OCEAN.st.on ? 1 : 0; WU.uOcVarLo.value = OCEAN.st.varLo; WU.uOcVarHi.value = OCEAN.st.varHi;
   WU.uGust.value = wind.gust && wind.speed > 0.5 ? clamp((wind.gust / wind.speed - 1.1) * 1.6, 0, 1) : 0.3;
   WAVES.ready = true;
 }
@@ -1359,6 +1518,7 @@ function heightAtM(xm, zm) {   // metres relative to the wave origin (x east, z 
   for (let i = 0; i < NW; i++) { const x = clamp(Math.max(dO, 0), 0, DMAX) / step, i0 = Math.min(Math.floor(x), TABW - 2), f = x - i0, o0 = (i * TABW + i0) * 4, o1 = o0 + 4;
     const P = tabData[o0] * (1 - f) + tabData[o1] * f, A = tabData[o0 + 1] * (1 - f) + tabData[o1 + 1] * f;
     y += WU.uA.value[i] * (sw ? 1 : A) * lim * Math.sin(WU.uKy.value[i] * sAl - P - WU.uW.value[i] * U.uTime.value + WU.uP.value[i]); }
+  if (WU.uOcOn.value > 0 && dHere != null && dHere > 0.3) y += OCEAN.heightAt(xm, zm) * clamp((dHere - 0.05) / 0.55, 0, 1);
   return y;
 }
 
@@ -1497,10 +1657,33 @@ void main(){
   gl_FragColor = vec4(L, T);
 }` });
 const volScene = new THREE.Scene(); { const q = new THREE.Mesh(quadGeo, volMat); q.frustumCulled = false; volScene.add(q); }
-const compMat = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false, uniforms: { tScene: { value: rtScene.texture }, tVol: { value: rtVol.texture }, uExp: { value: 1 } },
-  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
-  fragmentShader: `uniform sampler2D tScene, tVol; uniform float uExp; varying vec2 vUv; vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
-    void main(){ vec3 s = texture2D(tScene, vUv).rgb; vec4 v = texture2D(tVol, vUv); vec3 c = aces((s * v.a + v.rgb) * uExp); c = pow(c, vec3(1.0/2.2)); c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233))) * 43758.5453) - 0.5) / 255.0; gl_FragColor = vec4(c, 1.0); }` });
+const QV = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+// bloom: a quarter-size bright pass (soft knee above white), then a separable blur, twice
+const brightMat = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false, uniforms: { tSrc: { value: rtScene.texture }, uTexel: { value: new THREE.Vector2() }, uExp: { value: 1 } }, vertexShader: QV,
+  fragmentShader: `uniform sampler2D tSrc; uniform vec2 uTexel; uniform float uExp; varying vec2 vUv;
+    void main(){ vec3 c = (texture2D(tSrc, vUv + uTexel * vec2(-1.0, -1.0)).rgb + texture2D(tSrc, vUv + uTexel * vec2(1.0, -1.0)).rgb + texture2D(tSrc, vUv + uTexel * vec2(-1.0, 1.0)).rgb + texture2D(tSrc, vUv + uTexel * vec2(1.0, 1.0)).rgb) * 0.25 * uExp;
+      float br = max(c.r, max(c.g, c.b)), k = clamp(br - 0.8, 0.0, 0.6); k = k * k / 2.4; float w = max(k, br - 1.4) / max(br, 1e-4);
+      gl_FragColor = vec4(min(c * w, vec3(30.0)), 1.0); }` });
+const blurMat = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false, uniforms: { tSrc: { value: null }, uDir: { value: new THREE.Vector2() } }, vertexShader: QV,
+  fragmentShader: `uniform sampler2D tSrc; uniform vec2 uDir; varying vec2 vUv;
+    void main(){ vec3 c = texture2D(tSrc, vUv).rgb * 0.2270; c += (texture2D(tSrc, vUv + uDir * 1.3846).rgb + texture2D(tSrc, vUv - uDir * 1.3846).rgb) * 0.3162;
+      c += (texture2D(tSrc, vUv + uDir * 3.2308).rgb + texture2D(tSrc, vUv - uDir * 3.2308).rgb) * 0.0703; gl_FragColor = vec4(c, 1.0); }` });
+const fxScene = new THREE.Scene(), fxQuad = new THREE.Mesh(quadGeo, brightMat); fxQuad.frustumCulled = false; fxScene.add(fxQuad);
+function renderBloom() { const w = rtBloomA.width, h = rtBloomA.height;
+  fxQuad.material = brightMat; brightMat.uniforms.uTexel.value.set(1 / rtScene.width, 1 / rtScene.height); brightMat.uniforms.uExp.value = compMat.uniforms.uExp.value;
+  renderer.setRenderTarget(rtBloomA); renderer.render(fxScene, quadCam); fxQuad.material = blurMat;
+  for (let it = 0; it < 2; it++) { const r = 1 + it;
+    blurMat.uniforms.tSrc.value = rtBloomA.texture; blurMat.uniforms.uDir.value.set(r / w, 0); renderer.setRenderTarget(rtBloomB); renderer.render(fxScene, quadCam);
+    blurMat.uniforms.tSrc.value = rtBloomB.texture; blurMat.uniforms.uDir.value.set(0, r / h); renderer.setRenderTarget(rtBloomA); renderer.render(fxScene, quadCam); } }
+const compMat = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false, uniforms: { tScene: { value: rtScene.texture }, tVol: { value: rtVol.texture }, tBloom: { value: rtBloomA.texture }, uExp: { value: 1 }, uBloom: { value: 0.55 } },
+  vertexShader: QV,
+  fragmentShader: `uniform sampler2D tScene, tVol, tBloom; uniform float uExp, uBloom; varying vec2 vUv; vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
+    void main(){ vec3 s = texture2D(tScene, vUv).rgb; vec4 v = texture2D(tVol, vUv); vec3 c = (s * v.a + v.rgb) * uExp + texture2D(tBloom, vUv).rgb * uBloom * v.a;
+      c = aces(c);
+      // a light grade: a touch more colour, and the corners a little darker, like a lens
+      float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = max(mix(vec3(l), c, 1.07), 0.0);
+      vec2 q = vUv - 0.5; c *= 1.0 - 0.16 * smoothstep(0.3, 0.85, length(q * vec2(1.25, 1.0)));
+      c = pow(c, vec3(1.0/2.2)); c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233))) * 43758.5453) - 0.5) / 255.0; gl_FragColor = vec4(c, 1.0); }` });
 const compScene = new THREE.Scene(); { const q = new THREE.Mesh(quadGeo, compMat); q.frustumCulled = false; compScene.add(q); }
 
 // ---------------------------------------------------------------- radar frames: decode a scene file
@@ -1584,7 +1767,8 @@ function synthFrame(params, tMin) {
 const SRC = { live: null, hist: [] };
 const supSpots = () => (DATA.sup && DATA.sup.spots) || [];
 function nearestSpot(xk, yk) { let best = null, bd = 1e9; for (const s of supSpots()) { const [x, y] = ll(s.lat, s.lon), d = (x - xk) ** 2 + (y - yk) ** 2; if (d < bd) { bd = d; best = s; } } return best; }
-function supHour(spot, tMs) { if (!spot || !spot.hourly.length) return null; const t0 = new Date(spot.hourly[0].t).getTime(); const i = clamp(Math.round((tMs - t0) / 3600e3), 0, spot.hourly.length - 1); return spot.hourly[i]; }
+function supHour(spot, tMs) { if (!spot || !spot.hourly.length) return null; const t0 = new Date(spot.hourly[0].t).getTime(); const i = clamp(Math.round((tMs - t0) / 3600e3), 0, spot.hourly.length - 1);
+  const h = spot.hourly[i]; return S.learned && h.learned ? { ...h, ...h.learned, raw: h } : h; }   // experimental: the learned correction swapped in
 function stationAt(stations, field, tMs, xk, yk) {
   // stations with a real record near this time (some lakefront sites report only now and then)
   const st = (stations || []).filter((s) => s.x != null && s.history && s.history.filter((h) => h[field] != null && Math.abs(new Date(h.t) - tMs) < 3 * 3600e3).length >= 4);
@@ -1651,7 +1835,7 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
       if (shore.d < 0.6 && h.components && h.components.length) { c.systems = h.components.map((q) => ({ hs: q.hs, tp: q.tp, dir: q.ang != null ? sp.normal + q.ang : q.dir, spread: q.kind === "swell" ? 12 : 28 })); c.dRef = 165; }
       else if (h.hs_offshore > 0.01) { c.systems = [{ hs: h.hs_offshore, tp: h.tp, dir: h.wave_dir, spread: 28 }]; c.dRef = 1000; }
       if (h.hs_offshore > 0.01) c.off = { hs: h.hs_offshore, tp: h.tp, dir: h.wave_dir };
-      withChop(c.systems, h.wind, h.dir); c.spot = sp; c.hour = h; c.src.push(`forecast model · ${sp.name}`); }
+      withChop(c.systems, h.wind, h.dir); c.spot = sp; c.hour = h; c.src.push(`forecast model · ${sp.name}${h.raw ? ` · learned ×${h.factor.toFixed(2)}` : ""}`); }
     if (S.mode === "live" && DATA.lake && DATA.lake.stations) { const wd = stationAt(DATA.lake.stations, "wspd", tMs, xk, yk); if (wd) { c.wind = wd.h.wspd; c.dir = wd.h.wdir ?? c.dir; c.gust = wd.h.gst ?? c.gust; c.src.unshift(`wind ${wd.st.id}`); } }
   }
   if (FW.cur) { c.off = { hs: FW.cur.hs, tp: FW.cur.tp, dir: FW.cur.dir, src: "FUNWAVE case" }; c.src.unshift(`FUNWAVE: ${FW.cur.label}`); }
@@ -1674,7 +1858,9 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
 // paddle zone just off each launch. The rating is the wave energy there (SWAN, so wall reflection is in it, plus the
 // local wind chop), weighted for steepness: the same energy in short waves is choppier (x 4 s / period, 0.6-2), and
 // raised by the crossing index where a FUNWAVE condition is shown. Bands in J/m2 of that chop energy.
-const LAUNCHES = [["Montrose", 41.9675, -87.6340], ["North Ave", 41.9146, -87.6233], ["Diversey", 41.9269, -87.6327]];   // 1.5-2 m of water off each
+// the first 1.5-2 m of water from each launch pin (PLACES): Diversey off the ramp (harbour), North Ave ~130 m out from
+// the shop, Montrose across the beach on the lake side (~325 m from the Kayak Chicago container)
+const LAUNCHES = [["Montrose", 41.96741, -87.63436], ["North Ave", 41.91426, -87.62252], ["Diversey", 41.92649, -87.63272]];
 const CHOP_BANDS = [[25, "Calm", "#5fc9a8"], [70, "Light chop", "#a6d96a"], [160, "Choppy", "#f7d940"], [350, "Rough", "#f39c45"], [Infinity, "Very rough", "#eb4d26"]];
 function chopRating(c) {
   const hs = c.fwHs != null ? c.fwHs : Math.sqrt(c.systems.reduce((a, q) => a + q.hs * q.hs, 0)), tp = c.systems[0] ? c.systems[0].tp : 3;
@@ -1856,15 +2042,95 @@ function buildMinimap() {
   for (const [n, la, lo] of [["North Ave", 41.9145, -87.6235], ["Diversey Hbr", 41.9310, -87.6385], ["Fullerton", 41.9255, -87.6400]]) { const [x, y] = mmXY(...ll(la, lo)); g.fillText(n, x - 70, y); }
   MM.base = c; const km = (LB.x1 - LB.x0); $("#mmscale").textContent = `${(km * 0.621).toFixed(1)} mi across`;
 }
+// ---------------------------------------------------------------- mini map, radar view: the region around Chicago (~120 x 180 km)
+// with the radar reflectivity for the timeline's time (scans, then the nowcast), where the echoes are heading, and the local area
+const MMR = { view: "auto", x0: -62, x1: 58, y0: -86, y1: 92, base: null, rc: null, key: "", comp: new WeakMap(), track: null };
+const DBZ_LUT = (() => { const t = new Uint8ClampedArray(256 * 4); for (let b = 0; b < 256; b++) { const dbz = b / 3 - 10; let c = null; for (const [lv, col] of DBZ_STOPS) if (dbz >= lv) c = col;   // the NWS colours, as the 3-D radar view
+  if (c) { const k = parseInt(c.slice(1), 16); t.set([k >> 16, (k >> 8) & 255, k & 255, dbz < 15 ? 150 : 225], b * 4); } } return t; })();
+function mmRadarOn() { if (MMR.view === "local") return false; if (MMR.view === "radar") return true;
+  return S.mode === "live" || S.mode === "forecast" || S.mode === "history" || (S.mode === "exp" && S.x.type !== "clear" && S.x.type !== "cumulus"); }
+const mmRXY = (x, y) => { const W = MM.el.width, H = MM.el.height; return [(x - MMR.x0) / (MMR.x1 - MMR.x0) * W, (MMR.y1 - y) / (MMR.y1 - MMR.y0) * H]; };
+function mmRadarBase() { const W = MM.el.width, H = MM.el.height, c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d"), img = g.createImageData(W, H);
+  // the lake from the satellite temperature grid's water cells (~1.4 km, the whole south basin); the rough outline outside it
+  const T = GRIDS.temp, tg = T && T.g, wetAt = (x, y) => { if (tg) { const fx = (x - T.min[0]) / T.size[0] * (T.n[0] - 1), fy = (y - T.min[1]) / T.size[1] * (T.n[1] - 1);
+      if (fx >= 0 && fy >= 0 && fx <= T.n[0] - 1 && fy <= T.n[1] - 1) { const i0 = Math.min(Math.floor(fx), T.n[0] - 2), j0 = Math.min(Math.floor(fy), T.n[1] - 2), u = fx - i0, v = fy - j0, w = (j, i) => tg.v[j * T.n[0] + i] != null ? 1 : 0;
+        return (w(j0, i0) * (1 - u) + w(j0, i0 + 1) * u) * (1 - v) + (w(j0 + 1, i0) * (1 - u) + w(j0 + 1, i0 + 1) * u) * v > 0.5; } }
+    return inLakeCoarse(x, y); };
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) { const x = MMR.x0 + (px + 0.5) / W * (MMR.x1 - MMR.x0), y = MMR.y1 - (py + 0.5) / H * (MMR.y1 - MMR.y0);
+    img.data.set(wetAt(x, y) ? [17, 42, 64, 255] : [46, 50, 53, 255], (py * W + px) * 4); }
+  g.putImageData(img, 0, 0); MMR.base = c; }
+// column maximum of a frame's reflectivity (what a radar map shows), cached per frame
+function composite(fr, grid) { let c = MMR.comp.get(fr); if (c) return c; const { nx, ny, nz } = grid; c = new Uint8Array(nx * ny);
+  for (let k = 0; k < nz; k++) { const o = k * nx * ny; for (let q = 0; q < nx * ny; q++) { const v = fr.dbz[o + q]; if (v > c[q]) c[q] = v; } } MMR.comp.set(fr, c); return c; }
+function compAt(c, grid, x, y) { const fx = (x - grid.x0_km) / grid.dx_km, fy = (y - grid.y0_km) / grid.dx_km, i = Math.floor(fx), j = Math.floor(fy);
+  if (i < 0 || j < 0 || i >= grid.nx - 1 || j >= grid.ny - 1) return 0; const u = fx - i, v = fy - j, n = grid.nx;
+  return (c[j * n + i] * (1 - u) + c[j * n + i + 1] * u) * (1 - v) + (c[(j + 1) * n + i] * (1 - u) + c[(j + 1) * n + i + 1] * u) * v; }
+function stormMotion() {   // km/min (x east, y north) of the echoes on show, or null
+  if (S.mode === "exp") { const mv = S.x.mdir * Math.PI / 180; return [Math.sin(mv) * S.x.mspd / 60, Math.cos(mv) * S.x.mspd / 60]; }
+  const src = S.mode === "history" ? (SRC.hist[S.histIdx] && SRC.hist[S.histIdx].scene) : SRC.live; return src && src.meta.motion_km_per_min ? src.meta.motion_km_per_min : null; }
+function mmRadarLayer() { const W = MM.el.width, H = MM.el.height, rs = RS;
+  const key = rs ? [rs.A.t, rs.B.t, Math.round(rs.f * 40), S.mode, S.mode === "exp" ? JSON.stringify(S.x) : ""].join("|") : "none|" + S.mode;
+  if (key === MMR.key && MMR.rc) return; MMR.key = key;
+  if (!MMR.rc) { MMR.rc = document.createElement("canvas"); MMR.rc.width = W; MMR.rc.height = H; }
+  const g = MMR.rc.getContext("2d"); g.clearRect(0, 0, W, H); MMR.track = null; if (!rs) return;
+  const cA = composite(rs.A, rs.grid), cB = composite(rs.B, rs.grid), img = g.createImageData(W, H), d = img.data;
+  let best = 0, bx = 0, by = 0;
+  for (let py = 0; py < H; py++) { const y = MMR.y1 - (py + 0.5) / H * (MMR.y1 - MMR.y0);
+    for (let px = 0; px < W; px++) { const x = MMR.x0 + (px + 0.5) / W * (MMR.x1 - MMR.x0);
+      const a = compAt(cA, rs.grid, x - rs.shiftA[0], y - rs.shiftA[1]), b = compAt(cB, rs.grid, x - rs.shiftB[0], y - rs.shiftB[1]);
+      const v = Math.round(a && b ? a + (b - a) * rs.f : rs.f < 0.5 ? a : b); if (v < 45) continue;   // < 5 dBZ: nothing drawn
+      const o = (py * W + px) * 4; d[o] = DBZ_LUT[v * 4]; d[o + 1] = DBZ_LUT[v * 4 + 1]; d[o + 2] = DBZ_LUT[v * 4 + 2]; d[o + 3] = DBZ_LUT[v * 4 + 3];
+      if (v > best) { best = v; bx = x; by = y; } } }
+  g.putImageData(img, 0, 0);
+  // the storm track: the strongest echo on the map (20 dBZ or more) and where the motion carries it over the next 2 hours
+  const m = stormMotion(); if (m && best >= 90 && Math.hypot(m[0], m[1]) > 0.02) MMR.track = { x: bx, y: by, m, dbz: Math.round(best / 3 - 10) };
+}
+function drawRadarMap() { const W = MM.el.width, H = MM.el.height, g = MM.el.getContext("2d"); if (!MMR.base) mmRadarBase();
+  g.drawImage(MMR.base, 0, 0); mmRadarLayer(); g.drawImage(MMR.rc, 0, 0);
+  g.font = "600 17px IBM Plex Sans Condensed, sans-serif"; g.textAlign = "left";
+  const lab = (txt, la, lo, dx = 8, dy = 6, col = "rgba(220,230,238,.85)") => { const [x, y] = mmRXY(...ll(la, lo)); g.fillStyle = col; g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill(); g.fillText(txt, x + dx, y + dy); };
+  lab("Chicago", 41.8781, -87.6298, -70, 22); lab("Evanston", 42.0451, -87.6877, -78, 6); lab("Gary", 41.5934, -87.3464, 8, 6); lab("Waukegan", 42.3636, -87.8448, 8, 6);
+  const rxy = SRC.live && SRC.live.meta.radar_xy_km; if (rxy) { const [x, y] = mmRXY(rxy[0], rxy[1]); g.strokeStyle = "rgba(220,230,238,.9)"; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 6, y); g.lineTo(x + 6, y); g.moveTo(x, y - 6); g.lineTo(x, y + 6); g.stroke(); g.fillStyle = "rgba(220,230,238,.8)"; g.fillText("KLOT radar", x + 8, y + 16); }
+  // the local area (what the 3-D world covers)
+  { const [a, b] = mmRXY(LB.x0, LB.y1), [c, e] = mmRXY(LB.x1, LB.y0); g.strokeStyle = "#f0b44c"; g.lineWidth = 2; g.strokeRect(a, b, c - a, e - b); }
+  const T = MMR.track;
+  if (T) { const pts = [0, 30, 60, 90, 120].map((mn) => mmRXY(T.x + T.m[0] * mn, T.y + T.m[1] * mn));
+    g.strokeStyle = "rgba(255,255,255,.9)"; g.lineWidth = 2.5; g.setLineDash([7, 5]); g.beginPath(); g.moveTo(...pts[0]); for (const q of pts.slice(1)) g.lineTo(...q); g.stroke(); g.setLineDash([]);
+    const [ex, ey] = pts[4], [px, py] = pts[3], an = Math.atan2(ey - py, ex - px); g.fillStyle = "#fff"; g.beginPath(); g.moveTo(ex + Math.cos(an) * 10, ey + Math.sin(an) * 10);
+    g.lineTo(ex + Math.cos(an + 2.5) * 10, ey + Math.sin(an + 2.5) * 10); g.lineTo(ex + Math.cos(an - 2.5) * 10, ey + Math.sin(an - 2.5) * 10); g.closePath(); g.fill();
+    g.font = "600 15px IBM Plex Sans Condensed, sans-serif";
+    pts.slice(1).forEach(([x, y], i) => { g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fill(); if (i % 2 === 1) { g.fillText(`+${(i + 1) / 2}h`, x + 7, y - 6); } });
+    g.strokeStyle = "#fff"; g.lineWidth = 2; g.beginPath(); g.arc(...pts[0], 7, 0, 7); g.stroke(); }
+  else { const m = stormMotion(); if (m && Math.hypot(m[0], m[1]) > 0.02) { const an = Math.atan2(-m[1], m[0]), cx = W - 34, cy = 34; g.strokeStyle = "rgba(220,230,238,.8)"; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(cx - Math.cos(an) * 14, cy - Math.sin(an) * 14); g.lineTo(cx + Math.cos(an) * 14, cy + Math.sin(an) * 14); g.stroke();
+    g.beginPath(); g.moveTo(cx + Math.cos(an) * 14, cy + Math.sin(an) * 14); g.lineTo(cx + Math.cos(an + 2.6) * 7 + Math.cos(an) * 14, cy + Math.sin(an + 2.6) * 7 + Math.sin(an) * 14); g.stroke(); } }
+  // you: the camera
+  const v = viewState(), [qx, qy] = mmRXY(camera.position.x, -camera.position.z); g.fillStyle = "#f0b44c"; g.strokeStyle = "#1b1305"; g.lineWidth = 2; g.beginPath(); g.arc(clamp(qx, 6, W - 6), clamp(qy, 6, H - 6), 6, 0, 7); g.fill(); g.stroke();
+  // status chip and caption
+  const st = $("#mmstat"), rs = RS; st.hidden = false;
+  if (!rs) { st.className = "mmstat"; st.textContent = S.mode === "forecast" ? "Beyond the radar forecast" : "No radar for this time"; }
+  else if (S.mode === "exp") { st.className = "mmstat exp"; st.textContent = "Your storm"; }
+  else if (S.mode === "history") { st.className = "mmstat hist"; st.textContent = `Radar ${fmtHM.format(new Date(rs.f < 0.5 ? rs.A.t : rs.B.t))}`; }
+  else if (rs.lead > 0) { st.className = "mmstat fc"; st.textContent = `Forecast +${rs.lead} min`; }
+  else { st.className = "mmstat"; st.textContent = `Radar ${fmtHM.format(new Date(rs.f < 0.5 ? rs.A.t : rs.B.t))}`; }
+  $("#mmscale").textContent = T ? `${T.dbz} dBZ → ${compass(Math.atan2(T.m[0], T.m[1]) * 180 / Math.PI)} ${mph(Math.hypot(T.m[0], T.m[1]) * 1000 / 60)} mph` : `${((MMR.x1 - MMR.x0) * 0.621).toFixed(0)} mi across`;
+}
 function drawMinimap() {
-  if (!MM.base) return; const g = MM.el.getContext("2d"); g.drawImage(MM.base, 0, 0);
+  if (!MM.base) return; const radar = mmRadarOn(); $("#mmview").textContent = radar ? "Local map" : "Radar map";
+  if (radar) { drawRadarMap(); return; }
+  $("#mmstat").hidden = true; $("#mmscale").textContent = `${((LB.x1 - LB.x0) * 0.621).toFixed(1)} mi across`;
+  const g = MM.el.getContext("2d"); g.drawImage(MM.base, 0, 0);
   const P = NAV.move === "paddle" ? { x: NAV.pad.x, y: NAV.pad.y, h: NAV.pad.yaw } : (() => { const v = viewState(); return { x: camera.position.x, y: -camera.position.z, h: v.hdg, tx: v.tx, ty: v.ty }; })();
   const [cx, cy] = mmXY(P.x, P.y), h = P.h * Math.PI / 180, L = 60;
   g.fillStyle = "rgba(240,180,76,.25)"; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.sin(h - 0.45) * L, cy - Math.cos(h - 0.45) * L); g.lineTo(cx + Math.sin(h + 0.45) * L, cy - Math.cos(h + 0.45) * L); g.closePath(); g.fill();
   g.fillStyle = "#f0b44c"; g.strokeStyle = "#1b1305"; g.lineWidth = 2; g.beginPath(); g.arc(clamp(cx, 6, MM.el.width - 6), clamp(cy, 6, MM.el.height - 6), 7, 0, 7); g.fill(); g.stroke();
   if (P.tx != null) { const [tx, ty] = mmXY(P.tx, P.ty); g.strokeStyle = "#fff"; g.lineWidth = 2; g.beginPath(); g.arc(tx, ty, 5, 0, 7); g.stroke(); }
 }
-MM.el.addEventListener("click", (ev) => { const r = MM.el.getBoundingClientRect(), x = LB.x0 + (ev.clientX - r.left) / r.width * (LB.x1 - LB.x0), y = LB.y1 - (ev.clientY - r.top) / r.height * (LB.y1 - LB.y0); hideHint();
+$("#mmview").onclick = () => { MMR.view = mmRadarOn() ? "local" : "radar"; drawMinimap(); };
+MM.el.addEventListener("click", (ev) => { const r = MM.el.getBoundingClientRect(); hideHint();
+  if (mmRadarOn()) { const x = MMR.x0 + (ev.clientX - r.left) / r.width * (MMR.x1 - MMR.x0), y = MMR.y1 - (ev.clientY - r.top) / r.height * (MMR.y1 - MMR.y0);
+    if (x > LB.x0 && x < LB.x1 && y > LB.y0 && y < LB.y1) { const v = viewState(); S.view = "free"; flyTo(x, y, clamp(v.dist, 0.15, 2.5), v.hdg, Math.max(v.pitch, 15)); } return; }
+  const x = LB.x0 + (ev.clientX - r.left) / r.width * (LB.x1 - LB.x0), y = LB.y1 - (ev.clientY - r.top) / r.height * (LB.y1 - LB.y0);
   if (NAV.move === "paddle") { if (maskAt(x, y) !== 0) { NAV.pad.x = x; NAV.pad.y = y; } return; }
   const v = viewState(); S.view = "free"; flyTo(x, y, clamp(v.dist, 0.15, 2.5), v.hdg, Math.max(v.pitch, 15)); });
 function toggleHelp() { $("#help").hidden = !$("#help").hidden; hideHint(); }
@@ -1889,13 +2155,13 @@ function showHintOnce() { let seen = false; try { seen = localStorage.getItem("l
 // ---------------------------------------------------------------- labels
 const labelsEl = $("#labels"); let labelItems = [];
 function buildLabels() { labelsEl.innerHTML = ""; labelItems = [];
-  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"), sp = document.createElement("span"); d.className = "lbl" + (cls ? " " + cls : ""); sp.textContent = txt; d.appendChild(sp); labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y), far: cls === "lake" || h > 0.1 ? 220 : 30, lake: cls === "lake" }); };
-  for (const [name, la, lo, h] of PLACES) { const [x, y] = ll(la, lo); add(name, x, y, h); } add("Lake Michigan", 2.2, 4.6, 0, "lake"); }
+  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"), sp = document.createElement("span"); d.className = "lbl" + (cls ? " " + cls : ""); sp.textContent = txt; d.appendChild(sp); labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y), far: cls === "lake" || h > 0.1 ? 220 : 30, near: cls === "rental" ? 0.03 : 0.25, lake: cls === "lake" }); };
+  for (const [name, la, lo, h, cls] of PLACES) { const [x, y] = ll(la, lo); add(name, x, y, h, cls); } add("Lake Michigan", 2.2, 4.6, 0, "lake"); }
 const tmpV = new THREE.Vector3();
 // nearest labels win: one that would overlap a closer one is hidden (no stacked, unreadable names)
 function updateLabels() { const w = canvas.clientWidth, h = canvas.clientHeight, placed = [];
   for (const it of labelItems) { tmpV.copy(it.p).project(camera); it.dist = camera.position.distanceTo(it.p); it.sx = (tmpV.x * 0.5 + 0.5) * w; it.sy = (-tmpV.y * 0.5 + 0.5) * h;
-    it.vis = tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1 && it.dist < it.far && it.dist > 0.25; }
+    it.vis = tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1 && it.dist < it.far && it.dist > it.near; }
   for (const it of labelItems.slice().sort((a, b) => a.dist - b.dist)) {
     if (it.vis) { if (!it.bw) { it.d.style.display = ""; it.bw = it.d.firstChild.offsetWidth || 80; it.bh = it.d.firstChild.offsetHeight || 18; }
       const r = [it.sx - it.bw / 2 - 3, it.sy - (it.lake ? it.bh : it.bh + 19) - 3, it.sx + it.bw / 2 + 3, it.sy - (it.lake ? 0 : 19) + 3];
@@ -1906,7 +2172,8 @@ function updateLabels() { const w = canvas.clientWidth, h = canvas.clientHeight,
 // ---------------------------------------------------------------- resize / quality
 const QUALITY = [{ scale: 0.35, step: 0.8, max: 170 }, { scale: 0.5, step: 0.55, max: 250 }, { scale: 0.75, step: 0.4, max: 360 }];
 function resize() { const w = canvas.clientWidth, h = canvas.clientHeight, pr = renderer.getPixelRatio(); renderer.setSize(w, h, false); camera.aspect = w / Math.max(h, 1); camera.updateProjectionMatrix();
-  rtScene.setSize(Math.round(w * pr), Math.round(h * pr)); const q = QUALITY[S.quality]; rtVol.setSize(Math.max(2, Math.round(w * pr * q.scale)), Math.max(2, Math.round(h * pr * q.scale))); U.uStepBase.value = q.step; U.uMaxSteps.value = q.max; }
+  rtScene.setSize(Math.round(w * pr), Math.round(h * pr)); const q = QUALITY[S.quality]; rtVol.setSize(Math.max(2, Math.round(w * pr * q.scale)), Math.max(2, Math.round(h * pr * q.scale)));
+  const bw = Math.max(2, Math.round(w * pr / 4)), bh = Math.max(2, Math.round(h * pr / 4)); rtBloomA.setSize(bw, bh); rtBloomB.setSize(bw, bh); U.uStepBase.value = q.step; U.uMaxSteps.value = q.max; }
 window.addEventListener("resize", resize);
 
 // ---------------------------------------------------------------- UI
@@ -1930,6 +2197,7 @@ document.querySelectorAll("[data-cam]").forEach((b) => b.onclick = () => goCam(b
 document.querySelectorAll("[data-q]").forEach((b) => b.onclick = () => { S.quality = +b.dataset.q; document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); try { localStorage.setItem("lakeworld-q", String(S.quality)); } catch (e) {} resize(); });
 document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-pressed", String(+x.dataset.q === S.quality)));
 $("#exag").oninput = (e) => setExag(+e.target.value);
+try { S.learned = localStorage.getItem("lakelocal-learned") === "1"; } catch (e) { S.learned = false; }
 $("#bolts").checked = S.bolts; $("#bolts").onchange = (e) => S.bolts = e.target.checked;
 $("#spd").onchange = (e) => S.speed = +e.target.value;
 const XFMT = { int: (v) => `${Math.round(v * 100)}%`, cov: (v) => `${Math.round(v * 100)}%`, mspd: (v) => `${v} km/h`, mdir: (v) => `${v}° ${compass(v)}`, wspd: (v) => `${mph(v)} mph`, wdir: (v) => `${v}° ${compass(v)}`,
@@ -1968,7 +2236,22 @@ $("#hist-go").onclick = async () => {
     throw new Error("still building after 20 minutes; try again later");
   } catch (err) { note.textContent = `Couldn't build that period: ${err.message}`; } finally { btn.disabled = false; }
 };
-function buildTicks() { const [t0, t1] = range(), tk = $("#ticks"), span = t1 - t0, f = span > 6 * 3600e3 ? fmtDH : fmtHM; tk.innerHTML = "";
+// timeline: what's observed and what's forecast. Live: the last hour or so of radar scans (blue), then the radar nowcast carried
+// 2 h past the latest scan (purple), with now marked. Forecast: the radar's 2 h (purple), then the NWS-driven forecast (faint).
+function buildTicks() { const [t0, t1] = range(), tk = $("#ticks"), sg = $("#segs"), span = Math.max(t1 - t0, 1), f = span > 6 * 3600e3 ? fmtDH : fmtHM;
+  tk.innerHTML = ""; sg.innerHTML = ""; tk.classList.remove("abs"); const pc = (t) => clamp((t - t0) / span * 100, 0, 100);
+  const seg = (a, b, cls) => { if (b <= a) return; const i = document.createElement("i"); i.className = cls; i.style.left = `${pc(a)}%`; i.style.width = `${pc(b) - pc(a)}%`; sg.appendChild(i); };
+  const tick = (t, txt, cls) => { const s = document.createElement("span"); s.textContent = txt; const x = pc(t); s.style.left = `${x}%`; s.className = (cls || "") + (x < 8 ? " l" : x > 92 ? " r" : ""); tk.appendChild(s); return x; };
+  const L = SRC.live, H = S.mode === "history" ? SRC.hist[S.histIdx] : null;
+  if (S.mode === "live" && L && L.frames.length) { const lastObs = L.frames[L.nObs - 1].t, lastF = L.frames[L.frames.length - 1].t, lead = Math.round((lastF - lastObs) / 60000);
+    tk.classList.add("abs"); seg(t0, lastObs, "o"); seg(lastObs, lastF, "f");
+    const now = Date.now(); if (now > t0 && now < t1) { const b = document.createElement("b"); b.id = "segnow"; b.style.left = `${pc(now)}%`; sg.appendChild(b); }
+    const xs = [tick(t0, fmtHM.format(new Date(t0)))];
+    const xL = pc(lastObs); if (xL - xs[0] > 16) xs.push(tick(lastObs, `Latest scan ${fmtHM.format(new Date(lastObs))}`, "now"));
+    if (lead > 0 && pc(lastF) - xs[xs.length - 1] > 16) tick(lastF, `+${lead >= 90 ? Math.round(lead / 60) + " h" : lead + " min"} ${fmtHM.format(new Date(lastF))}`, "fct");
+    return; }
+  if (S.mode === "forecast" && L && L.frames.length) { const lastF = L.frames[L.frames.length - 1].t; seg(t0, lastF, "f"); seg(lastF, t1, "f2"); }
+  if (S.mode === "history" && H && H.scene && H.scene.frames.length) seg(H.scene.frames[0].t, H.scene.frames[H.scene.nObs - 1].t, "o");
   [t0, t0 + span / 2, t1].forEach((t) => { const s = document.createElement("span"); s.textContent = f.format(new Date(t)); tk.appendChild(s); }); }
 async function addHistory(raw) { const scene = raw.scene ? await decodeScene(raw.scene) : null; SRC.hist.push({ raw, scene });
   const sel = $("#hist-pick"), o = document.createElement("option"); o.value = String(SRC.hist.length - 1);
@@ -2056,6 +2339,7 @@ function tick() {
   }
   // place the patch under the camera, snapped so it doesn't swim
   const low = camera.position.y < 0.45; patch.visible = low && WAVES.ready;
+  if (patch.visible || board.visible) OCEAN.update(U.uTime.value, 0.85);
   if (patch.visible) { const sx = Math.round(camera.position.x * 50) / 50, sz = Math.round(camera.position.z * 50) / 50; patch.position.set(sx, 0, sz);
     WU.uPatchRel.value.set((sx - WAVES.origin[0]) * 1000, (sz + WAVES.origin[1]) * 1000); }
   // track ribbon: bold from above, a faint wake line at paddler height
@@ -2095,6 +2379,7 @@ function tick() {
   U.uProjInv.value.copy(camera.projectionMatrixInverse); U.uCamWorld.value.copy(camera.matrixWorld); U.uFar.value = camera.far;
   renderer.setRenderTarget(rtScene); renderer.render(scene, camera);
   renderer.setRenderTarget(rtVol); renderer.render(volScene, quadCam);
+  renderBloom();
   renderer.setRenderTarget(null); renderer.render(compScene, quadCam);
   updateLabels();
   if (now - lastHud > 150) { lastHud = now; updateHud(rr, tp); updateCompass(); drawMinimap(); }
@@ -2110,6 +2395,7 @@ function updateHud(rr, tp) {
     el.className = "age" + (age > 75 ? " stale" : ""); } else $("#age").textContent = "";
   chip.textContent = { import: "From screenshot", live: S.follow ? "Live" : "Live · paused", forecast: `Forecast${S.t > t0 ? " +" + Math.round((S.t - t0) / 3600e3 * 10) / 10 + " h" : ""}`, history: "Historical", exp: "Experimental" }[S.mode];
   const sc = $("#scrub"); if (document.activeElement !== sc) sc.value = Math.round((S.t - t0) / Math.max(t1 - t0, 1) * 1000);
+  if (Date.now() - (MM.ticksAt || 0) > 60e3) { MM.ticksAt = Date.now(); buildTicks(); }   // live: the range grows with the clock; keep "now" and the ticks in place
   const tot = Math.sqrt(C.systems.reduce((a, q) => a + q.hs * q.hs, 0)), tpk = C.systems[0] ? C.systems[0].tp : 0;
   const wx = rr > 0.2 ? `${C.snow ? "snow" : "rain"} ${rr.toFixed(1)} mm/h` : U.uOvercast.value > 0.6 ? "overcast" : U.uOvercast.value > 0.25 ? "partly cloudy" : C.sun && C.sun.el < -6 ? "clear night" : "clear";
   const rows = [["Weather here", wx], ["Wind", `${mph(C.wind)} mph ${compass(C.dir)}${C.gust ? ` · gusts ${mph(C.gust)}` : ""}`], ["Waves", tot > 0.01 ? `${ft(tot)} ft · ${tpk.toFixed(1)} s` : "calm"],
@@ -2138,6 +2424,31 @@ function renderModels() {
     $("#valnote").textContent = `Checked against buoys ${b.map((x) => x.buoy).join(" and ")} over ${Math.round((new Date(b[0].window.end) - new Date(b[0].window.start)) / 864e5)} days, driven by wind only: ` +
       b.map((x) => `${x.buoy} RMSE ${ft(x.stats.rmse_m)} ft, r ${x.stats.r}`).join("; ") + `. Peak of Oct 16: ${V.peak_note || ""}`; }
   else $("#valnote").textContent = "";
+  renderLearn();
+}
+
+// ---------------------------------------------------------------- experimental: learned wave correction + live scorecard (app.learn)
+function renderLearn() {
+  const L = DATA.learn, has = DATA.sup && DATA.sup.spots && DATA.sup.spots.some((s) => s.hourly.some((h) => h.learned));
+  if (!L && !has) return;
+  $("#learn-box").hidden = false; const on = $("#learn-on"); on.disabled = !has; on.checked = !!S.learned;
+  on.onchange = (e) => { S.learned = e.target.checked; try { localStorage.setItem("lakelocal-learned", S.learned ? "1" : ""); } catch (err) {} };
+  const C = L && L.correction, notes = [];
+  if (C && C.cv_overall) { const r = C.cv_overall.raw, l = C.cv_overall.learned, yrs = Object.values(C.data || {}).flat(), y0 = Math.min(...yrs.map(Number)), y1 = Math.max(...yrs.map(Number));
+    notes.push(`Learned from ${Math.round(C.hours / 1000)}k buoy-hours (45174 and 45198, ${y0}–${y1}) of how the wave model misses by wind direction and speed. On years it didn't see: typical error ${ft(r.rmse_m)} → ${ft(l.rmse_m)} ft, better in ${C.years_better} of ${C.years_scored} years` +
+      (r.big_bias_m != null ? `; on 3 ft+ days the model was ${ft(Math.abs(r.big_bias_m))} ft ${r.big_bias_m > 0 ? "high" : "low"}, ${ft(Math.abs(l.big_bias_m))} ft after` : "") + "." +
+      (C.lag && C.lag.lag_h ? ` The model's waves also run about ${Math.abs(C.lag.lag_h)} h ${C.lag.lag_h > 0 ? "late" : "early"}, which this correction can't fix.` : "") +
+      (C.improves ? "" : " It hasn't clearly beaten the plain model yet, so it stays off by default."));
+  } else if (!has) notes.push("No learned correction yet: run the Learn waves workflow.");
+  $("#learn-note").textContent = notes.join(" ");
+  const K = L && L.scorecard;
+  if (K && K.stats && K.forecasts) {
+    const ms = K.methods.filter((m) => K.stats[m].some((x) => x)), cols = K.buckets.map((b, i) => i).filter((i) => ms.some((m) => K.stats[m][i]));
+    const best = cols.map((i) => Math.min(...ms.map((m) => K.stats[m][i] ? K.stats[m][i].rmse_m : Infinity)));
+    $("#learn-score").innerHTML = `<tr><th>Error (ft) by lead</th>${cols.map((i) => `<th>${K.buckets[i]}</th>`).join("")}</tr>` +
+      ms.map((m) => `<tr><td>${K.labels[m] || m}</td>${cols.map((i, j) => { const x = K.stats[m][i]; return x ? `<td class="${x.rmse_m === best[j] ? "best" : ""}" title="${x.hours} h, bias ${x.bias_m > 0 ? "+" : ""}${ft(x.bias_m)} ft">${ft(x.rmse_m)}</td>` : "<td>–</td>"; }).join("")}</tr>`).join("");
+    $("#learn-card").textContent = `Live scorecard: ${K.forecasts} forecasts from the last ${K.window_days} days checked against what buoys 45174 and 45198 measured (RMS error; bold is best). The buoy-nudged forecasts start from the buoy itself, so their first hours aren't a fair test.`;
+  } else { $("#learn-score").innerHTML = ""; $("#learn-card").textContent = "Live scorecard: starts filling in as forecasts come due (each hourly snapshot logs one)."; }
 }
 
 // ---------------------------------------------------------------- on-demand refresh (owner): fires the refresh scheduled task via the
