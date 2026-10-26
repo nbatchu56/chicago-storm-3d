@@ -663,6 +663,7 @@ vec3 chopTint(vec2 hc, vec2 pk, float w) { float t = clamp(log(max(613.0 * hc.x 
 // chop spots heat map: usual = how often a spot is Choppy or worse (paddling-season daylight hours, buoy climate x SWAN);
 // right now = this hour's wave energy from Light chop (25 J/m2) up to Very rough (350+), rebound hatched as in Chop
 uniform sampler2D uSpotTex; uniform vec2 uSpotMin, uSpotSize; uniform float uSpotsOn, uSpotHas;
+uniform sampler2D uOcFG; uniform float uOcLG, uOcOnG, uOcVarG;
 vec3 heatColor(float t) { vec3 c = mix(vec3(0.04, 0.05, 0.14), vec3(0.40, 0.10, 0.52), smoothstep(0.0, 0.3, t));
   c = mix(c, vec3(0.86, 0.20, 0.17), smoothstep(0.3, 0.55, t)); c = mix(c, vec3(0.99, 0.62, 0.12), smoothstep(0.55, 0.8, t));
   return pow(mix(c, vec3(1.0, 0.96, 0.62), smoothstep(0.8, 1.0, t)), vec3(2.2)); }
@@ -750,7 +751,12 @@ void main(){
       float r0 = vnoise(rp * 1.1 - wv), rx = vnoise(rp * 1.1 - wv + vec2(0.18, 0.0)), ry = vnoise(rp * 1.1 - wv + vec2(0.0, 0.18));
       float q0 = vnoise(rp * 2.7 + wv.yx * 1.3), qx = vnoise(rp * 2.7 + wv.yx * 1.3 + vec2(0.18, 0.0)), qy = vnoise(rp * 2.7 + wv.yx * 1.3 + vec2(0.0, 0.18));
       grad += (vec2(rx - r0, ry - r0) + 0.5 * vec2(qx - q0, qy - q0)) / 0.18 * ra * 0.35 * rf; unres += ra * ra * 0.12 * (1.0 - rf); }
-    vec3 N = normalize(vec3(-grad.x, 1.0, grad.y)); float rough = sqrt(unres) + 0.02;
+    // the spectral short waves (the same FFT tile as the patch under the camera) everywhere else too: two rotated octaves,
+    // fading into glitter roughness once a pixel covers more than a couple of metres
+    if (uOcOnG > 0.5 && cls < 2.5) { vec2 uv = p * 1000.0 / uOcLG; float fm = foot * 1000.0, w1 = clamp(1.0 - fm / 2.5, 0.0, 1.0), w2 = clamp(1.0 - fm / 0.9, 0.0, 1.0);
+      vec2 sl = texture2D(uOcFG, uv).xy * w1 + texture2D(uOcFG, mat2(0.799, 0.602, -0.602, 0.799) * uv * 2.71 + 0.37).xy * 0.35 * w2;
+      grad += sl * calm * (cls > 1.5 ? 0.55 : 1.0); unres += uOcVarG * (1.0 - w1) * calm; }
+    vec3 N = normalize(vec3(-grad.x, 1.0, grad.y)); float rough = sqrt(max(unres, (0.003 + 0.00512 * uWindSpd) * calm * 0.55)) + 0.02;   // Cox & Munk: the slopes no grid resolves still spread the glitter
     float F = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
     vec3 R = reflect(-V, N); R.y = abs(R.y);
     vec3 refl = skyColor(R, false) * (0.55 + 0.45 * shadow);
@@ -765,6 +771,11 @@ void main(){
     // little light gets into the water with the sun low (most of it glances off): at sunrise the lake reads dark slate and
     // green under the sky's reflection, not lit teal
     vec3 body = bodyTint * (sunL + amb * 2.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn > 0.5 ? 1.0 : mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y))) + vec3(0.0, 0.01, 0.012) * uCity;
+    // light in the water comes through the surface: facets turned to the sun are brighter, those turned away darker, and a
+    // low sun shines through the thin wave tops toward you (what makes waves read in daylight seen from above)
+    { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn;
+      body *= mix(0.62 + 0.76 * clamp(dot(N, sl) * 1.6 - 0.35, 0.0, 1.0), 1.0, step(0.5, ov));
+      body += vec3(0.010, 0.060, 0.045) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - N.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
     vec3 H = normalize(uSunDir + V); float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
     col = mix(body, refl, uTempOn > 0.5 ? F * 0.45 : F) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice);
     // light through the thin tops of the waves: a lighter green-blue on the crests, stronger as the waves grow
@@ -1504,6 +1515,9 @@ const OCEAN = (() => {
     const at = (i, j) => heightC[(j % NC) * NC + (i % NC)]; return (at(i0, j0) * (1 - fu) + at(i0 + 1, j0) * fu) * (1 - fv) + (at(i0, j0 + 1) * (1 - fu) + at(i0 + 1, j0 + 1) * fu) * fv; }
   return { L, NF, NC, texC, texF, setSea, update, heightAt, st, _F: F, _C: C };
 })();
+Object.assign(U, { uOcFG: { value: OCEAN.texF }, uOcLG: { value: OCEAN.L }, uOcOnG: { value: 0 }, uOcVarG: { value: 0 } });
+(() => {
+})();
 
 // ---------------------------------------------------------------- near-camera wave patch (metres inside): refraction + shoaling per wave
 const NW = 28, TABW = 256, DMAX = 1500;
@@ -1608,8 +1622,13 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       if (uChopOn > 0.5) tint = chopTint(chopAt(pk, uHsB * vGain), pk, fwidth((pk.x + pk.y) * 1000.0 / 12.0)) * 0.5;
       if (uSpotsOn > 0.5) tint = spotsTint(pk, chopAt(pk, uHsB * vGain), fwidth((pk.x + pk.y) * 1000.0 / 12.0)) * 0.5;
       vec3 body = tint * (sunL + amb * 2.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn > 0.5 ? 1.0 : mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y))) + vec3(0.0, 0.01, 0.012) * uCity;
+      // light in the water comes through the surface: facets turned to the sun are brighter, those turned away darker, and a
+      // low sun shines through the thin wave tops toward you (what makes waves read in daylight seen from above)
+      { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn;
+        body *= mix(0.62 + 0.76 * clamp(dot(Nn, sl) * 1.6 - 0.35, 0.0, 1.0), 1.0, step(0.5, ov));
+        body += vec3(0.010, 0.060, 0.045) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - Nn.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
       vec3 c = mix(body, skyColor(R, false), uTempOn > 0.5 ? F * 0.45 : F);
-      vec3 Hv = normalize(uSunDir + V); float rough = 0.05 + 0.008 * uWindSpd + sqrt(unres);
+      vec3 Hv = normalize(uSunDir + V); float rough = sqrt(max(unres + 0.0025, (0.003 + 0.00512 * uWindSpd) * 0.55)) + 0.01;   // Cox & Munk floor
       c += uSunCol * pow(max(dot(Nn, Hv), 0.0), 2.0 / (rough * rough)) / (1.0 + rough * 20.0) * sunUp * (1.0 - 0.8 * uOvercast) * 0.6;
       float W = clamp(3.84e-6 * pow(uWindSpd * (1.0 + 0.5 * gust), 3.41), 0.0, 0.25);
       // whitecaps: on the steep faces of the big waves, broken up by where the short waves bunch (their Jacobian), plus
@@ -1668,6 +1687,7 @@ function setWaves(systems, shoreFrame, dRef, wind) {
   const main = sys.filter((c) => c.spread < 50).sort((a, b) => b.hs - a.hs)[0];     // not the local chop (spread 50): it is a few components only
   OCEAN.setSea(wind.speed || 0, [Math.sin(wp), -Math.cos(wp)], main ? 2 * Math.PI / main.tp : 0);
   WU.uOcOn.value = OCEAN.st.on ? 1 : 0; WU.uOcVarLo.value = OCEAN.st.varLo; WU.uOcVarHi.value = OCEAN.st.varHi;
+  U.uOcOnG.value = WU.uOcOn.value; U.uOcVarG.value = OCEAN.st.varHi + OCEAN.st.varLo;
   WU.uGust.value = wind.gust && wind.speed > 0.5 ? clamp((wind.gust / wind.speed - 1.1) * 1.6, 0, 1) : 0.3;
   WAVES.ready = true;
 }
@@ -1973,7 +1993,10 @@ function supHour(spot, tMs) { if (!spot || !spot.hourly.length) return null; con
 // calm mornings is several times what reaches the water along the shore (your Oct 21 paddle: near-perfect glass from Diversey
 // to North Ave while the crib read 11-13 mph S and Oak St, Northerly Isle, Calumet and the Wilmette buoy 0-4 mph). For wind it
 // counts as this much farther away, so a shore station or buoy reporting nearby is used first
-const STATION_PENALTY_KM = { wspd: { CHII2: 6 } };
+// Wind over the water comes first from the buoys (anemometers ~3 m over the lake surface): a lakefront land station reads far
+// less when the wind blows off the land (your Oct 5 Montrose surf: Oak St 3 mph while 45198 and 45174 read 9-11 mph and the
+// lake was choppy). Shore stations count 8 km farther, the crib 12 km; on calm mornings the buoys agree (Oct 21: 2-4 mph).
+const STATION_PENALTY_KM = { wspd: { CHII2: 12, OKSI2: 8, CNII2: 8, FSTI2: 8, CMTI2: 8 } };
 function stationAt(stations, field, tMs, xk, yk) {
   // stations with a real record near this time (some lakefront sites report only now and then; the hourly shore stations
   // have 2-3 records in +-3 h, and needing 4 dropped Oak St, on the paddling route, a minute after each hour's report)
@@ -2597,7 +2620,7 @@ function tick() {
   }
   // place the patch under the camera, snapped so it doesn't swim
   const low = camera.position.y < 0.45; patch.visible = low && WAVES.ready;
-  if (patch.visible || board.visible) OCEAN.update(U.uTime.value, 0.85);
+  if (patch.visible || board.visible || camera.position.y < 3) OCEAN.update(U.uTime.value, 0.85);   // the far water uses the same detail
   if (patch.visible) { const sx = Math.round(camera.position.x * 50) / 50, sz = Math.round(camera.position.z * 50) / 50; patch.position.set(sx, 0, sz);
     WU.uPatchRel.value.set((sx - WAVES.origin[0]) * 1000, (sz + WAVES.origin[1]) * 1000); }
   // track ribbon: bold from above, a faint wake line at paddler height
