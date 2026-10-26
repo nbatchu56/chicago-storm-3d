@@ -279,7 +279,8 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
     <section>
       <h2>View</h2>
       <div class="seg" role="group" aria-label="Overlay"><button data-ov="natural" aria-pressed="true">Natural</button><button data-ov="temp" aria-pressed="false">Water temp</button><button data-ov="radar" aria-pressed="false">Radar</button></div>
-      <div class="seg" role="group" aria-label="Lake overlay"><button data-ov="depth" aria-pressed="false">Depth</button><button data-ov="hs" aria-pressed="false">Wave height</button><button data-ov="chop" aria-pressed="false">Chop</button></div>
+      <div class="seg" role="group" aria-label="Lake overlay"><button data-ov="depth" aria-pressed="false">Depth</button><button data-ov="hs" aria-pressed="false">Wave height</button><button data-ov="chop" aria-pressed="false">Chop</button><button data-ov="spots" aria-pressed="false">Chop spots</button></div>
+      <div class="seg" role="group" aria-label="Chop spots" id="spots-seg" hidden><button data-spots="usual" aria-pressed="true">Usual</button><button data-spots="now" aria-pressed="false">Right now</button></div>
       <div class="row" hidden><label for="exag">Cloud height scale</label><output id="exag-o">×1</output></div>
       <input type="range" id="exag" min="1" max="5" step="0.5" value="1" hidden>
       <label class="check"><input type="checkbox" id="bolts" checked> Lightning flashes</label>
@@ -333,6 +334,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 <script id="track-data" type="application/json"></script>
 <script id="bathy-data" type="application/json"></script>
 <script id="swan-data" type="application/json"></script>
+<script id="chopspots-data" type="application/json"></script>
 <script id="funwave-data" type="application/json"></script>
 <script id="validate-data" type="application/json"></script>
 <script id="learn-data" type="application/json"></script>
@@ -544,6 +546,7 @@ const U = {
   uSwan: { value: blank2D }, uSwanMin: { value: new THREE.Vector2() }, uSwanSize: { value: new THREE.Vector2(1, 1) }, uSwanOn: { value: 0 }, uSwanRef: { value: 1 }, uHsOff: { value: 0 },
   uDepthOn: { value: 0 }, uHsOn: { value: 0 },
   // chop overlay: wave energy everywhere; inside a bound FUNWAVE tile also its crossing/rebound index (tex R = Hs m, G = crossing 0..1)
+  uSpotsOn: { value: 0 }, uSpotHas: { value: 0 }, uSpotTex: { value: blank2D }, uSpotMin: { value: new THREE.Vector2() }, uSpotSize: { value: new THREE.Vector2(1, 1) },
   uChopOn: { value: 0 }, uChopTex: { value: blank2D }, uChopMin: { value: new THREE.Vector2() }, uChopSize: { value: new THREE.Vector2(1, 1) }, uChopCore: { value: new THREE.Vector4(1e6, 1e6, -1e6, -1e6) }, uChopHas: { value: 0 },
   uFw: { value: null }, uFwHs: { value: blank2D }, uFwMin: { value: new THREE.Vector2() }, uFwSize: { value: new THREE.Vector2(1, 1) }, uFwOn: { value: 0 }, uFwT: { value: 0 },
   uTempOn: { value: 0 }, uTRamp: { value: tRamp }, uLocalC: { value: new THREE.Vector2() }, uWaterC: { value: 15 }, uIceExp: { value: 0 }, uSnowCover: { value: 0 },
@@ -652,6 +655,20 @@ vec3 chopTint(vec2 hc, vec2 pk, float w) { float t = clamp(log(max(613.0 * hc.x 
   float line = 1.0 - smoothstep(0.22 - w, 0.22 + w, abs(fract(s) - 0.5)), far = smoothstep(0.15, 0.45, w);
   vec3 mag = pow(vec3(0.95, 0.25, 0.85), vec3(2.2));
   return mix(c, mag, x * mix(line * 0.9, 0.45, far)); }
+// chop spots heat map: usual = how often a spot is Choppy or worse (paddling-season daylight hours, buoy climate x SWAN);
+// right now = this hour's wave energy from Light chop (25 J/m2) up to Very rough (350+), rebound hatched as in Chop
+uniform sampler2D uSpotTex; uniform vec2 uSpotMin, uSpotSize; uniform float uSpotsOn, uSpotHas;
+vec3 heatColor(float t) { vec3 c = mix(vec3(0.04, 0.05, 0.14), vec3(0.40, 0.10, 0.52), smoothstep(0.0, 0.3, t));
+  c = mix(c, vec3(0.86, 0.20, 0.17), smoothstep(0.3, 0.55, t)); c = mix(c, vec3(0.99, 0.62, 0.12), smoothstep(0.55, 0.8, t));
+  return pow(mix(c, vec3(1.0, 0.96, 0.62), smoothstep(0.8, 1.0, t)), vec3(2.2)); }
+vec3 spotsTint(vec2 pk, vec2 hc, float w) {
+  if (uSpotsOn > 1.5) { float e = 613.0 * hc.x * hc.x, t = clamp(log(max(e, 1.0) / 25.0) / log(14.0), 0.0, 1.0);
+    float x = smoothstep(0.35, 0.7, hc.y) * step(0.03, hc.x), s = (pk.x + pk.y) * 1000.0 / 12.0, line = 1.0 - smoothstep(0.22 - w, 0.22 + w, abs(fract(s) - 0.5));
+    return mix(heatColor(t), pow(vec3(0.95, 0.25, 0.85), vec3(2.2)), x * mix(line * 0.9, 0.45, smoothstep(0.15, 0.45, w))); }
+  vec2 f = (pk - uSpotMin) / uSpotSize;
+  if (uSpotHas < 0.5 || f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0) return pow(vec3(0.16, 0.18, 0.22), vec3(2.2));
+  vec2 v = texture2D(uSpotTex, f).rg; if (v.r <= 0.0) return pow(vec3(0.16, 0.18, 0.22), vec3(2.2));
+  return heatColor(clamp(v.r / 0.6, 0.0, 1.0)); }
 vec3 hsColor(float h) { float t = clamp(h / 2.5, 0.0, 1.0); vec3 c = mix(vec3(0.15, 0.35, 0.75), vec3(0.2, 0.75, 0.55), smoothstep(0.0, 0.2, t));
   c = mix(c, vec3(0.95, 0.85, 0.3), smoothstep(0.2, 0.5, t)); return pow(mix(c, vec3(0.9, 0.25, 0.2), smoothstep(0.5, 1.0, t)), vec3(2.2)); }
 float iceAt(vec2 p, float shoreD, float n) {
@@ -739,14 +756,15 @@ void main(){
       bodyTint = depthColor(dep) * 0.5 * (1.0 - 0.55 * (1.0 - smoothstep(0.0, lw, min(fract(dep), 1.0 - fract(dep))))); }
     if (uHsOn > 0.5) bodyTint = hsColor(kr >= 0.0 ? uHsOff * kr : uHs) * 0.5;
     if (uChopOn > 0.5) bodyTint = chopTint(chopAt(p, kr >= 0.0 ? uHsOff * kr : uHs), p, fwidth((p.x + p.y) * 1000.0 / 12.0)) * 0.5;
+    if (uSpotsOn > 0.5) bodyTint = spotsTint(p, chopAt(p, kr >= 0.0 ? uHsOff * kr : uHs), fwidth((p.x + p.y) * 1000.0 / 12.0)) * 0.5;
     // little light gets into the water with the sun low (most of it glances off): at sunrise the lake reads dark slate and
     // green under the sky's reflection, not lit teal
-    vec3 body = bodyTint * (sunL + amb * 2.0) * mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y)) + vec3(0.0, 0.01, 0.012) * uCity;
+    vec3 body = bodyTint * (sunL + amb * 2.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn > 0.5 ? 1.0 : mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y))) + vec3(0.0, 0.01, 0.012) * uCity;
     vec3 H = normalize(uSunDir + V); float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
     col = mix(body, refl, uTempOn > 0.5 ? F * 0.45 : F) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice);
     // light through the thin tops of the waves: a lighter green-blue on the crests, stronger as the waves grow
     float hsLook = (kr >= 0.0 ? uHsOff * kr : uHs) * calm;
-    col += vec3(0.02, 0.075, 0.07) * (sunL + amb * 2.0) * smoothstep(0.4, 2.2, crest) * clamp(hsLook * 2.5, 0.15, 1.0) * (uTempOn + uDepthOn + uHsOn + uChopOn > 0.5 ? 0.0 : 1.0);
+    col += vec3(0.02, 0.075, 0.07) * (sunL + amb * 2.0) * smoothstep(0.4, 2.2, crest) * clamp(hsLook * 2.5, 0.15, 1.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn > 0.5 ? 0.0 : 1.0);
     float hsHere = (kr >= 0.0 ? uHsOff * kr : uHs) * calm, brk = inBathy(p) && cls < 1.5 ? smoothstep(0.6, 1.0, hsHere / max(dep, 0.05)) * step(0.08, hsHere) : 0.0;
     float wc = vnoise(p * 900.0 + uTime * 0.6) * vnoise(p * 310.0 - uTime * 0.3), cover = max(clamp(uWhitecap, 0.0, 0.3) * calm, brk * 0.3 * (0.4 + 0.6 * vnoise(p * 400.0 - uTime * 0.4)));
     float foam = mix(smoothstep(1.0 - cover * 4.0, 1.0 - cover * 3.0, wc), cover, clamp(foot * 60.0, 0.0, 1.0));
@@ -1531,7 +1549,8 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       if (uDepthOn > 0.5) tint = depthColor(depth) * 0.5 * (1.0 - 0.55 * smoothstep(0.43, 0.48, abs(fract(depth) - 0.5)));
       if (uHsOn > 0.5) tint = hsColor(vFw > 0.0 ? mix(uHsB * vGain, texture2D(uFwHs, clamp((pk - uFwMin) / uFwSize, 0.0, 1.0)).r, vFw) : uHsB * vGain) * 0.5;
       if (uChopOn > 0.5) tint = chopTint(chopAt(pk, uHsB * vGain), pk, fwidth((pk.x + pk.y) * 1000.0 / 12.0)) * 0.5;
-      vec3 body = tint * (sunL + amb * 2.0) * mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y)) + vec3(0.0, 0.01, 0.012) * uCity;
+      if (uSpotsOn > 0.5) tint = spotsTint(pk, chopAt(pk, uHsB * vGain), fwidth((pk.x + pk.y) * 1000.0 / 12.0)) * 0.5;
+      vec3 body = tint * (sunL + amb * 2.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn > 0.5 ? 1.0 : mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y))) + vec3(0.0, 0.01, 0.012) * uCity;
       vec3 c = mix(body, skyColor(R, false), uTempOn > 0.5 ? F * 0.45 : F);
       vec3 Hv = normalize(uSunDir + V); float rough = 0.05 + 0.008 * uWindSpd + sqrt(unres);
       c += uSunCol * pow(max(dot(Nn, Hv), 0.0), 2.0 / (rough * rough)) / (1.0 + rough * 20.0) * sunUp * (1.0 - 0.8 * uOvercast) * 0.6;
@@ -1689,6 +1708,45 @@ function setTrack(tr) {
   const dur = P[P.length - 1][0];
   $("#track-note").textContent = `${tr.name}: ${(dist / 1609.34).toFixed(2)} mi in ${Math.floor(dur / 60)}:${String(Math.round(dur % 60)).padStart(2, "0")}${hr.length ? `, ${Math.round(hr.reduce((a, b) => a + b, 0) / hr.length)} bpm avg` : ""}${tr.start ? ` · ${fmtFull.format(new Date(tr.start))}` : ""}. The track and heart rate are stored in this page.`;
 }
+// ---------------------------------------------------------------- chop spots: suspected (models) and confirmed (your sessions)
+const SPOTS = { group: new THREE.Group(), tex: null, meta: null, thr: null, built: "" }; scene.add(SPOTS.group); SPOTS.group.visible = false;
+const RATING_RANK = { "glass": 0, "calm": 1, "light chop": 2, "choppy": 3, "rough": 4, "very rough": 5 };
+async function setChopSpots(d) {
+  if (!d || !d.choppy) return; const g = d.grid, a = await gunzipB64(d.choppy), b = await gunzipB64(d.rough), n = g.nx * g.ny, rg = new Uint8Array(n * 2);
+  for (let i = 0; i < n; i++) { rg[2 * i] = a[i]; rg[2 * i + 1] = b[i]; }
+  const t = new THREE.DataTexture(rg, g.nx, g.ny, THREE.RGFormat, THREE.UnsignedByteType); t.minFilter = t.magFilter = THREE.LinearFilter; t.unpackAlignment = 1; t.needsUpdate = true;
+  SPOTS.tex = t; SPOTS.meta = d; U.uSpotTex.value = t; U.uSpotMin.value.set(g.x0 / 1000, g.y0 / 1000); U.uSpotSize.value.set((g.nx - 1) * g.dx / 1000, (g.ny - 1) * g.dx / 1000); U.uSpotHas.value = 1;
+}
+// GPS roughness ("bump", tools/session.py) counts as chop where it's well above what your calm and glass sessions show:
+// twice their 95th percentile (0.3 until there's a calm session to learn from)
+function bumpThreshold() { const v = [];
+  for (const H of SRC.hist) { const ss = H.raw.session; if (!ss || !ss.track || RATING_RANK[ss.observed && ss.observed.rating] > 1) continue; for (const q of ss.track.pts) if (q[5] != null) v.push(q[5]); }
+  if (v.length < 50) return 0.3; v.sort((x, y) => x - y); return 2 * v[Math.floor(v.length * 0.95)]; }
+function spotSessions() { const out = []; for (const H of SRC.hist) { const ss = H.raw.session; if (ss && ss.track && ss.track.pts && ss.track.pts.length) out.push(ss); } return out; }
+function buildConfirmed() {
+  const now = !!S.spotsNow, all = spotSessions(), key = `${now}|${all.length}|${now ? Math.round(S.t / 600e3) : 0}`; if (key === SPOTS.built) return; SPOTS.built = key;
+  SPOTS.group.clear(); SPOTS.thr = bumpThreshold(); SPOTS.shown = [];
+  const ribbon = (P, colorAt, half, y, op) => { const pos = [], col = [], idx = [];
+    for (let i = 0; i < P.length; i++) { const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)]; let dx = b[1] - a[1], dy = b[2] - a[2]; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+      const x = P[i][1] / 1000, yy = P[i][2] / 1000, c = colorAt(i); pos.push(x - dy * half, y, -(yy + dx * half), x + dy * half, y, -(yy - dx * half)); col.push(...c, ...c);
+      if (i && P[i][0] - P[i - 1][0] < 60) { const k = 2 * i; idx.push(k - 2, k - 1, k, k - 1, k + 1, k); } }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: op, depthWrite: false })); m.renderOrder = 4; SPOTS.group.add(m); };
+  const CALM = [0.35, 0.95, 1.0], CHOP = [[0.35, 0.95, 1.0], [0.35, 0.95, 1.0], [1.0, 0.85, 0.3], [1.0, 0.45, 0.15], [1.0, 0.2, 0.55], [1.0, 0.2, 0.55]], GPS = [1.0, 0.3, 0.9];
+  for (const ss of all) {
+    const t0 = new Date(ss.track.start).getTime(), P = ss.track.pts, t1 = t0 + P[P.length - 1][0] * 1000;
+    if (now && (S.t < t0 - 90 * 60e3 || S.t > t1 + 90 * 60e3)) continue;
+    const r = RATING_RANK[ss.observed && ss.observed.rating] ?? 1, base = CHOP[r] || CALM;
+    // GPS-found chop: 3-point smoothed bump above the threshold
+    const bump = P.map((q, i) => { const w = [P[i - 1], q, P[i + 1]].filter((z) => z && z[5] != null).map((z) => z[5]); return w.length ? w.reduce((x, y) => x + y, 0) / w.length : 0; });
+    ribbon(P, (i) => bump[i] >= SPOTS.thr ? GPS : base, bump.some((v) => v >= SPOTS.thr) ? 0.006 : 0.0045, 0.0016, 0.9);
+    for (const sp of (ss.observed && ss.observed.spots) || []) { const [x, y] = ll(sp.lat, sp.lon), rr = (sp.r_m || 100) / 1000, c = CHOP[RATING_RANK[sp.rating] ?? 3] || GPS;
+      const ring = new THREE.Mesh(new THREE.RingGeometry(rr * 0.82, rr, 48), new THREE.MeshBasicMaterial({ color: new THREE.Color(...c), side: THREE.DoubleSide, transparent: true, opacity: 0.85, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2; ring.position.set(x, 0.0018, -y); ring.renderOrder = 4; SPOTS.group.add(ring); }
+    SPOTS.shown.push(ss); }
+  if (S.ov === "spots") renderLegend();
+}
+function setSpots() { const on = S.ov === "spots"; U.uSpotsOn.value = on ? (S.spotsNow ? 2 : 1) : 0; $("#spots-seg").hidden = !on; SPOTS.group.visible = on; SPOTS.built = ""; if (on) buildConfirmed(); }
 function trackAt(tMs) {   // position (km) and heading on the track at absolute time; clamps to the ends
   const tr = DATA.track; if (!tr || !tr.start) return null; const P = tr.pts, ts = (tMs - new Date(tr.start)) / 1000;
   let i = 0; while (i < P.length - 2 && P[i + 1][0] < ts) i++; const a = P[i], b = P[i + 1] || a, f = b[0] > a[0] ? clamp((ts - a[0]) / (b[0] - a[0]), 0, 1) : 0;
@@ -2297,7 +2355,8 @@ function setMode(m) { S.mode = m; document.querySelectorAll("[data-mode]").forEa
   buildTicks(); WAVES.key = null; }
 document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode));
 document.querySelectorAll("[data-ov]").forEach((b) => b.onclick = () => { S.ov = b.dataset.ov; document.querySelectorAll("[data-ov]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-  U.uMode.value = S.ov === "radar" ? 1 : 0; U.uTempOn.value = S.ov === "temp" ? 1 : 0; U.uDepthOn.value = S.ov === "depth" ? 1 : 0; U.uHsOn.value = S.ov === "hs" ? 1 : 0; U.uChopOn.value = S.ov === "chop" ? 1 : 0; renderLegend(); });
+  U.uMode.value = S.ov === "radar" ? 1 : 0; U.uTempOn.value = S.ov === "temp" ? 1 : 0; U.uDepthOn.value = S.ov === "depth" ? 1 : 0; U.uHsOn.value = S.ov === "hs" ? 1 : 0; U.uChopOn.value = S.ov === "chop" ? 1 : 0; setSpots(); renderLegend(); });
+document.querySelectorAll("[data-spots]").forEach((b) => b.onclick = () => { S.spotsNow = b.dataset.spots === "now"; document.querySelectorAll("[data-spots]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); setSpots(); renderLegend(); });
 document.querySelectorAll("[data-cam]").forEach((b) => b.onclick = () => goCam(b.dataset.cam));
 document.querySelectorAll("[data-q]").forEach((b) => b.onclick = () => { S.quality = +b.dataset.q; document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); try { localStorage.setItem("lakeworld-q", String(S.quality)); } catch (e) {} resize(); });
 document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-pressed", String(+x.dataset.q === S.quality)));
@@ -2376,6 +2435,14 @@ function renderLegend() {
     h = `<b>Chop: wave energy</b><div class="bar" style="background:linear-gradient(90deg,${st.map(([d, c]) => `${c} ${d}%`).join(",")})"></div><div class="tk"><span>10</span><span>30</span><span>100</span><span>300</span><span>1000+ J/m²</span></div>
       <span><i style="display:inline-block;width:22px;height:9px;vertical-align:-1px;background:repeating-linear-gradient(135deg,#f240d9 0 3px,transparent 3px 7px)"></i> waves crossing: rebound off walls, trains meeting</span>
       <span>${FW.cur ? `FUNWAVE ${FW.cur.tile_label}: ${FW.cur.label}` : FW.runs.length ? "Crossing shows on wall tiles: pick a condition under Walls, wave by wave" : ""}</span><span>Waves of 1 ft ≈ 60 J/m² · 2 ft ≈ 230 · 3 ft ≈ 510 · 4 ft ≈ 910</span>`; }
+  else if (S.ov === "spots") { const M = SPOTS.meta, thr = SPOTS.thr != null ? SPOTS.thr : bumpThreshold(), ss = SPOTS.shown || [];
+    const bar = `<div class="bar" style="background:linear-gradient(90deg,#0a0d24,#661a85 30%,#db332b 55%,#fc9e1f 80%,#fff59e)"></div>`;
+    const conf = `<span><b>Confirmed</b>, your sessions${S.spotsNow ? " within 1.5 h of this time" : ""}: <i style="color:#59f2ff">━</i> calm/glass you logged · <i style="color:#ffd94d">━</i> light chop · <i style="color:#ff7326">━</i> choppy · <i style="color:#ff338c">━</i> rough · <i style="color:#ff4de6">━</i> bumpy by GPS (speed jitter over ${thr.toFixed(2)}, 2x your calm days) · rings: spots you named</span>
+      <span>${ss.length ? ss.map((x) => `${x.title || x.label}: ${x.observed.rating}`).join(" · ") : S.spotsNow ? "No session of yours near this time." : "No sessions yet."}</span>`;
+    h = S.spotsNow ? `<b>Chop spots right now: suspected by the models</b>${bar}<div class="tk"><span>Light chop</span><span>Choppy</span><span>Rough</span><span>Very rough</span></div>
+      <span><i style="display:inline-block;width:22px;height:9px;vertical-align:-1px;background:repeating-linear-gradient(135deg,#f240d9 0 3px,transparent 3px 7px)"></i> rebound off walls, trains crossing (wall tiles, with a Walls condition picked)</span>${conf}`
+      : `<b>Chop spots: suspected, how often</b>${bar}<div class="tk"><span>0</span><span>15%</span><span>30%</span><span>45%</span><span>60%+</span></div>
+      <span>Share of daylight hours (6 AM-8 PM, May-Oct ${M ? M.seasons : ""}) a spot is Choppy or worse (70+ J/m²): ${M ? M.hours.toLocaleString() : "?"} buoy hours of offshore waves carried in by the SWAN model (sheltering, wall reflection, breaking). Wind chop raised inside the harbours isn't in it.</span>${conf}`; }
   else if (S.ov === "radar") { h = `<b>Radar reflectivity</b><div class="bar" style="background:linear-gradient(90deg,${DBZ_STOPS.slice(0, 13).map(([, c]) => c).join(",")})"></div><div class="tk"><span>5</span><span>35</span><span>65 dBZ</span></div>`; }
   el.innerHTML = h; el.hidden = !h;
 }
@@ -2389,6 +2456,7 @@ function tick() {
   followFunwave();
   if (FW.cur) { const n = FW.cur.eta.frames, L = n * FW.cur.eta.dt; U.uFwT.value = ((U.uTime.value % L) / L) * (n - 1) / n + 0.5 / n; }
   if (S.mode === "live" && S.follow) S.t = Date.now();
+  if (S.ov === "spots") buildConfirmed();
   const [t0, t1] = range();
   if (S.playing && !(S.mode === "live" && S.follow)) { const rate = S.mode === "forecast" ? 1800 : S.mode === "exp" ? 60 : 60; S.t += dt * 1000 * rate * S.speed; if (S.t > t1) S.t = t0; }
   S.t = clamp(S.t, t0, t1);
@@ -2677,6 +2745,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
     [DATA.bathy, DATA.swan, DATA.funwave] = await Promise.all([DATA.bathy || split("bathy-data"), DATA.swan || split("swan-data"), DATA.funwave || split("funwave-data")]);
     if (!DATA.hist.length) { const h = await split("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
     await setBathy(DATA.bathy); await setSwan(DATA.swan); await setFunwave(DATA.funwave); renderModels();
+    setChopSpots(parseJSON("chopspots-data") || await split("chopspots-data")).then(() => { if (S.ov === "spots") renderLegend(); });
     if (DATA.lake) { buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
     buildMinimap(); showHintOnce(); initRefresh(); await initImport();
     SRC.live = await decodeScene(DATA.scene);

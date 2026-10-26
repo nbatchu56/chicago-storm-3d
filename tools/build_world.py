@@ -144,7 +144,70 @@ def summarize_learn(corr, card):
     return summarize(corr, card)
 
 
-SPLIT = ("bathy-data", "swan-data", "funwave-data", "history-data")   # funwave: one file per run
+# Chop trouble spots: how often each spot is Choppy or worse over the paddling-season wave climate (app/data/chop_climate.json,
+# from the buoys), with the SWAN library carrying each hour's offshore waves to shore (sheltering, wall reflection, breaking).
+# The same energy scale as the page's chop bands: E = 613 Hs^2 J/m2, weighted by steepness clamp(4 / Tp, 0.6, 2).
+CHOP_E = (70.0, 160.0)          # Choppy, Rough
+SPOT_DX = 16.0
+
+
+def chop_spots(swan, climate):
+    if not swan or not climate or not swan.get("domains"):
+        return None
+    doms = []
+    for v in swan["domains"].values():
+        g = v["grid"]; nc = len(v["cases"])
+        r = np.frombuffer(gzip.decompress(base64.b64decode(v["ratio"])), np.uint8).reshape(nc, g["ny"], g["nx"]).astype(np.float32) / 100
+        doms.append((g, v["cases"], r))
+    doms.sort(key=lambda d: -d[0]["dx"])          # coarse first; finer domains overwrite where they have water
+    x0 = min(g["x0"] for g, _, _ in doms); y0 = min(g["y0"] for g, _, _ in doms)
+    x1 = max(g["x0"] + (g["nx"] - 1) * g["dx"] for g, _, _ in doms); y1 = max(g["y0"] + (g["ny"] - 1) * g["dx"] for g, _, _ in doms)
+    nx, ny = int((x1 - x0) / SPOT_DX) + 1, int((y1 - y0) / SPOT_DX) + 1
+    out = np.zeros((2, ny, nx), np.float32); wet = np.zeros((ny, nx), bool)
+    total = float(climate["hours"])
+    bins = [(*map(float, k.split("|")), float(n)) for k, n in climate["bins"].items()]
+    for di, (g, cases, r) in enumerate(doms):
+        dirs = sorted({c["dir"] for c in cases}); tps = sorted({c["tp"] for c in cases}); hss = sorted({c["hs"] for c in cases})
+        idx = {(c["dir"], c["tp"], c["hs"]): i for i, c in enumerate(cases)}
+        cnt = np.zeros((2,) + r.shape[1:], np.float32)
+        groups = {}
+        for d, tp, hs, n in bins:
+            if hs < 0.15:
+                continue                                    # too small to be choppy anywhere (needs ~0.24 m locally)
+            dn = d % 360
+            if dirs[-1] + 15 < dn < 345:
+                continue                                    # waves from the land side never reach the lakefront
+            dn = 0 if dn >= 345 else dn
+            dk = min(dirs, key=lambda x: abs(x - dn)); tk = min(tps, key=lambda x: abs(x - tp))
+            groups.setdefault((dk, tk), []).append((tp, hs, n))
+        for (dk, tk), items in groups.items():
+            lo, hi = r[idx[(dk, tk, hss[0])]], r[idx[(dk, tk, hss[-1])]]
+            for tp, hs, n in items:
+                a = min(max((hs - hss[0]) / (hss[-1] - hss[0]), 0.0), 1.0)
+                h = (lo + (hi - lo) * a) * hs
+                e = 613.0 * h * h * min(max(4.0 / max(tp, 1.0), 0.6), 2.0)
+                cnt[0] += (e >= CHOP_E[0]) * n; cnt[1] += (e >= CHOP_E[1]) * n
+        w = (r.max(axis=0) > 0)
+        # resample onto the common grid (nearest)
+        xs = x0 + np.arange(nx) * SPOT_DX; ys = y0 + np.arange(ny) * SPOT_DX
+        ii = np.round((xs - g["x0"]) / g["dx"]).astype(int); jj = np.round((ys - g["y0"]) / g["dx"]).astype(int)
+        okx = (ii >= 0) & (ii < g["nx"]); oky = (jj >= 0) & (jj < g["ny"])
+        J, I = np.meshgrid(np.clip(jj, 0, g["ny"] - 1), np.clip(ii, 0, g["nx"] - 1), indexing="ij")
+        m = oky[:, None] & okx[None, :] & w[J, I]
+        # a finer domain's offshore (east) edge carries its boundary condition, not the sea: it hands over to the coarser
+        # one over 400-1400 m from that edge
+        wt = np.ones(nx, np.float32) if not di else np.clip((g["x0"] + (g["nx"] - 1) * g["dx"] - 400 - xs) / 1000, 0, 1)
+        wt = np.where(wet, wt[None, :], 1.0) * m
+        out[:] = out * (1 - wt) + cnt[:, J, I] / total * wt; wet |= m
+    enc = lambda x: base64.b64encode(gzip.compress(np.ascontiguousarray(x).astype(np.uint8).tobytes(), 9)).decode()  # noqa: E731
+    q = np.round(np.clip(out, 0, 1) * 255)
+    return {"grid": {"x0": x0, "y0": y0, "dx": SPOT_DX, "nx": nx, "ny": ny}, "layout": "2 channels (choppy+, rough+) x rows(south->north) x cols(west->east); byte = fraction of hours * 255",
+            "choppy": enc(q[0]), "rough": enc(q[1]), "hours": climate["hours"], "seasons": climate.get("seasons"), "months": climate.get("months"),
+            "local_hours": climate.get("local_hours"), "buoys": climate.get("buoys"), "bands_j_m2": CHOP_E,
+            "max_choppy": round(float(out[0].max()), 3)}
+
+
+SPLIT = ("bathy-data", "swan-data", "funwave-data", "history-data", "chopspots-data")   # funwave: one file per run
 
 
 def main():
@@ -157,6 +220,8 @@ def main():
     ap.add_argument("--funwave", nargs="*", default=[])
     ap.add_argument("--imports", nargs="*", default=[], help="forecast tables read from screenshots (examples/*.json)")
     ap.add_argument("--history", nargs="*", default=[])
+    ap.add_argument("--chop-climate", default=os.path.join(ROOT, "tools", "chop_climate.json"),
+                    help="paddling-season wave climate (tools/chop_climate.py) for the chop trouble-spot map")
     ap.add_argument("--sessions", nargs="*", default=[],
                     help="paddle sessions (sessions/*.json): what was observed on the water, attached to the history period with the same label")
     ap.add_argument("--split", action="store_true",
@@ -170,8 +235,10 @@ def main():
         "funwave-data": quantize_funwave([load(p) for p in a.funwave]) or None, "validate-data": summarize_validation(load(a.validate)),
         "import-data": [d for d in (load(p) for p in a.imports) if d] or None,
         "learn-data": summarize_learn(load(a.learn), load(a.scorecard)),
+        "chopspots-data": None,
         "meta-data": {"generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), **({"start": json.loads(a.start)} if a.start else {})},
     }
+    blocks["chopspots-data"] = chop_spots(blocks["swan-data"], load(a.chop_climate))
     hist = []
     for p in a.history:
         h = load(p)
