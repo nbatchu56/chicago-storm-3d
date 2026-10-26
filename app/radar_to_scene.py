@@ -88,13 +88,33 @@ def biological_mask(dbz, rhohv):
         return np.isfinite(rho) & (rho < RHOHV_MIN) & ~(dbz >= RHOHV_KEEP_DBZ)
 
 
+def borrow_rhohv(radar, rho):
+    """The lowest tilts are scanned twice (split cuts) and only one pass carries dual-pol: give each ray of a pass without a
+    correlation reading the one from the nearest-azimuth ray of a pass at the same elevation that has it."""
+    rho = np.ma.filled(np.ma.asarray(rho, dtype=float), np.nan)
+    ang = np.asarray(radar.fixed_angle["data"], dtype=float)
+    az = np.asarray(radar.azimuth["data"], dtype=float)
+    sl = [(int(a), int(b) + 1) for a, b in zip(radar.sweep_start_ray_index["data"], radar.sweep_end_ray_index["data"])]
+    has = [np.isfinite(rho[a:b]).mean() > 0.02 for a, b in sl]
+    for i, (a, b) in enumerate(sl):
+        if has[i]:
+            continue
+        j = min((k for k in range(len(sl)) if has[k] and abs(ang[k] - ang[i]) < 0.25), key=lambda k: abs(ang[k] - ang[i]), default=None)
+        if j is None:
+            continue
+        pa, pb = sl[j]
+        d = np.abs(((az[a:b, None] - az[None, pa:pb]) + 180) % 360 - 180)
+        rho[a:b] = rho[pa + d.argmin(axis=1)]
+    return rho
+
+
 def exclude_biological(radar, gf):
     f = radar.fields.get("cross_correlation_ratio")
     if f is None:
         print("dual-pol: no correlation coefficient in this volume", flush=True)
         return 0
     ref = radar.fields["reflectivity"]["data"]
-    m = biological_mask(ref, f["data"])
+    m = biological_mask(ref, borrow_rhohv(radar, f["data"]))
     gf.exclude_gates(m)
     echo = np.ma.filled(np.ma.asarray(ref, dtype=float), np.nan) >= 5
     rho = np.ma.filled(np.ma.asarray(f["data"], dtype=float), np.nan)[echo]
