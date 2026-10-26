@@ -144,7 +144,7 @@ def summarize_learn(corr, card):
     return summarize(corr, card)
 
 
-# Chop trouble spots: how often each spot is Choppy or worse over the paddling-season wave climate (app/data/chop_climate.json,
+# Chop trouble spots: how often each spot is Choppy or worse over the paddling-season wave climate (tools/chop_climate.json,
 # from the buoys), with the SWAN library carrying each hour's offshore waves to shore (sheltering, wall reflection, breaking).
 # The same energy scale as the page's chop bands: E = 613 Hs^2 J/m2, weighted by steepness clamp(4 / Tp, 0.6, 2).
 CHOP_E = (70.0, 160.0)          # Choppy, Rough
