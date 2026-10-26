@@ -370,11 +370,21 @@ const LAKE = SHORE.concat([ll(46.2, -85.4), ll(46.2, -87.3)]);
 // add to this list when a track crosses "land" that is really water
 const WATERWAYS = [
   ["Diversey Harbor inlet under Lake Shore Drive", 16, 1.8, [[41.93252, -87.63242], [41.93250, -87.63162], [41.93259, -87.63132], [41.93267, -87.63117]]],
-  // the turn basin east of the bridge and the gap between the jetties: open to the lake (its chop reflects off the walls), not sheltered harbour
-  ["Diversey Harbor turn basin", 26, 2.5, [[41.93245, -87.63184], [41.93259, -87.63148], [41.93265, -87.63118]], 1],
+  // the gap between the jetties: open to the lake (its chop reflects off the walls), not sheltered harbour; the outer basin
+  // inside them is traced in WATER_AREAS (a 26 m-wide "turn basin" stroke here spilled onto the park south of the channel)
   ["Diversey Harbor mouth", 18, 2.5, [[41.93264, -87.63112], [41.93254, -87.63091], [41.93242, -87.63076], [41.93228, -87.63060], [41.93212, -87.63048]], 1],
   ["Channel south of Diversey Harbor (east side)", 18, 1.2, [[41.92330, -87.63110], [41.92288, -87.63096], [41.92215, -87.63082], [41.92179, -87.63063]]],
   ["Channel south of Diversey Harbor", 26, 1.2, [[41.92438, -87.63175], [41.92368, -87.63150], [41.92294, -87.63118], [41.92221, -87.63072], [41.92172, -87.63048]]],
+];
+// water areas the map leaves as land, traced from the mapped walls and the harbor chart: [name, depth m, [[lat, lon], ...], class]
+// Diversey Harbor's outer basin: OSM closes the coastline across the mouth and maps no water inside it, so without this the basin
+// between the west wall, the stepped revetment, the north breakwater pier and the angled south pier came out as land with a thin channel
+const WATER_AREAS = [
+  ["Diversey Harbor inlet under Lake Shore Drive", 1.8, [[41.932457, -87.632288], [41.932448, -87.631782], [41.932601, -87.631782], [41.932601, -87.632288]], 2],
+  ["Diversey Harbor outer basin", 2.5, [[41.932448, -87.631782], [41.932448, -87.631685], [41.932457, -87.631516], [41.932439, -87.631359], [41.932421, -87.631287],
+    [41.932502, -87.631227], [41.932592, -87.631166], [41.932601, -87.63107], [41.932574, -87.630889], [41.93252, -87.63072], [41.932574, -87.630792],
+    [41.932728, -87.63078], [41.932972, -87.630792], [41.932981, -87.631396], [41.932746, -87.631396], [41.932683, -87.63142], [41.932638, -87.631468],
+    [41.93261, -87.631516], [41.932592, -87.631577], [41.932601, -87.631782]], 1],
 ];
 const PLACES = [["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Theater on the Lake", 41.9262, -87.6318, 0.02], ["Diversey Harbor", 41.9300, -87.6342, 0.02],
   ["Lincoln Park", 41.9215, -87.6370, 0.02], ["Fullerton Ave", 41.9255, -87.6400, 0.015], ["Downtown", 41.8820, -87.6278, 0.25], ["Navy Pier", 41.8917, -87.6043, 0.03],
@@ -815,16 +825,23 @@ function buildMap(LF) {
     const ok = deps.filter((d) => d === d).sort((x, y) => x - y);
     return ok.length >= deps.length * 0.7 && ok.length >= 4 && ok[ok.length >> 1] > 2.5 && ok.filter((d) => d < 0).length < 0.15 * ok.length; };
   MAP.submerged = 0; const floating = [], steel = [];
+  const coastNodes = new Set(); feats.filter((f) => f.kind === "coastline").forEach((f) => f.pts.forEach(([x, y]) => coastNodes.add(`${Math.round(x)},${Math.round(y)}`)));
+  const coastHits = (pts) => pts.filter(([x, y]) => coastNodes.has(`${Math.round(x)},${Math.round(y)}`)).length, onCoast = (pts) => pts.length >= 3 && coastHits(pts) >= 0.6 * pts.length;
   // groynes along the Chicago lakefront are steel sheet-pile breakers (North Ave Beach's offshore line and its spurs): fixed,
   // under a metre wide, standing just out of the water. They still stop waves in the mask, on a line 1-2 pixels wide, but the
   // water is drawn right up to them and the wall itself is a 3-D steel mesh (stroked 3-SC wide they read as 10 m sand spits)
   const sc = document.createElement("canvas"); sc.width = WPX; sc.height = HPX; const scx = sc.getContext("2d", { willReadFrequently: true }); scx.fillStyle = scx.strokeStyle = "#fff"; scx.lineWidth = 1.5;
   ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => {
     // marina docks (named "Dock A"... or short) float over open water: drawn in 3-D below, not a wall in the mask
-    if (kind === "pier" && (/\bdock\b/i.test(f.name || "") || (f.closed ? area(f.pts) < 4000 : len(f.pts) < 150))) { floating.push(f); return; }
+    // (a small pier built out from the shoreline itself, sharing its nodes, is a fixed concrete pier, e.g. Diversey Harbor's two jetties)
+    if (kind === "pier" && (/\bdock\b/i.test(f.name || "") || (f.closed ? area(f.pts) < 4000 && coastHits(f.pts) < 2 : len(f.pts) < 150))) { floating.push(f); return; }
     if (BATHY.det && submerged(f.pts, f.closed)) { MAP.submerged++; return; }
     if (kind === "groyne") { steel.push(f); path(scx, f.pts, f.closed); f.closed ? (scx.fill(), scx.stroke()) : scx.stroke(); }
     if (kind === "groyne") { pcx.lineWidth = 1.5; path(pcx, f.pts, f.closed); f.closed ? pcx.fill() : pcx.stroke(); }
+    // a seawall or revetment mapped on the shoreline itself (its nodes are the coastline's): the coastline already puts land
+    // behind it, so it's stroked ~3 m wide instead of ~10 m centred on the water's edge, which ate half of narrow channels
+    // (Diversey Harbor's entrance under Lake Shore Drive and its outer basin)
+    else if (!f.closed && kind === "breakwater" && onCoast(f.pts)) { pcx.lineWidth = Math.max(1.2, 3 / MPP); path(pcx, f.pts, false); pcx.stroke(); MAP.shoreWalls = (MAP.shoreWalls || 0) + 1; }
     else if (f.closed) { path(pcx, f.pts, true); pcx.fill(); } else { pcx.lineWidth = (kind === "pier" ? 2 : 3) * SC; path(pcx, f.pts, false); pcx.stroke(); } }));
   // the 1 m lidar knows where the water is better than the map: surveyed water that the map calls land
   // (Diversey Harbor's basins, lagoons) becomes sheltered water; surveyed dry land stays land
@@ -904,14 +921,35 @@ function buildMap(LF) {
     if (wwFine) { const t = U.uBathyF.value, hd = t.image.data, D = BATHY.det.dep; for (let i = 0; i < hd.length; i++) hd[i] = THREE.DataUtils.toHalfFloat(D[i] === D[i] ? D[i] : -999); t.needsUpdate = true; }
     if (wwCoarse) { const hd = U.uBathy.value.image.data; for (let q = 0; q < hd.length; q++) hd[q] = THREE.DataUtils.toHalfFloat(BATHY.dep[q]); U.uBathy.value.needsUpdate = true; }
     MAP.waterways = n; }
+  // traced water areas (WATER_AREAS): filled polygons, walls and piers stay solid, a nominal depth where the survey reads dry
+  { const ac = document.createElement("canvas"); ac.width = WPX; ac.height = HPX; const acx = ac.getContext("2d", { willReadFrequently: true }); let n = 0, aFine = false, aCoarse = false;
+    for (const [, dM, poly, wcl] of WATER_AREAS) { const cl = wcl || 2, Q = poly.map(([la, lo]) => P(...ll(la, lo)));
+      const bx0 = Math.max(0, Math.floor(Math.min(...Q.map((q) => q[0]))) - 1), bx1 = Math.min(WPX - 1, Math.ceil(Math.max(...Q.map((q) => q[0]))) + 1);
+      const by0 = Math.max(0, Math.floor(Math.min(...Q.map((q) => q[1]))) - 1), by1 = Math.min(HPX - 1, Math.ceil(Math.max(...Q.map((q) => q[1]))) + 1);
+      if (bx1 < bx0 || by1 < by0) continue;
+      acx.clearRect(bx0, by0, bx1 - bx0 + 1, by1 - by0 + 1); acx.fillStyle = "#fff"; acx.beginPath(); Q.forEach(([px, py], i) => i ? acx.lineTo(px, py) : acx.moveTo(px, py)); acx.closePath(); acx.fill();
+      const ad = acx.getImageData(bx0, by0, bx1 - bx0 + 1, by1 - by0 + 1).data, aw = bx1 - bx0 + 1;
+      for (let py = by0; py <= by1; py++) for (let px = bx0; px <= bx1; px++) { if (ad[((py - by0) * aw + (px - bx0)) * 4 + 3] < 128) continue;
+        const i = py * WPX + px; if (pd[i * 4] > 128) continue; if (mask[i] === 0 || (cl === 1 && mask[i] === 2)) { mask[i] = cl; n++; }
+        const xk = x0 + (px + 0.5) / WPX * (x1 - x0), yk = y1 - (py + 0.5) / HPX * (y1 - y0);
+        if (BATHY.det) { const g = BATHY.det.g, gi = Math.round((xk * 1000 - g.x0) / g.dx), gj = Math.round((yk * 1000 - g.y0) / g.dx);
+          if (gi >= 0 && gj >= 0 && gi < g.nx && gj < g.ny) { const q = gj * g.nx + gi; if (BATHY.det.dep[q] === BATHY.det.dep[q] && BATHY.det.dep[q] < dM * 0.6) { BATHY.det.dep[q] = dM; aFine = true; } } }
+        if (BATHY.ok) { const G = BATHY.g, gi = Math.round((xk * 1000 - G.x0) / G.dx), gj = Math.round((yk * 1000 - G.y0) / G.dx);
+          if (gi >= 0 && gj >= 0 && gi < G.nx && gj < G.ny) { const q = gj * G.nx + gi; if (BATHY.dep[q] < dM * 0.6) { BATHY.dep[q] = dM; aCoarse = true; } } } } }
+    if (aFine) { const t = U.uBathyF.value, hd = t.image.data, D = BATHY.det.dep; for (let i = 0; i < hd.length; i++) hd[i] = THREE.DataUtils.toHalfFloat(D[i] === D[i] ? D[i] : -999); t.needsUpdate = true; }
+    if (aCoarse) { const hd = U.uBathy.value.image.data; for (let q = 0; q < hd.length; q++) hd[q] = THREE.DataUtils.toHalfFloat(BATHY.dep[q]); U.uBathy.value.needsUpdate = true; }
+    MAP.waterAreas = n; }
   // specks of "land" inside water (boats and docks the lidar saw, survey noise) become water: any land patch under ~1500 m2
   // that touches no map edge and no pier or breakwater
-  { const lim = Math.round(1500 / (MPP * MPP)), seen = new Uint8Array(WPX * HPX), q = new Int32Array(lim + 8); let filled = 0;
+  { const lim = Math.round(1500 / (MPP * MPP)), seen = new Uint8Array(WPX * HPX), q = new Int32Array(lim + 8); const ov = []; let filled = 0;
     for (let i0 = 0; i0 < mask.length; i0++) { if (mask[i0] !== 0 || seen[i0]) continue;
       let h = 0, t = 0, edge = false, solid = false, wcls = 0, big = false; q[t++] = i0; seen[i0] = 1;
       while (h < t) { const i = q[h++], x = i % WPX, y = (i / WPX) | 0; if (x === 0 || y === 0 || x === WPX - 1 || y === HPX - 1) edge = true; if (pd[i * 4] > 128) solid = true;
         for (const n of [i - 1, i + 1, i - WPX, i + WPX]) { if (n < 0 || n >= mask.length) continue; const m = mask[n];
-          if (m) { if (!wcls || m === 2) wcls = m; continue; } if (seen[n]) continue; seen[n] = 1; if (t < lim) q[t++] = n; else big = true; } }
+          if (m) { if (!wcls || m === 2) wcls = m; continue; } if (seen[n]) continue; seen[n] = 1; if (t < lim) q[t++] = n; else { big = true; ov.push(n); } } }
+      // a region too big to be a speck is still flooded to its end (marked seen), or its unexplored rest would later look like
+      // small enclosed pockets and be filled (the park north of Diversey Harbor's outer basin came out as water)
+      while (ov.length) { const i = ov.pop(); for (const n of [i - 1, i + 1, i - WPX, i + WPX]) if (n >= 0 && n < mask.length && !mask[n] && !seen[n]) { seen[n] = 1; ov.push(n); } }
       if (!big && !edge && !solid && wcls) { for (let k = 0; k < t; k++) mask[q[k]] = wcls; filled += t; } }
     MAP.specks = filled; }
   // one byte per pixel (class * 85); DataTexture rows run south->north, canvas rows north->south
@@ -2630,6 +2668,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
     // a page can be built to open on a featured period (e.g. a storm): meta.start = {label, t, view: [lat, lon, km, heading, pitch]}
     const st = (parseJSON("meta-data") || {}).start;
     if (st && st.mode === "import" && IMP.list.length) { setMode("import"); if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }
+    else if (st && st.mode === "live") { if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }   // live is set above (when there's radar); the mini map shows the radar in live mode
     else if (st) { const i = SRC.hist.findIndex((h) => h.raw.label === st.label || (h.raw.window && h.raw.window.start.startsWith(st.label || "~")));
       if (i >= 0) { S.histIdx = i; $("#hist-pick").value = String(i); setMode("history"); if (st.t) S.t = new Date(st.t).getTime(); }
       if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }
