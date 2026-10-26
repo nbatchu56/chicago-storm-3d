@@ -91,9 +91,15 @@ def biological_mask(dbz, rhohv):
 def exclude_biological(radar, gf):
     f = radar.fields.get("cross_correlation_ratio")
     if f is None:
+        print("dual-pol: no correlation coefficient in this volume", flush=True)
         return 0
-    m = biological_mask(radar.fields["reflectivity"]["data"], f["data"])
+    ref = radar.fields["reflectivity"]["data"]
+    m = biological_mask(ref, f["data"])
     gf.exclude_gates(m)
+    echo = np.ma.filled(np.ma.asarray(ref, dtype=float), np.nan) >= 5
+    rho = np.ma.filled(np.ma.asarray(f["data"], dtype=float), np.nan)[echo]
+    print(f"dual-pol: dropped {int(m.sum())} of {int(echo.sum())} echo gates >= 5 dBZ; rho on echo: "
+          f"{int(np.isfinite(rho).sum())} valid, median {np.nanmedian(rho) if np.isfinite(rho).any() else float('nan'):.2f}", flush=True)
     return int(m.sum())
 
 
