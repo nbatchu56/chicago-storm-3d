@@ -1,0 +1,34 @@
+name: NWS alert watch
+
+# Every ~10 minutes: if the NWS has issued a new wind/wave alert for the Chicago lakefront (Small Craft
+# Advisory, Gale/Storm warnings, Beach Hazards, Lakeshore Flood, Wind Advisory, Severe Thunderstorm
+# Warning, ...) since the last snapshot, start snapshot.yml so fresh data is ready.
+# The Lakefront Local page picks it up at its next scheduled refresh or "Refresh now".
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: alert-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: app
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Check alerts, start a snapshot if needed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m app.alert_watch
