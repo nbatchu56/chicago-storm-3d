@@ -664,7 +664,7 @@ vec3 chopTint(vec2 hc, vec2 pk, float w) { float t = clamp(log(max(613.0 * hc.x 
 // chop spots heat map: usual = how often a spot is Choppy or worse (paddling-season daylight hours, buoy climate x SWAN);
 // right now = this hour's wave energy from Light chop (25 J/m2) up to Very rough (350+), rebound hatched as in Chop
 uniform sampler2D uSpotTex; uniform vec2 uSpotMin, uSpotSize; uniform float uSpotsOn, uSpotHas;
-uniform sampler2D uOcFG; uniform float uOcLG, uOcOnG, uOcVarG;
+uniform sampler2D uOcFG, uOcF2; uniform float uOcLG, uOcOnG, uOcVarG, uOcL2;
 vec3 heatColor(float t) { vec3 c = mix(vec3(0.04, 0.05, 0.14), vec3(0.40, 0.10, 0.52), smoothstep(0.0, 0.3, t));
   c = mix(c, vec3(0.86, 0.20, 0.17), smoothstep(0.3, 0.55, t)); c = mix(c, vec3(0.99, 0.62, 0.12), smoothstep(0.55, 0.8, t));
   return pow(mix(c, vec3(1.0, 0.96, 0.62), smoothstep(0.8, 1.0, t)), vec3(2.2)); }
@@ -755,7 +755,8 @@ void main(){
     // the spectral short waves (the same FFT tile as the patch under the camera) everywhere else too: two rotated octaves,
     // fading into glitter roughness once a pixel covers more than a couple of metres
     if (uOcOnG > 0.5 && cls < 2.5) { vec2 uv = p * 1000.0 / uOcLG; float fm = foot * 1000.0, w1 = clamp(1.0 - fm / 2.5, 0.0, 1.0), w2 = clamp(1.0 - fm / 0.9, 0.0, 1.0);
-      vec2 sl = texture2D(uOcFG, uv).xy * w1 + texture2D(uOcFG, mat2(0.799, 0.602, -0.602, 0.799) * uv * 2.71 + 0.37).xy * 0.35 * w2;
+      vec2 sl = texture2D(uOcFG, uv).xy * w1 + texture2D(uOcFG, mat2(0.799, 0.602, -0.602, 0.799) * uv * 2.71 + 0.37).xy * 0.35 * w2
+        + texture2D(uOcF2, p * 1000.0 / uOcL2).xy * clamp(1.0 - fm / 0.15, 0.0, 1.0);
       grad += sl * calm * (cls > 1.5 ? 0.55 : 1.0); unres += uOcVarG * (1.0 - w1) * calm; }
     vec3 N = normalize(vec3(-grad.x, 1.0, grad.y)); float rough = sqrt(max(unres, (0.003 + 0.00512 * uWindSpd) * calm * 0.55)) + 0.02;   // Cox & Munk: the slopes no grid resolves still spread the glitter
     float F = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
@@ -1436,8 +1437,10 @@ function funwaveHsKm(xk, yk) { const r = FW.cur; if (!r || !r.hsArr || !fwIn(r, 
 // than ~half the peak wavelength come from a continuous wind-wave spectrum instead, synthesized on a 64 m tile by FFT
 // every frame: a random, never-repeating surface that disperses properly (long waves outrun short ones). Two grids:
 // 32x32 (2 m cells) for the geometry and 128x128 (0.5 m) for slopes and crest foam.
-const OCEAN = (() => {
-  const L = 64, NF = 128, NC = 32, g = 9.81, dk = 2 * Math.PI / L;
+// makeOcean(L, NF, NC, kMin): one tile; the fine tile (8 m, 6 cm texels) holds only wavenumbers above kMin, so the two don't
+// double-count: it gives the near water its centimetre ripples and sharp sun glints
+const makeOcean = (L, NF, NC, kMin = 0) => {
+  const g = 9.81, dk = 2 * Math.PI / L;
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   function fftPlan(n) { const bits = Math.log2(n), rev = new Uint32Array(n), cs = new Float32Array(n / 2), sn = new Float32Array(n / 2);
     for (let i = 0; i < n; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); rev[i] = r; }
@@ -1471,7 +1474,7 @@ const OCEAN = (() => {
     const spec = (kx, kz) => { const k = Math.hypot(kx, kz); if (k < 1e-6) return 0; const w = Math.sqrt(g * k);
       const S = alpha * g * g / Math.pow(w, 5) * Math.exp(-1.25 * Math.pow(wWind / w, 4)) * smooth(0.85 * wCut, 1.15 * wCut, w);
       const c = (kx * windTo[0] + kz * windTo[1]) / k, D = c > 0 ? (2 / Math.PI) * c * c * 0.92 + 0.08 / (2 * Math.PI) : 0.08 / (2 * Math.PI);
-      return S * D * (g / (2 * w)) / k * gate; };   // E(kx, kz) = S(w) D(theta) (dw/dk) / k
+      return S * D * (g / (2 * w)) / k * gate * (kMin > 0 ? smooth(kMin * 0.75, kMin, k) : 1); };   // E(kx, kz) = S(w) D(theta) (dw/dk) / k
     let vLo = 0, vHi = 0; seed = 1;
     for (const G of [F, C]) { const n = G.n;
       for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const q = j * n + i, mi = i < n / 2 ? i : i - n, mj = j < n / 2 ? j : j - n;
@@ -1515,10 +1518,9 @@ const OCEAN = (() => {
   function heightAt(x, z) { if (!st.on) return 0; const u = ((x / L) % 1 + 1) % 1 * NC, v = ((z / L) % 1 + 1) % 1 * NC, i0 = Math.floor(u), j0 = Math.floor(v), fu = u - i0, fv = v - j0;
     const at = (i, j) => heightC[(j % NC) * NC + (i % NC)]; return (at(i0, j0) * (1 - fu) + at(i0 + 1, j0) * fu) * (1 - fv) + (at(i0, j0 + 1) * (1 - fu) + at(i0 + 1, j0 + 1) * fu) * fv; }
   return { L, NF, NC, texC, texF, setSea, update, heightAt, st, _F: F, _C: C };
-})();
-Object.assign(U, { uOcFG: { value: OCEAN.texF }, uOcLG: { value: OCEAN.L }, uOcOnG: { value: 0 }, uOcVarG: { value: 0 } });
-(() => {
-})();
+};
+const OCEAN = makeOcean(64, 128, 32), OCEAN_FINE = makeOcean(8, 128, 16, 2 * Math.PI / 1.1);
+Object.assign(U, { uOcFG: { value: OCEAN.texF }, uOcLG: { value: OCEAN.L }, uOcOnG: { value: 0 }, uOcVarG: { value: 0 }, uOcF2: { value: OCEAN_FINE.texF }, uOcL2: { value: OCEAN_FINE.L } });
 
 // ---------------------------------------------------------------- near-camera wave patch (metres inside): refraction + shoaling per wave
 const NW = 28, TABW = 256, DMAX = 1500;
@@ -1527,7 +1529,7 @@ tabTex.minFilter = tabTex.magFilter = THREE.NearestFilter; tabTex.needsUpdate = 
 const WU = { uA: { value: new Float32Array(NW) }, uKy: { value: new Float32Array(NW) }, uW: { value: new Float32Array(NW) }, uP: { value: new Float32Array(NW) }, uQ: { value: 0.5 },
   uTab: { value: tabTex }, uShoreN2: { value: new THREE.Vector2(1, 0) }, uShoreD2: { value: 165 }, uPatchRel: { value: new THREE.Vector2() }, uHsB: { value: 0.3 },
   uWindDir2: { value: new THREE.Vector2(1, 0) }, uGust: { value: 0.3 }, uPatchR: { value: 330 },
-  uOcC: { value: OCEAN.texC }, uOcF: { value: OCEAN.texF }, uOcL: { value: OCEAN.L }, uOcOn: { value: 0 }, uOcVarLo: { value: 0 }, uOcVarHi: { value: 0 } };
+  uOcC: { value: OCEAN.texC }, uOcF: { value: OCEAN.texF }, uOcL: { value: OCEAN.L }, uOcF2: { value: OCEAN_FINE.texF }, uOcL2: { value: OCEAN_FINE.L }, uOcOn: { value: 0 }, uOcVarLo: { value: 0 }, uOcVarHi: { value: 0 } };
 Object.assign(WU, U);
 const WAVE = `
 #define N ${NW}
@@ -1579,7 +1581,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
   fragmentShader: `${LOGF[0]} ${WAVE} ${SKY_FN} ${TEMP_GLSL} ${FW_GLSL}
     uniform vec3 uCamPos, uAmbTop, uAmbBot; uniform float uWindSpd, uCity, uGust, uTempOn; uniform vec2 uWindDir2;
     uniform sampler2D uMapMask, uMapLooks; uniform vec2 uMapMin, uMapSize; uniform float uHasMap;
-    uniform sampler2D uOcC, uOcF; uniform float uOcL, uOcOn, uOcVarLo, uOcVarHi;
+    uniform sampler2D uOcC, uOcF, uOcF2; uniform float uOcL, uOcOn, uOcVarLo, uOcVarHi, uOcL2;
     varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
@@ -1605,7 +1607,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
         vec4 tf = texture2D(uOcF, uv); float eC = 1.0 / 32.0;
         vec2 sC = vec2(texture2D(uOcC, uv + vec2(eC, 0.0)).y - texture2D(uOcC, uv - vec2(eC, 0.0)).y, texture2D(uOcC, uv + vec2(0.0, eC)).y - texture2D(uOcC, uv - vec2(0.0, eC)).y) / (2.0 * eC * uOcL);
         vec2 uv2 = mat2(0.799, 0.602, -0.602, 0.799) * uv * 2.71 + 0.37; float wf2 = clamp(1.0 - foot * 2.71 / 0.45, 0.0, 1.0);
-        vec2 sD = mix(sC * wfC, tf.xy, wfF) + texture2D(uOcF, uv2).xy * 0.35 * wf2;
+        vec2 sD = mix(sC * wfC, tf.xy, wfF) + texture2D(uOcF, uv2).xy * 0.35 * wf2 + texture2D(uOcF2, p / uOcL2).xy * clamp(1.0 - foot / 0.12, 0.0, 1.0);
         grad += sD * vGD * (1.0 + 0.8 * gust);
         unres += (uOcVarHi * (1.0 - wfF) + uOcVarLo * (1.0 - wfC)) * vGD * vGD;
         crest = mix(1.0, tf.z, wfF); }
@@ -1687,6 +1689,7 @@ function setWaves(systems, shoreFrame, dRef, wind) {
   // short-wave spectrum above the components' band (they reach ~2.3x the main peak frequency)
   const main = sys.filter((c) => c.spread < 50).sort((a, b) => b.hs - a.hs)[0];     // not the local chop (spread 50): it is a few components only
   OCEAN.setSea(wind.speed || 0, [Math.sin(wp), -Math.cos(wp)], main ? 2 * Math.PI / main.tp : 0);
+  OCEAN_FINE.setSea(wind.speed || 0, [Math.sin(wp), -Math.cos(wp)], main ? 2 * Math.PI / main.tp : 0);
   WU.uOcOn.value = OCEAN.st.on ? 1 : 0; WU.uOcVarLo.value = OCEAN.st.varLo; WU.uOcVarHi.value = OCEAN.st.varHi;
   U.uOcOnG.value = WU.uOcOn.value; U.uOcVarG.value = OCEAN.st.varHi + OCEAN.st.varLo;
   WU.uGust.value = wind.gust && wind.speed > 0.5 ? clamp((wind.gust / wind.speed - 1.1) * 1.6, 0, 1) : 0.3;
@@ -2621,7 +2624,7 @@ function tick() {
   }
   // place the patch under the camera, snapped so it doesn't swim
   const low = camera.position.y < 0.45; patch.visible = low && WAVES.ready;
-  if (patch.visible || board.visible || camera.position.y < 3) OCEAN.update(U.uTime.value, 0.85);   // the far water uses the same detail
+  if (patch.visible || board.visible || camera.position.y < 3) { OCEAN.update(U.uTime.value, 0.85); if (camera.position.y < 0.15) OCEAN_FINE.update(U.uTime.value, 0.6); }   // fine ripples only when close
   if (patch.visible) { const sx = Math.round(camera.position.x * 50) / 50, sz = Math.round(camera.position.z * 50) / 50; patch.position.set(sx, 0, sz);
     WU.uPatchRel.value.set((sx - WAVES.origin[0]) * 1000, (sz + WAVES.origin[1]) * 1000); }
   // track ribbon: bold from above, a faint wake line at paddler height
