@@ -405,7 +405,7 @@ const LB = (() => { const [x0, y0] = ll(41.870, -87.650), [x1, y1] = ll(41.970, 
 // camera presets: target (lat, lon), distance km, view heading (deg, compass), pitch (deg below horizontal)
 const GOTO = [
   ["Lakefront view", 41.9203, -87.6195, 1.58, 284, 34],      // the opening view: North Ave Beach to Belmont Harbor
-  ["Skyline view", 41.9200, -87.6100, 6.5, 285, 40],
+  ["Skyline view", 41.9150, -87.6080, 3.2, 270, 22],
   ["Montrose Harbor", 41.9615, -87.6310, 0.45, 250, 18],
   ["Belmont Harbor mouth", 41.9418, -87.6335, 0.32, 250, 16],
   ["North Ave Beach", 41.9140, -87.6225, 0.32, 255, 16],
@@ -417,6 +417,10 @@ const GOTO = [
   ["Chicago SUP · North Ave launch", 41.91337, -87.62279, 0.2, 28, 26],      // the beach in front of the shop, ~70 m to the water
   ["Kayak Chicago · Montrose launch", 41.96540, -87.63487, 0.34, 15, 26],    // across Montrose Beach to the lake
   ["Out on the lake", 41.9220, -87.6150, 0.05, 265, 4],
+  // on the water where you paddle most (your 2026 sessions): low over the surface, looking along the shore
+  ["On the water · North Ave hook", 41.9160, -87.6215, 0.09, 190, 7],
+  ["On the water · Lincoln Park shore", 41.9235, -87.6255, 0.09, 330, 7],
+  ["On the water · Montrose surf zone", 41.9688, -87.6318, 0.10, 210, 8],
   ["Oak St curve", 41.9010, -87.6215, 0.35, 230, 15],
   ["Ohio St / Navy Pier", 41.8930, -87.6110, 0.45, 250, 16],
   ["Monroe Harbor", 41.8805, -87.6130, 0.6, 260, 20],
@@ -484,7 +488,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 // far well beyond the sky dome: with a 0.3 m near plane, clip-space z for distant points rounds past 1 and gets clipped
 const camera = new THREE.PerspectiveCamera(50, 1, 0.0003, 50000);
 const controls = new THREE.OrbitControls(camera, canvas);
-controls.enableDamping = true; controls.dampingFactor = 0.1; controls.maxPolarAngle = Math.PI / 2 - 0.004; controls.minDistance = 0.003; controls.maxDistance = 9; controls.screenSpacePanning = false; controls.zoomSpeed = 1.2; controls.rotateSpeed = 0.6;
+controls.enableDamping = true; controls.dampingFactor = 0.1; controls.maxPolarAngle = Math.PI / 2 - 0.004; controls.minDistance = 0.003; controls.maxDistance = 3.5; controls.screenSpacePanning = false; controls.zoomSpeed = 1.2; controls.rotateSpeed = 0.6;
 const scene = new THREE.Scene();
 const rtScene = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType });
 rtScene.depthTexture = new THREE.DepthTexture(4, 4); rtScene.depthTexture.type = THREE.UnsignedIntType;
@@ -1973,7 +1977,11 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
     if (wd) { c.wind = wd.h.wspd; c.dir = wd.h.wdir || 0; c.gust = wd.h.gst; c.src.push(`wind ${wd.st.id}`); }
     if (at) c.airC = at.h.atmp; if (wt) c.waterC = wt.h.wtmp;
     // no period reported: waves the wind here can't raise are old swell, at least ~3 s (a 2 s guess drew calm mornings as chop)
-    if (wv && wv.h.wvht != null) { const wl = cem(c.wind, fetchAt(c.dir), 8); c.systems = [{ hs: wv.h.wvht, tp: wv.h.dpd || Math.max(wl.hm0 < wv.h.wvht * 0.5 ? 3 : 2, wl.tp), dir: wv.h.mwd != null ? wv.h.mwd : c.dir, spread: 25 }]; c.src.push(`waves ${wv.st.id}`); }
+    // buoys report a period only now and then: use the latest reported within 6 h (this buoy first, then the others) before
+    // guessing (your Oct 5 Montrose surf: a 3 s guess made 1.7 ft "Rough"; the buoys' 4-5 s gives your "choppy")
+    const dpdNear = () => { let best = null; for (const s2 of st || []) for (const h of s2.history) { if (!h.dpd) continue; const d = Math.abs(new Date(h.t) - tMs) + (s2 === wv.st ? 0 : 2 * 3600e3);
+        if (d < 8 * 3600e3 && (!best || d < best.d)) best = { d, v: h.dpd }; } return best && best.v; };
+    if (wv && wv.h.wvht != null) { const wl = cem(c.wind, fetchAt(c.dir), 8); c.systems = [{ hs: wv.h.wvht, tp: wv.h.dpd || dpdNear() || Math.max(wl.hm0 < wv.h.wvht * 0.5 ? 3 : 2, wl.tp), dir: wv.h.mwd != null ? wv.h.mwd : c.dir, spread: 25 }]; c.src.push(`waves ${wv.st.id}`); }
     else { const w = cem(c.wind, fetchAt(c.dir), 8); if (w.hm0 > 0.01) c.systems = [{ hs: w.hm0, tp: w.tp, dir: c.dir, spread: 28 }]; }
     // offshore condition for the SWAN library: the Chicago buoy (45198, ~9 m deep) when it reported
     const ob = (st || []).find((x) => x.id === "45198"), obh = ob && ob.history.reduce((b, h) => h.wvht != null && (!b || Math.abs(new Date(h.t) - tMs) < Math.abs(new Date(b.t) - tMs)) ? h : b, null);
@@ -2179,7 +2187,30 @@ function navStep(dt) {
   const z = (K.has("out") ? 1 : 0) - (K.has("in") ? 1 : 0);
   if (z) { const off = c.clone().sub(t), L = clamp(off.length() * Math.exp(z * 1.3 * dt), controls.minDistance, controls.maxDistance); c.copy(t).add(off.setLength(L)); }
 }
+// the view stays on the water: the point you look at stays on the water (or within ~80 m of it) and within ~2.5 km of
+// shore, and below ~50 deg you can't swing the camera in over the city (where buildings block the view); from higher up
+// anything goes. Views placed by the Go-to presets are kept as they are.
+const VLOCK = { good: null, checked: null, shore: null };
+controls.addEventListener("start", () => { VLOCK.user = true; VLOCK.good = null; });
+controls.addEventListener("end", () => { VLOCK.user = false; });
+function lockToWater() {
+  if (NAV.move !== "fly" || S.view === "ride" || camTween || !MAP.ok) return;
+  const t = controls.target, c = camera.position, tx = t.x, ty = -t.z;
+  if (!VLOCK.checked || Math.hypot(tx - VLOCK.checked[0], ty - VLOCK.checked[1]) > 0.004) { VLOCK.shore = nearestShore(tx, ty); VLOCK.checked = [tx, ty]; }
+  const nearWater = (x, y, r) => { if (maskAt(x, y) !== 0) return true; for (const k of [0.25, 0.5, 1]) for (let a = 0; a < 8; a++) if (maskAt(x + Math.cos(a * 0.785) * r * k, y + Math.sin(a * 0.785) * r * k) !== 0) return true; return false; };
+  const sh = VLOCK.shore, onWater = nearWater(tx, ty, 0.08);
+  let mx = 0, my = 0;
+  if (!onWater && sh.d > 0.08) { mx = sh.nx * (sh.d - 0.08); my = sh.ny * (sh.d - 0.08); }            // pulled back to the water (n points to the coast)
+  else if (maskAt(tx, ty) !== 0 && sh.d > 2.5) { mx = sh.nx * (sh.d - 2.5); my = sh.ny * (sh.d - 2.5); }            // and in toward the lakefront
+  if (mx || my) { t.x += mx; t.z -= my; c.x += mx; c.z -= my; VLOCK.checked = null; }
+  if (!VLOCK.user) return;
+  const ox = c.x - t.x, oz = c.z - t.z, oy = c.y - t.y, horiz = Math.hypot(ox, oz), pitch = Math.atan2(oy, horiz) * 180 / Math.PI;
+  const cx = c.x, cy = -c.z, inland = nearWater(cx, cy, 0.12) ? 0 : 1;
+  if (pitch < 50 && inland) { if (VLOCK.good) { const g = VLOCK.good, L = Math.hypot(ox, oy, oz) / Math.hypot(g[0], g[1], g[2]); c.set(t.x + g[0] * L, t.y + g[1] * L, t.z + g[2] * L); } }
+  else VLOCK.good = [ox, oy, oz];
+}
 function clampView() {    // keep the camera in the local world and above the water
+  lockToWater();
   const t = controls.target, c = camera.position, ox = clamp(t.x, LB.x0 - 1.5, LB.x1 + 3) - t.x, oz = clamp(-t.z, LB.y0 - 1.5, LB.y1 + 1.5) + t.z;
   if (ox || oz) { t.x += ox; t.z -= oz; c.x += ox; c.z -= oz; }
   if (t.y !== 0 && NAV.move === "fly" && S.view !== "ride") { c.y -= t.y; t.y = 0; }
