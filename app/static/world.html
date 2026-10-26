@@ -775,7 +775,7 @@ void main(){
     // light in the water comes through the surface: facets turned to the sun are brighter, those turned away darker, and a
     // low sun shines through the thin wave tops toward you (what makes waves read in daylight seen from above)
     { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn;
-      body *= mix(0.62 + 0.76 * clamp(dot(N, sl) * 1.6 - 0.35, 0.0, 1.0), 1.0, step(0.5, ov));
+      body *= mix(clamp(1.0 + dot(N.xz, normalize(sl.xz + 1e-4)) * 4.5, 0.45, 1.9), 1.0, step(0.5, ov));
       body += vec3(0.010, 0.060, 0.045) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - N.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
     vec3 H = normalize(uSunDir + V); float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
     col = mix(body, refl, uTempOn > 0.5 ? F * 0.45 : F) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice);
@@ -1626,7 +1626,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       // light in the water comes through the surface: facets turned to the sun are brighter, those turned away darker, and a
       // low sun shines through the thin wave tops toward you (what makes waves read in daylight seen from above)
       { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn;
-        body *= mix(0.62 + 0.76 * clamp(dot(Nn, sl) * 1.6 - 0.35, 0.0, 1.0), 1.0, step(0.5, ov));
+        body *= mix(clamp(1.0 + dot(Nn.xz, normalize(sl.xz + 1e-4)) * 4.5, 0.45, 1.9), 1.0, step(0.5, ov));
         body += vec3(0.010, 0.060, 0.045) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - Nn.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
       vec3 c = mix(body, skyColor(R, false), uTempOn > 0.5 ? F * 0.45 : F);
       vec3 Hv = normalize(uSunDir + V); float rough = sqrt(max(unres + 0.0025, (0.003 + 0.00512 * uWindSpd) * 0.55)) + 0.01;   // Cox & Munk floor
