@@ -108,13 +108,27 @@ def borrow_rhohv(radar, rho):
     return rho
 
 
+def smooth_rhohv(radar, rho, rays=5, gates=9):
+    """Bird and insect returns are noisy gate to gate (a third of single gates read > 0.8 at a median of ~0.65), so
+    each gate is judged on the mean correlation around it: ~5 rays x ~2 km, within its own sweep."""
+    out = np.full_like(rho, np.nan)
+    sl = [(int(a), int(b) + 1) for a, b in zip(radar.sweep_start_ray_index["data"], radar.sweep_end_ray_index["data"])]
+    for a, b in sl:
+        r = rho[a:b]; ok = np.isfinite(r)
+        num = ndimage.uniform_filter(np.where(ok, r, 0.0), (rays, gates), mode=("wrap", "nearest"))
+        den = ndimage.uniform_filter(ok.astype(float), (rays, gates), mode=("wrap", "nearest"))
+        with np.errstate(invalid="ignore", divide="ignore"):
+            out[a:b] = np.where(den > 0.2, num / den, np.nan)
+    return out
+
+
 def exclude_biological(radar, gf):
     f = radar.fields.get("cross_correlation_ratio")
     if f is None:
         print("dual-pol: no correlation coefficient in this volume", flush=True)
         return 0
     ref = radar.fields["reflectivity"]["data"]
-    m = biological_mask(ref, borrow_rhohv(radar, f["data"]))
+    m = biological_mask(ref, smooth_rhohv(radar, borrow_rhohv(radar, f["data"])))
     gf.exclude_gates(m)
     echo = np.ma.filled(np.ma.asarray(ref, dtype=float), np.nan) >= 5
     rho = np.ma.filled(np.ma.asarray(f["data"], dtype=float), np.nan)[echo]

@@ -21,3 +21,13 @@ def test_borrow_rhohv_fills_the_pass_without_dual_pol():
                sweep_start_ray_index={"data": np.array([0, 2])}, sweep_end_ray_index={"data": np.array([1, 3])})
     out = borrow_rhohv(radar, rho)
     assert out[2].tolist() == [0.95, 0.95] and out[3].tolist() == [0.6, 0.6]
+
+
+def test_smooth_rhohv_judges_noisy_bird_gates_by_their_neighbourhood():
+    from types import SimpleNamespace as NS
+    from app.radar_to_scene import smooth_rhohv
+    rng = np.random.default_rng(1)
+    rho = np.clip(rng.normal(0.65, 0.15, (20, 40)), 0, 1)       # birds: a third of gates above 0.8 on their own
+    radar = NS(sweep_start_ray_index={"data": np.array([0])}, sweep_end_ray_index={"data": np.array([19])})
+    sm = smooth_rhohv(radar, rho)
+    assert (rho > 0.8).mean() > 0.1 and (sm > 0.8).mean() < 0.01
