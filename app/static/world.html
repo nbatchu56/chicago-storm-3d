@@ -665,6 +665,9 @@ vec3 chopTint(vec2 hc, vec2 pk, float w) { float t = clamp(log(max(613.0 * hc.x 
 // right now = this hour's wave energy from Light chop (25 J/m2) up to Very rough (350+), rebound hatched as in Chop
 uniform sampler2D uSpotTex; uniform vec2 uSpotMin, uSpotSize; uniform float uSpotsOn, uSpotHas;
 uniform sampler2D uOcFG, uOcF2; uniform float uOcLG, uOcOnG, uOcVarG, uOcL2;
+// the fine ripple tile at metres pm, sampled twice (rotated, rescaled) and blended so its 8 m repeat doesn't show as a grid
+vec2 fineSlope(vec2 pm) { vec2 a = texture2D(uOcF2, pm / uOcL2).xy, b = texture2D(uOcF2, mat2(0.574, 0.819, -0.819, 0.574) * pm / (uOcL2 * 1.37) + 0.31).xy;
+  return (a + mat2(0.574, -0.819, 0.819, 0.574) * b) * 0.62; }
 vec3 heatColor(float t) { vec3 c = mix(vec3(0.04, 0.05, 0.14), vec3(0.40, 0.10, 0.52), smoothstep(0.0, 0.3, t));
   c = mix(c, vec3(0.86, 0.20, 0.17), smoothstep(0.3, 0.55, t)); c = mix(c, vec3(0.99, 0.62, 0.12), smoothstep(0.55, 0.8, t));
   return pow(mix(c, vec3(1.0, 0.96, 0.62), smoothstep(0.8, 1.0, t)), vec3(2.2)); }
@@ -756,7 +759,7 @@ void main(){
     // fading into glitter roughness once a pixel covers more than a couple of metres
     if (uOcOnG > 0.5 && cls < 2.5) { vec2 uv = p * 1000.0 / uOcLG; float fm = foot * 1000.0, w1 = clamp(1.0 - fm / 2.5, 0.0, 1.0), w2 = clamp(1.0 - fm / 0.9, 0.0, 1.0);
       vec2 sl = texture2D(uOcFG, uv).xy * w1 + texture2D(uOcFG, mat2(0.799, 0.602, -0.602, 0.799) * uv * 2.71 + 0.37).xy * 0.35 * w2
-        + texture2D(uOcF2, p * 1000.0 / uOcL2).xy * clamp(1.0 - fm / 0.15, 0.0, 1.0);
+        + fineSlope(p * 1000.0) * clamp(1.0 - fm / 0.15, 0.0, 1.0);
       grad += sl * calm * (cls > 1.5 ? 0.55 : 1.0); unres += uOcVarG * (1.0 - w1) * calm; }
     vec3 N = normalize(vec3(-grad.x, 1.0, grad.y)); float rough = sqrt(max(unres, (0.003 + 0.00512 * uWindSpd) * calm * 0.55)) + 0.02;   // Cox & Munk: the slopes no grid resolves still spread the glitter
     float F = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
@@ -1581,7 +1584,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
   fragmentShader: `${LOGF[0]} ${WAVE} ${SKY_FN} ${TEMP_GLSL} ${FW_GLSL}
     uniform vec3 uCamPos, uAmbTop, uAmbBot; uniform float uWindSpd, uCity, uGust, uTempOn; uniform vec2 uWindDir2;
     uniform sampler2D uMapMask, uMapLooks; uniform vec2 uMapMin, uMapSize; uniform float uHasMap;
-    uniform sampler2D uOcC, uOcF, uOcF2; uniform float uOcL, uOcOn, uOcVarLo, uOcVarHi, uOcL2;
+    uniform sampler2D uOcC, uOcF; uniform float uOcL, uOcOn, uOcVarLo, uOcVarHi;   // (uOcF2, uOcL2: in the shared chunk)
     varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
@@ -1607,7 +1610,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
         vec4 tf = texture2D(uOcF, uv); float eC = 1.0 / 32.0;
         vec2 sC = vec2(texture2D(uOcC, uv + vec2(eC, 0.0)).y - texture2D(uOcC, uv - vec2(eC, 0.0)).y, texture2D(uOcC, uv + vec2(0.0, eC)).y - texture2D(uOcC, uv - vec2(0.0, eC)).y) / (2.0 * eC * uOcL);
         vec2 uv2 = mat2(0.799, 0.602, -0.602, 0.799) * uv * 2.71 + 0.37; float wf2 = clamp(1.0 - foot * 2.71 / 0.45, 0.0, 1.0);
-        vec2 sD = mix(sC * wfC, tf.xy, wfF) + texture2D(uOcF, uv2).xy * 0.35 * wf2 + texture2D(uOcF2, p / uOcL2).xy * clamp(1.0 - foot / 0.12, 0.0, 1.0);
+        vec2 sD = mix(sC * wfC, tf.xy, wfF) + texture2D(uOcF, uv2).xy * 0.35 * wf2 + fineSlope(p) * clamp(1.0 - foot / 0.12, 0.0, 1.0);
         grad += sD * vGD * (1.0 + 0.8 * gust);
         unres += (uOcVarHi * (1.0 - wfF) + uOcVarLo * (1.0 - wfC)) * vGD * vGD;
         crest = mix(1.0, tf.z, wfF); }
