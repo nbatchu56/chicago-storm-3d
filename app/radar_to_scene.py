@@ -74,10 +74,34 @@ Z_LEVELS = (np.arange(NZ) + 0.5) * DZ  # level centres, km
 # ---------------------------------------------------------------------------
 # Real radar -> 3-D grid
 # ---------------------------------------------------------------------------
+RHOHV_MIN = 0.8      # rain, snow and cloud ice correlate > ~0.9; birds, insects and clutter ~0.3-0.8
+RHOHV_KEEP_DBZ = 35  # strong cores (hail can read < 0.8) are kept whatever their correlation
+
+
+def biological_mask(dbz, rhohv):
+    """True where an echo is non-meteorological by dual-pol: weak and poorly correlated. Gates with no correlation
+    reading (masked or NaN) are kept. On clear dawns in migration season a wide shallow layer of 5-15 dBZ birds and
+    insects otherwise becomes a deck of cloud (Oct 21, 2026: a cloudless sunrise drawn with cumulus)."""
+    dbz = np.ma.filled(np.ma.asarray(dbz, dtype=float), np.nan)
+    rho = np.ma.filled(np.ma.asarray(rhohv, dtype=float), np.nan)
+    with np.errstate(invalid="ignore"):
+        return np.isfinite(rho) & (rho < RHOHV_MIN) & ~(dbz >= RHOHV_KEEP_DBZ)
+
+
+def exclude_biological(radar, gf):
+    f = radar.fields.get("cross_correlation_ratio")
+    if f is None:
+        return 0
+    m = biological_mask(radar.fields["reflectivity"]["data"], f["data"])
+    gf.exclude_gates(m)
+    return int(m.sum())
+
+
 def grid_volume(path):
     import pyart
-    # only reflectivity is needed; skipping the other moments cuts peak memory several-fold
-    radar = pyart.io.read_nexrad_archive(path, include_fields=["reflectivity"])
+    # reflectivity, plus the dual-pol correlation coefficient to drop birds and insects; skipping the other moments cuts
+    # peak memory several-fold
+    radar = pyart.io.read_nexrad_archive(path, include_fields=["reflectivity", "cross_correlation_ratio"])
     t = pyart.util.datetime_from_radar(radar)
     t = dt.datetime(t.year, t.month, t.day, t.hour, t.minute, t.second, tzinfo=UTC)
     rlat, rlon = float(radar.latitude["data"][0]), float(radar.longitude["data"][0])
@@ -95,6 +119,8 @@ def grid_volume(path):
     gf = pyart.filters.GateFilter(radar)
     gf.exclude_invalid("reflectivity")
     gf.exclude_below("reflectivity", 0.0)   # no-echo gates add nothing but memory
+    exclude_biological(radar, gf)
+    radar.fields.pop("cross_correlation_ratio", None)   # not gridded
     # grid limits are relative to the radar
     lim_x = ((ax[0] - rx) * 1e3, (ax[-1] - rx) * 1e3)
     lim_y = ((ax[0] - ry) * 1e3, (ax[-1] - ry) * 1e3)

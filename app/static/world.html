@@ -444,7 +444,10 @@ function solar(date, lat = 41.88, lon = -87.63) {
   const gmst = (18.697374558 + 24.06570982441908 * d) % 24, lst = (gmst * 15 + lon) * rad, ha = lst - ra;
   const el = Math.asin(Math.sin(lat * rad) * Math.sin(dec) + Math.cos(lat * rad) * Math.cos(dec) * Math.cos(ha));
   const az = Math.atan2(-Math.sin(ha), Math.tan(dec) * Math.cos(lat * rad) - Math.sin(lat * rad) * Math.cos(ha));
-  return { el: el / rad, az: ((az / rad) + 360) % 360 };
+  // atmospheric refraction (Bennett): lifts the sun ~0.6 deg at the horizon, so it shows as a half disk at the moment of
+  // geometric sunrise, as it does from the water (Oct 21, 7:10 AM)
+  const h = Math.max(el / rad, -1.5), refr = 1 / Math.tan((h + 7.31 / (h + 4.4)) * rad) / 60;
+  return { el: el / rad + refr, az: ((az / rad) + 360) % 360 };
 }
 // moon: low-precision ephemeris (~1 deg), enough to put it in the right part of the sky with the right phase
 function lunar(date, lat = 41.88, lon = -87.63) {
@@ -712,13 +715,16 @@ void main(){
     float calm = cls > 1.5 ? 0.25 : 1.0;                       // harbours and ponds: sheltered
     float crest = 0.0;
     float slopeT = (0.06 + 0.012 * uWindSpd) * calm;
-    for (int i = 0; i < 8; i++) { float L = Lp * rel[i]; float k = 6.2832 / (L * 0.001);
-      vec2 d = vec2(cos(ang[i]) * wd.x - sin(ang[i]) * wd.y, sin(ang[i]) * wd.x + cos(ang[i]) * wd.y);
-      float s = slopeT * (uHs > 0.02 ? 1.0 : 0.25) * (0.55 + 0.45 * sin(float(i) * 2.1)) / 2.4, fade = clamp(1.0 - foot / (L * 0.001 * 0.6), 0.0, 1.0);
+    // glass (wind under ~1 m/s): no short wind waves, only the long-crested remains of old swell, smooth enough to mirror the sky
+    // (your Oct 21 sunrise paddle: long low undulations, orange and slate reflections, no ripples)
+    float windy = smoothstep(0.6, 3.0, uWindSpd);
+    for (int i = 0; i < 8; i++) { float L = Lp * rel[i]; float k = 6.2832 / (L * 0.001); float a = ang[i] * mix(0.35, 1.0, windy);
+      vec2 d = vec2(cos(a) * wd.x - sin(a) * wd.y, sin(a) * wd.x + cos(a) * wd.y);
+      float s = slopeT * (uHs > 0.02 ? 1.0 : 0.25) * (0.55 + 0.45 * sin(float(i) * 2.1)) / 2.4 * (i < 2 ? mix(0.7, 1.0, windy) : windy), fade = clamp(1.0 - foot / (L * 0.001 * 0.6), 0.0, 1.0);
       float ph = k * dot(p, d) - sqrt(9.81 * 6.2832 / L) * uTime + float(i) * 1.7;
       grad += d * s * cos(ph) * fade; crest += sin(ph) * fade * rel[i]; unres += s * s * (1.0 - fade); }
     // capillary ripples (metre scale) riding on the waves: wind-driven, gone in calm water, blend into roughness with distance
-    { vec2 rp = p * 1000.0, wv = uWaveDir * (0.4 + 0.08 * uWindSpd) * uTime; float ra = (0.03 + 0.012 * uWindSpd) * calm, rf = clamp(1.0 - foot * 1000.0 / 1.2, 0.0, 1.0);
+    { vec2 rp = p * 1000.0, wv = uWaveDir * (0.4 + 0.08 * uWindSpd) * uTime; float ra = (0.03 * windy + 0.012 * uWindSpd) * calm, rf = clamp(1.0 - foot * 1000.0 / 1.2, 0.0, 1.0);
       float r0 = vnoise(rp * 1.1 - wv), rx = vnoise(rp * 1.1 - wv + vec2(0.18, 0.0)), ry = vnoise(rp * 1.1 - wv + vec2(0.0, 0.18));
       float q0 = vnoise(rp * 2.7 + wv.yx * 1.3), qx = vnoise(rp * 2.7 + wv.yx * 1.3 + vec2(0.18, 0.0)), qy = vnoise(rp * 2.7 + wv.yx * 1.3 + vec2(0.0, 0.18));
       grad += (vec2(rx - r0, ry - r0) + 0.5 * vec2(qx - q0, qy - q0)) / 0.18 * ra * 0.35 * rf; unres += ra * ra * 0.12 * (1.0 - rf); }
@@ -733,7 +739,9 @@ void main(){
       bodyTint = depthColor(dep) * 0.5 * (1.0 - 0.55 * (1.0 - smoothstep(0.0, lw, min(fract(dep), 1.0 - fract(dep))))); }
     if (uHsOn > 0.5) bodyTint = hsColor(kr >= 0.0 ? uHsOff * kr : uHs) * 0.5;
     if (uChopOn > 0.5) bodyTint = chopTint(chopAt(p, kr >= 0.0 ? uHsOff * kr : uHs), p, fwidth((p.x + p.y) * 1000.0 / 12.0)) * 0.5;
-    vec3 body = bodyTint * (sunL + amb * 2.0) + vec3(0.0, 0.01, 0.012) * uCity;
+    // little light gets into the water with the sun low (most of it glances off): at sunrise the lake reads dark slate and
+    // green under the sky's reflection, not lit teal
+    vec3 body = bodyTint * (sunL + amb * 2.0) * mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y)) + vec3(0.0, 0.01, 0.012) * uCity;
     vec3 H = normalize(uSunDir + V); float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
     col = mix(body, refl, uTempOn > 0.5 ? F * 0.45 : F) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice);
     // light through the thin tops of the waves: a lighter green-blue on the crests, stronger as the waves grow
@@ -1511,7 +1519,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
         grad += sD * vGD * (1.0 + 0.8 * gust);
         unres += (uOcVarHi * (1.0 - wfF) + uOcVarLo * (1.0 - wfC)) * vGD * vGD;
         crest = mix(1.0, tf.z, wfF); }
-      vec2 o = uWindDir2 * uTime * 0.6; float e = 0.03, rs = (0.01 + 0.006 * uWindSpd) * (1.0 + 1.6 * gust) * clamp(1.0 - foot * 6.0, 0.0, 1.0) * max(vLim, 0.2) * (vGD > 0.0 ? 0.35 : 1.0);
+      vec2 o = uWindDir2 * uTime * 0.6; float e = 0.03, rs = (0.01 * smoothstep(0.6, 3.0, uWindSpd) + 0.006 * uWindSpd) * (1.0 + 1.6 * gust) * clamp(1.0 - foot * 6.0, 0.0, 1.0) * max(vLim, 0.2) * (vGD > 0.0 ? 0.35 : 1.0);
       float n0 = noise(p * 4.0 - o * 4.0), nx = noise((p + vec2(e, 0.0)) * 4.0 - o * 4.0), nz = noise((p + vec2(0.0, e)) * 4.0 - o * 4.0); grad += vec2(nx - n0, nz - n0) / e * rs;
       vec3 Nn = normalize(vec3(-grad.x, 1.0, -grad.y)); float F = 0.02 + 0.98 * pow(1.0 - max(dot(Nn, V), 0.0), 5.0);
       vec3 R = reflect(-V, Nn); R.y = abs(R.y); float sunUp = smoothstep(-0.05, 0.08, uSunDir.y);
@@ -1523,7 +1531,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       if (uDepthOn > 0.5) tint = depthColor(depth) * 0.5 * (1.0 - 0.55 * smoothstep(0.43, 0.48, abs(fract(depth) - 0.5)));
       if (uHsOn > 0.5) tint = hsColor(vFw > 0.0 ? mix(uHsB * vGain, texture2D(uFwHs, clamp((pk - uFwMin) / uFwSize, 0.0, 1.0)).r, vFw) : uHsB * vGain) * 0.5;
       if (uChopOn > 0.5) tint = chopTint(chopAt(pk, uHsB * vGain), pk, fwidth((pk.x + pk.y) * 1000.0 / 12.0)) * 0.5;
-      vec3 body = tint * (sunL + amb * 2.0) + vec3(0.0, 0.01, 0.012) * uCity;
+      vec3 body = tint * (sunL + amb * 2.0) * mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y)) + vec3(0.0, 0.01, 0.012) * uCity;
       vec3 c = mix(body, skyColor(R, false), uTempOn > 0.5 ? F * 0.45 : F);
       vec3 Hv = normalize(uSunDir + V); float rough = 0.05 + 0.008 * uWindSpd + sqrt(unres);
       c += uSunCol * pow(max(dot(Nn, Hv), 0.0), 2.0 / (rough * rough)) / (1.0 + rough * 20.0) * sunUp * (1.0 - 0.8 * uOvercast) * 0.6;
@@ -1846,10 +1854,17 @@ const supSpots = () => (DATA.sup && DATA.sup.spots) || [];
 function nearestSpot(xk, yk) { let best = null, bd = 1e9; for (const s of supSpots()) { const [x, y] = ll(s.lat, s.lon), d = (x - xk) ** 2 + (y - yk) ** 2; if (d < bd) { bd = d; best = s; } } return best; }
 function supHour(spot, tMs) { if (!spot || !spot.hourly.length) return null; const t0 = new Date(spot.hourly[0].t).getTime(); const i = clamp(Math.round((tMs - t0) / 3600e3), 0, spot.hourly.length - 1);
   const h = spot.hourly[i]; return S.learned && h.learned ? { ...h, ...h.learned, raw: h } : h; }   // experimental: the learned correction swapped in
+// the Harrison-Dever crib stands ~4.5 km out with its anemometer well above the water: it reads the open-lake wind, which on
+// calm mornings is several times what reaches the water along the shore (your Oct 21 paddle: near-perfect glass from Diversey
+// to North Ave while the crib read 11-13 mph S and Oak St, Northerly Isle, Calumet and the Wilmette buoy 0-4 mph). For wind it
+// counts as this much farther away, so a shore station or buoy reporting nearby is used first
+const STATION_PENALTY_KM = { wspd: { CHII2: 6 } };
 function stationAt(stations, field, tMs, xk, yk) {
-  // stations with a real record near this time (some lakefront sites report only now and then)
-  const st = (stations || []).filter((s) => s.x != null && s.history && s.history.filter((h) => h[field] != null && Math.abs(new Date(h.t) - tMs) < 3 * 3600e3).length >= 4);
-  st.sort((a, b) => Math.hypot(a.x / 1000 - xk, a.y / 1000 - yk) - Math.hypot(b.x / 1000 - xk, b.y / 1000 - yk));
+  // stations with a real record near this time (some lakefront sites report only now and then; the hourly shore stations
+  // have 2-3 records in +-3 h, and needing 4 dropped Oak St, on the paddling route, a minute after each hour's report)
+  const st = (stations || []).filter((s) => s.x != null && s.history && s.history.filter((h) => h[field] != null && Math.abs(new Date(h.t) - tMs) < 3 * 3600e3).length >= 2);
+  const pen = STATION_PENALTY_KM[field] || {}, dist = (s) => Math.hypot(s.x / 1000 - xk, s.y / 1000 - yk) + (pen[s.id] || 0);
+  st.sort((a, b) => dist(a) - dist(b));
   for (const s of st.slice(0, 4)) { let best = null; for (const h of s.history) { if (h[field] == null) continue; const d = Math.abs(new Date(h.t) - tMs); if (!best || d < best.d) best = { d, h }; }
     if (best && best.d < 75 * 60e3) return { st: s, h: best.h }; }
   return null;
@@ -1899,7 +1914,8 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
     const wd = stationAt(st, "wspd", tMs, xk, yk), wv = stationAt(st, "wvht", tMs, xk, yk), at = stationAt(st, "atmp", tMs, xk, yk), wt = stationAt(st, "wtmp", tMs, xk, yk);
     if (wd) { c.wind = wd.h.wspd; c.dir = wd.h.wdir || 0; c.gust = wd.h.gst; c.src.push(`wind ${wd.st.id}`); }
     if (at) c.airC = at.h.atmp; if (wt) c.waterC = wt.h.wtmp;
-    if (wv && wv.h.wvht != null) { c.systems = [{ hs: wv.h.wvht, tp: wv.h.dpd || Math.max(2, cem(c.wind, fetchAt(c.dir), 8).tp), dir: wv.h.mwd != null ? wv.h.mwd : c.dir, spread: 25 }]; c.src.push(`waves ${wv.st.id}`); }
+    // no period reported: waves the wind here can't raise are old swell, at least ~3 s (a 2 s guess drew calm mornings as chop)
+    if (wv && wv.h.wvht != null) { const wl = cem(c.wind, fetchAt(c.dir), 8); c.systems = [{ hs: wv.h.wvht, tp: wv.h.dpd || Math.max(wl.hm0 < wv.h.wvht * 0.5 ? 3 : 2, wl.tp), dir: wv.h.mwd != null ? wv.h.mwd : c.dir, spread: 25 }]; c.src.push(`waves ${wv.st.id}`); }
     else { const w = cem(c.wind, fetchAt(c.dir), 8); if (w.hm0 > 0.01) c.systems = [{ hs: w.hm0, tp: w.tp, dir: c.dir, spread: 28 }]; }
     // offshore condition for the SWAN library: the Chicago buoy (45198, ~9 m deep) when it reported
     const ob = (st || []).find((x) => x.id === "45198"), obh = ob && ob.history.reduce((b, h) => h.wvht != null && (!b || Math.abs(new Date(h.t) - tMs) < Math.abs(new Date(b.t) - tMs)) ? h : b, null);
@@ -2267,10 +2283,16 @@ const MODE_NOTE = {
   import: "Conditions read from a forecast screenshot, hour by hour. Its waves are treated as the offshore sea and transformed to the shore by SWAN over the real lake bottom; local chop grows from its wind.",
   exp: "Set the weather yourself. Storm structure follows the same profiles as the demo storms; waves grow from your wind over the real fetch.",
 };
+// a history period you paddled (sessions/*.json): its route rides along unless you've loaded a GPX of your own
+function sessionTrack() { const H = S.mode === "history" ? SRC.hist[S.histIdx] : null, ss = H && H.raw.session;
+  if (ss && ss.track && ss.track.pts && (!DATA.track || DATA.track.session)) { if (!DATA.track || DATA.track.name !== ss.track.name) setTrack({ ...ss.track, session: true }); S.showTrack = true; $("#showtrack").checked = true; }
+  else if (!ss && DATA.track && DATA.track.session) setTrack(null);
+  const note = $("#hist-note"); if (note && !note.dataset.def) note.dataset.def = note.textContent; if (note && !(ss && ss.observed)) note.textContent = note.dataset.def;
+  if (note && ss && ss.observed) note.textContent = `On the water: ${ss.observed.rating}${ss.observed.quality ? ` (${ss.observed.quality})` : ""}. ${ss.observed.notes || ""}`; }
 function setMode(m) { S.mode = m; document.querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
   $("#sec-history").hidden = m !== "history"; $("#sec-exp").hidden = m !== "exp"; $("#sec-import").hidden = m !== "import"; $("#mode-note").textContent = MODE_NOTE[m];
   const chip = $("#status"); chip.className = "chip " + m; const [t0, t1] = range();
-  S.follow = m === "live"; $("#nowbtn").hidden = true;
+  S.follow = m === "live"; $("#nowbtn").hidden = true; sessionTrack();
   S.t = m === "import" ? clamp(Date.now(), t0, t1) : m === "live" ? Date.now() : m === "forecast" ? t0 : m === "history" ? (DATA.track && DATA.track.start ? new Date(DATA.track.start).getTime() : t0 + 10 * 60e3) : t0;
   buildTicks(); WAVES.key = null; }
 document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode));

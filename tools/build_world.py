@@ -157,6 +157,8 @@ def main():
     ap.add_argument("--funwave", nargs="*", default=[])
     ap.add_argument("--imports", nargs="*", default=[], help="forecast tables read from screenshots (examples/*.json)")
     ap.add_argument("--history", nargs="*", default=[])
+    ap.add_argument("--sessions", nargs="*", default=[],
+                    help="paddle sessions (sessions/*.json): what was observed on the water, attached to the history period with the same label")
     ap.add_argument("--split", action="store_true",
                     help="write the big, slow-changing blocks (" + ", ".join(SPLIT) + ") to data/*.json beside the page instead of inline")
     ap.add_argument("--start", help='open on a history period: JSON {"label":..,"t":ISO,"view":[lat,lon,km,heading,pitch]}')
@@ -179,6 +181,13 @@ def main():
         h.setdefault("label", name[len("history-"):-len(".json")] if name.startswith("history-") else name)
         h.setdefault("title", TITLES.get(h["label"]) or paddle_title(h["label"]))
         hist.append(h)
+    for p in a.sessions:
+        sess = load(p)
+        h = next((h for h in hist if sess and h["label"] == sess.get("label")), None)
+        if h:
+            h["session"] = sess
+            if sess.get("title"):
+                h["title"] = sess["title"]
     hist.sort(key=lambda h: 0 if "derecho" in h["label"] else 1)
     if hist:
         blocks["history-data"] = hist
