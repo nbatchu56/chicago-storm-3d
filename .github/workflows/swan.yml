@@ -46,9 +46,10 @@ jobs:
     timeout-minutes: 340
     strategy:
       fail-fast: false
-      max-parallel: 12
+      max-parallel: 20
       matrix:
         dir: ${{ fromJson(needs.build.outputs.dirs) }}
+        group: [base, storm]          # app.swan_cases CASE_GROUPS: paddling-season grid, storm seas
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -65,13 +66,13 @@ jobs:
           git fetch -q --depth 1 origin bathy snapshot
           git show origin/bathy:bathy.json > bathy.json
           git show origin/snapshot:lakefront.json > lakefront.json
-          for d in trail lane; do python -m app.swan_cases prepare --bathy bathy.json --lakefront lakefront.json --domain $d --dirs ${{ matrix.dir }} --out runs; done
+          for d in trail lane; do python -m app.swan_cases prepare --bathy bathy.json --lakefront lakefront.json --domain $d --dirs ${{ matrix.dir }} --group ${{ matrix.group }} --out runs; done
       - name: Run SWAN cases
         run: |
           EXE=$(find ~/swan -type f -perm -u+x -name 'swan*.exe' | head -1); [ -n "$EXE" ] || EXE=$(find ~/swan -type f -perm -u+x -name 'swan*' | grep -v run | head -1)
           echo "SWAN: $EXE"
           export OMP_NUM_THREADS=2
-          ls -d runs/*/d* | xargs -P 1 -I{} sh -c "cd {} && timeout 9000 $EXE > swan.log 2>&1; tail -3 PRINT 2>/dev/null | tr '\n' ' '; ls out.mat >/dev/null 2>&1 && echo ' ok {}' || echo ' FAILED {}'"
+          ls -d runs/*/d* | xargs -P 2 -I{} sh -c "cd {} && timeout 9000 $EXE > swan.log 2>&1; tail -3 PRINT 2>/dev/null | tr '\n' ' '; ls out.mat >/dev/null 2>&1 && echo ' ok {}' || echo ' FAILED {}'"
           # a case that blew up (NaN in the output, read as zero waves everywhere) runs again without the
           # diffraction term, which is what goes unstable at narrow openings
           for c in $(python - <<'PY'
@@ -83,17 +84,17 @@ jobs:
                   print(os.path.dirname(f))
           PY
           ); do
-            echo "::warning title=SWAN ${{ matrix.dir }}::$c blew up; rerunning without diffraction"
+            echo "::warning title=SWAN ${{ matrix.dir }} ${{ matrix.group }}::$c blew up; rerunning without diffraction"
             sed -i '/^DIFFRACTION/d' "$c/INPUT"; (cd "$c" && rm -f out.mat && timeout 9000 $EXE > swan.log 2>&1); ls "$c/out.mat" >/dev/null 2>&1 && echo " rerun ok $c" || echo " rerun FAILED $c"
           done
           first=$(ls -d runs/*/d* | head -1)
           msg="exe=$EXE | $(ls $first | tr '\n' ' ') | log: $(tail -c 800 $first/swan.log 2>/dev/null) | PRINT: $(grep -i -B2 -A3 'error\|severe\|warning' $first/PRINT 2>/dev/null | head -40) | tail: $(tail -c 1200 $first/PRINT 2>/dev/null)"
-          echo "::warning title=SWAN ${{ matrix.dir }}::$(echo "$msg" | tr '\n' '|' | sed 's/%/%25/g' | cut -c1-3800)"
+          echo "::warning title=SWAN ${{ matrix.dir }} ${{ matrix.group }}::$(echo "$msg" | tr '\n' '|' | sed 's/%/%25/g' | cut -c1-3800)"
           echo "outputs: $(ls runs/*/d*/out.mat 2>/dev/null | wc -l)"
           find runs -name 'bottom.txt' -delete
       - uses: actions/upload-artifact@v4
         with:
-          name: swan-${{ matrix.dir }}
+          name: swan-${{ matrix.dir }}-${{ matrix.group }}
           path: |
             runs/*/meta.json
             runs/*/obstacles.json

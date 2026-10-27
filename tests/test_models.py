@@ -106,3 +106,12 @@ def test_coastline_across_harbour_mouth_is_open():
     ob = sc.obstacles({"osm": [mouth, shore]}, g, depth, fine)
     xs = sorted({round(p[0]) for o in ob for p in o["pts"]})
     assert ob and all(x < 100 for x in xs)
+
+
+def test_swan_case_groups(tmp_path):
+    p = tmp_path / "bathy.json"; p.write_text(json.dumps(fake_bathy()))
+    meta = sc.prepare(str(p), None, "route", [0], str(tmp_path / "runs"), cases=sc.CASE_GROUPS["storm"])
+    assert {(c["tp"], c["hs"]) for c in meta["cases"]} == set(sc.CASES[6:])
+    assert set(sc.CASE_GROUPS["base"]) | set(sc.CASE_GROUPS["storm"]) == set(sc.CASES)
+    txt = (tmp_path / "runs" / "route" / "d000_t8p5_h5p0" / "INPUT").read_text()
+    assert "CIRCLE 36 0.06 1.2 32" in txt and "BOUNDSPEC SIDE N CCW CONSTANT PAR 5.00 8.50 0.0" in txt

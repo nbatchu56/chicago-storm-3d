@@ -854,7 +854,9 @@ function buildMap(LF) {
   const [Sb, Wb, Nb, Eb] = LF.map_bbox, [x0, y0] = ll(Sb, Wb), [x1, y1] = ll(Nb, Eb), m2k = (pt) => [pt[0] / 1000, pt[1] / 1000];
   // ~2.4 m pixels (3.4 m on low-memory devices) over the whole map; SC scales drawn widths kept from the 3.4 m version
   const lowMem = (navigator.deviceMemory || 8) <= 4 || matchMedia("(max-width: 760px)").matches;
-  const WPX = lowMem ? 2560 : 3584, HPX = Math.round(WPX * (y1 - y0) / (x1 - x0)), P = (x, y) => [(x - x0) / (x1 - x0) * WPX, (y1 - y) / (y1 - y0) * HPX];
+  // (the map runs north-south: keep its height within the device's texture limit)
+  const asp = (y1 - y0) / (x1 - x0), maxT = (renderer.capabilities && renderer.capabilities.maxTextureSize) || 4096;
+  const WPX = Math.min(lowMem ? 2560 : 3584, Math.floor(maxT / asp)), HPX = Math.round(WPX * asp), P = (x, y) => [(x - x0) / (x1 - x0) * WPX, (y1 - y) / (y1 - y0) * HPX];
   const MPP = (x1 - x0) * 1000 / WPX, SC = 3.4 / MPP;
   const path = (c, pts, close) => { c.beginPath(); pts.forEach((pt, i) => { const [px, py] = P(...m2k(pt)); i ? c.lineTo(px, py) : c.moveTo(px, py); }); if (close) c.closePath(); };
   const mk = document.createElement("canvas"); mk.width = WPX; mk.height = HPX; const m = mk.getContext("2d", { willReadFrequently: true });
@@ -1325,14 +1327,25 @@ function profileFor(xk, yk, shore, dShoreM) {   // depths along the normal, from
 async function setSwan(sw) {
   if (!sw || !sw.domains) return;
   for (const [name, d] of Object.entries(sw.domains)) {
-    const g = d.grid, n = g.nx * g.ny, nc = d.cases.length, ratio = await gunzipB64(d.ratio), dir = await gunzipB64(d.dir);
-    SWAN.domains.push({ name, g, cases: d.cases, ratio, dir, n, x0: g.x0 / 1000, y0: g.y0 / 1000, w: (g.nx - 1) * g.dx / 1000, h: (g.ny - 1) * g.dx / 1000, obstacles: (d.obstacles || []).length });
+    const g = d.grid, n = g.nx * g.ny, nc = d.cases.length;
+    let ratio, dir;
+    if (d.parts) {   // split page: each domain's arrays sit beside it in parts (data/swan/<domain>-<k>.json), in case order
+      try { const parts = await Promise.all(d.parts.map(async (q) => { const r = await fetch(q.src); if (!r.ok) throw new Error(`${q.src}: ${r.status}`); return r.json(); }));
+        ratio = new Uint8Array(nc * n); dir = new Uint8Array(nc * n);
+        for (const q of parts) { const o = q.cases[0] * n; ratio.set(await gunzipB64(q.ratio), o); dir.set(await gunzipB64(q.dir), o); } }
+      catch (e) { console.warn("SWAN", name, e.message); continue; } }
+    else { ratio = await gunzipB64(d.ratio); dir = await gunzipB64(d.dir); }
+    // the heights run for each (direction, period): storm heights only with the longer periods
+    const hsBy = new Map(); for (const c of d.cases) { const k = `${c.dir}|${c.tp}`; if (!hsBy.has(k)) hsBy.set(k, []); hsBy.get(k).push(c.hs); }
+    for (const v of hsBy.values()) v.sort((a, b) => a - b);
+    SWAN.domains.push({ name, g, cases: d.cases, ratio, dir, n, hsBy, x0: g.x0 / 1000, y0: g.y0 / 1000, w: (g.nx - 1) * g.dx / 1000, h: (g.ny - 1) * g.dx / 1000, obstacles: (d.obstacles || []).length });
   }
   SWAN.domains.sort((a, b) => a.g.dx - b.g.dx);   // finest first: the 8 m trail inside the 20 m lane to the crib
   SWAN.model = sw.model;
 }
 function swanDomainAt(xk, yk) { return SWAN.domains.find((d) => xk >= d.x0 && yk >= d.y0 && xk <= d.x0 + d.w && yk <= d.y0 + d.h) || null; }
-// blend the library for an offshore condition: linear in direction (circular), period and height class
+// blend the library for an offshore condition: linear in direction (circular) and period, and in height between the
+// heights that (direction, period) was run for (clamped at the ends)
 // the library at one point for any offshore condition (no texture or uniform changes): same weights as swanBlend
 function swanPointAt(xk, yk, off) {
   const D = swanDomainAt(xk, yk); if (!D || !off || off.hs < 0.02) return null;
@@ -1341,7 +1354,7 @@ function swanPointAt(xk, yk, off) {
   return { ratio: b.ratio[0], dir: (Math.atan2(b.dir[0], b.dir[1]) * 180 / Math.PI + 360) % 360, domain: D.name };
 }
 function swanBlend(D, hs, tp, dir, only) {   // only: one cell index -> 1-cell result
-  const dirs = [...new Set(D.cases.map((c) => c.dir))].sort((a, b) => a - b), tps = [...new Set(D.cases.map((c) => c.tp))].sort((a, b) => a - b), hss = [...new Set(D.cases.map((c) => c.hs))].sort((a, b) => a - b);
+  const dirs = [...new Set(D.cases.map((c) => c.dir))].sort((a, b) => a - b), tps = [...new Set(D.cases.map((c) => c.tp))].sort((a, b) => a - b);
   const brk = (arr, v) => { if (v <= arr[0]) return [[arr[0], 1]]; if (v >= arr[arr.length - 1]) return [[arr[arr.length - 1], 1]]; let i = 0; while (arr[i + 1] < v) i++; const f = (v - arr[i]) / (arr[i + 1] - arr[i]); return [[arr[i], 1 - f], [arr[i + 1], f]]; };
   const dn = ((dir % 360) + 360) % 360;
   // directions outside the modelled sector (offshore winds' waves never reach shore): weight 0
@@ -1349,9 +1362,9 @@ function swanBlend(D, hs, tp, dir, only) {   // only: one cell index -> 1-cell r
   const idx = D.idx || (D.idx = new Map(D.cases.map((c, i) => [`${c.dir}|${c.tp}|${c.hs}`, i]))), n = only != null ? 1 : D.n, k0 = only != null ? only : 0;
   const out = new Float32Array(n), dout = new Float32Array(n * 2);
   let wsum = 0;
-  for (const [dv, wa] of wd) for (const [tv, wb] of brk(tps, tp)) for (const [hv, wc] of brk(hss, hs)) {
+  for (const [dv, wa] of wd) for (const [tv, wb] of brk(tps, tp)) { const hl = D.hsBy.get(`${dv}|${tv}`); if (!hl) continue; for (const [hv, wc] of brk(hl, hs)) {
     const ci = idx.get(`${dv}|${tv}|${hv}`); if (ci == null) continue; const w = wa * wb * wc; wsum += w; const off = ci * D.n;
-    for (let i = 0; i < n; i++) { out[i] += w * D.ratio[off + k0 + i] / 100; const a = D.dir[off + k0 + i] / 256 * 2 * Math.PI; dout[2 * i] += w * Math.sin(a); dout[2 * i + 1] += w * Math.cos(a); } }
+    for (let i = 0; i < n; i++) { out[i] += w * D.ratio[off + k0 + i] / 100; const a = D.dir[off + k0 + i] / 256 * 2 * Math.PI; dout[2 * i] += w * Math.sin(a); dout[2 * i + 1] += w * Math.cos(a); } } }
   if (wsum > 0) for (let i = 0; i < n; i++) out[i] /= wsum;
   return { ratio: out, dir: dout, ok: wsum > 0 };
 }

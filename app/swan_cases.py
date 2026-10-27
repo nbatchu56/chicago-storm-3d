@@ -2,7 +2,7 @@
 SWAN wave-transformation library for the Lake Michigan Water Trail: Monroe Harbor to Montrose ("trail", 8 m)
 inside a coarser lane out past the Harrison-Dever crib ("lane", 20 m); "route"/"montrose" are the older domains.
 
-For each offshore wave condition (direction x peak period x height class), SWAN (TU Delft, stationary, 2-D)
+For each offshore wave condition (direction x a (peak period, height) case, CASES), SWAN (TU Delft, stationary, 2-D)
 propagates a JONSWAP spectrum from the lake boundaries over the real bottom (app.bathymetry), with
 refraction, shoaling, depth-induced breaking, bottom friction, triads, diffraction (phase-decoupled) and
 obstacles: breakwaters/groynes/long piers from OpenStreetMap (opaque, partly reflecting) and the
@@ -30,13 +30,20 @@ import numpy as np
 from . import bathymetry as bm
 
 DIRS = list(range(0, 180, 15))                 # N .. SSE: everything that can reach the Chicago shore from the lake
-PERIODS = [2.5, 4.0, 6.0]                      # chop, moderate sea, storm sea (s)
-HEIGHTS = [0.6, 1.8]                           # small and big day (m): breaking makes the response height-dependent
+# (period s, offshore Hs m) cases run for every direction. The first six are the paddling-season grid; the rest are
+# storm seas (Dec 29 2025 at Montrose: ~4 m at 7-9 s offshore), where breaking over the bars and the shoaling of long
+# waves make the response height- and period-dependent. Storm heights aren't paired with short periods (too steep to
+# exist); the page blends between the heights each period has.
+CASES = [(2.5, 0.6), (2.5, 1.8), (4.0, 0.6), (4.0, 1.8), (6.0, 0.6), (6.0, 1.8),
+         (6.0, 3.5), (8.5, 0.6), (8.5, 1.8), (8.5, 3.5), (8.5, 5.0)]
+CASE_GROUPS = {"base": CASES[:6], "storm": CASES[6:]}
 SWAN_DX = 10.0                                 # computational grid spacing (m) for the older route/montrose domains
 # domains: bathy grid to take the bottom from, optional crop (S, W, N, E) and grid spacing (m)
 DOMAINS = {
     "trail": {"grid": "corridor", "dx": 8.0},  # Monroe Harbor to Montrose nearshore, 4 m lidar -> 8 m
-    "lane": {"grid": "world", "bbox": (41.866, -87.648, 41.974, -87.552), "dx": 20.0},   # out past the Harrison-Dever crib
+    # out past the Harrison-Dever crib, and north past Montrose to Kathy Osterman Beach, so waves from the north reach
+    # Montrose over ~2 km of real nearshore instead of entering at a boundary 600 m from the beach
+    "lane": {"grid": "world", "bbox": (41.866, -87.656, 41.988, -87.552), "dx": 20.0},
     "route": {"grid": "route", "dx": SWAN_DX},
     "montrose": {"grid": "montrose", "dx": SWAN_DX},
 }
@@ -231,7 +238,8 @@ def swn(g, level_above_lwd, d, tp, hs, obst):
         f"SET LEVEL={level_above_lwd:.3f} NAUTICAL",
         "MODE STATIONARY TWODIMENSIONAL",
         "COORDINATES CARTESIAN",
-        f"CGRID REGULAR 0. 0. 0. {xl:.1f} {yl:.1f} {g['nx'] - 1} {g['ny'] - 1} CIRCLE 36 0.1 1.2 26",
+        # 0.06-1.2 Hz: the low end sits well below the peak of an 8.5 s storm sea (0.118 Hz)
+        f"CGRID REGULAR 0. 0. 0. {xl:.1f} {yl:.1f} {g['nx'] - 1} {g['ny'] - 1} CIRCLE 36 0.06 1.2 32",
         f"INPGRID BOTTOM REGULAR 0. 0. 0. {g['nx'] - 1} {g['ny'] - 1} {g['dx']:.1f} {g['dx']:.1f} EXCEPTION -99.",
         "READINP BOTTOM 1. '../bottom.txt' 3 0 FREE",
         "BOUND SHAPESPEC JONSWAP 3.3 PEAK DSPR DEGREES",
@@ -256,7 +264,10 @@ def swn(g, level_above_lwd, d, tp, hs, obst):
     return "\n".join(lines) + "\n"
 
 
-def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=PERIODS, heights=HEIGHTS):
+def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=None, heights=None, cases=None):
+    """cases: [(tp, hs), ...] (default CASES); periods/heights instead give the full grid of the two."""
+    if cases is None:
+        cases = [(tp, hs) for tp in periods for hs in heights] if periods and heights else CASES
     bathy = json.load(open(bathy_path))
     lakefront = json.load(open(lakefront_path)) if lakefront_path and os.path.exists(lakefront_path) else None
     gr, z, _ = load_grid(bathy, domain)
@@ -270,19 +281,18 @@ def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=PERIODS, 
     meta = {"domain": domain, "grid": g, "level_m_igld85": level, "obstacles": [{"kind": o["kind"], "n": len(o["pts"])} for o in obst]}
     os.makedirs(out_dir, exist_ok=True)
     bottom = "\n".join(" ".join(f"{v:.2f}" for v in row) for row in depth_lwd) + "\n"
-    cases = []
+    pairs, cases = cases, []
     os.makedirs(os.path.join(out_dir, domain), exist_ok=True)
     with open(os.path.join(out_dir, domain, "bottom.txt"), "w") as fh:
         fh.write(bottom)
     for d in dirs:
-        for tp in periods:
-            for hs in heights:
-                cid = case_id(d, tp, hs)
-                cdir = os.path.join(out_dir, domain, cid)
-                os.makedirs(cdir, exist_ok=True)
-                with open(os.path.join(cdir, "INPUT"), "w") as fh:
-                    fh.write(swn(g, level - bm.LWD, d, tp, hs, obst))
-                cases.append({"id": cid, "dir": d, "tp": tp, "hs": hs})
+        for tp, hs in pairs:
+            cid = case_id(d, tp, hs)
+            cdir = os.path.join(out_dir, domain, cid)
+            os.makedirs(cdir, exist_ok=True)
+            with open(os.path.join(cdir, "INPUT"), "w") as fh:
+                fh.write(swn(g, level - bm.LWD, d, tp, hs, obst))
+            cases.append({"id": cid, "dir": d, "tp": tp, "hs": hs})
     meta["cases"] = cases
     with open(os.path.join(out_dir, domain, "meta.json"), "w") as fh:
         json.dump(meta, fh)
@@ -335,10 +345,12 @@ if __name__ == "__main__":
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("prepare"); p.add_argument("--bathy", required=True); p.add_argument("--lakefront"); p.add_argument("--domain", default="route")
     p.add_argument("--dirs", default=",".join(map(str, DIRS))); p.add_argument("--out", default="runs")
+    p.add_argument("--group", choices=sorted(CASE_GROUPS), help="run only this group of (period, height) cases")
     c = sub.add_parser("collect"); c.add_argument("--runs", default="runs"); c.add_argument("--out", default="swan.json")
     a = ap.parse_args()
     if a.cmd == "prepare":
-        m = prepare(a.bathy, a.lakefront, a.domain, [int(x) for x in a.dirs.split(",")], a.out)
+        m = prepare(a.bathy, a.lakefront, a.domain, [int(x) for x in a.dirs.split(",")], a.out,
+                    cases=CASE_GROUPS[a.group] if a.group else None)
         print(f"{a.domain}: grid {m['grid']['nx']}x{m['grid']['ny']} at {m['grid']['dx']} m, {len(m['cases'])} cases, {len(m['obstacles'])} obstacles")
     else:
         o = collect(a.runs, a.out)

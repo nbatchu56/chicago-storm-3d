@@ -157,8 +157,10 @@ def chop_spots(swan, climate):
     doms = []
     for v in swan["domains"].values():
         g = v["grid"]; nc = len(v["cases"])
-        r = np.frombuffer(gzip.decompress(base64.b64decode(v["ratio"])), np.uint8).reshape(nc, g["ny"], g["nx"]).astype(np.float32) / 100
-        doms.append((g, v["cases"], r))
+        # the paddling-season cases only (the climate's waves): the storm cases would change the blend between them
+        keep = [i for i, c in enumerate(v["cases"]) if c["hs"] in (0.6, 1.8) and c["tp"] <= 6.0]
+        r = np.frombuffer(gzip.decompress(base64.b64decode(v["ratio"])), np.uint8).reshape(nc, g["ny"], g["nx"])[keep].astype(np.float32) / 100
+        doms.append((g, [v["cases"][i] for i in keep], r))
     doms.sort(key=lambda d: -d[0]["dx"])          # coarse first; finer domains overwrite where they have water
     x0 = min(g["x0"] for g, _, _ in doms); y0 = min(g["y0"] for g, _, _ in doms)
     x1 = max(g["x0"] + (g["nx"] - 1) * g["dx"] for g, _, _ in doms); y1 = max(g["y0"] + (g["ny"] - 1) * g["dx"] for g, _, _ in doms)
@@ -205,6 +207,18 @@ def chop_spots(swan, climate):
             "choppy": enc(q[0]), "rough": enc(q[1]), "hours": climate["hours"], "seasons": climate.get("seasons"), "months": climate.get("months"),
             "local_hours": climate.get("local_hours"), "buoys": climate.get("buoys"), "bands_j_m2": CHOP_E,
             "max_choppy": round(float(out[0].max()), 3)}
+
+
+SWAN_PART_BYTES = 8_000_000     # raw bytes of one array per SWAN part file (gzipped and base64'd, both arrays: ~6 MB)
+
+
+def write_side(out, rel, obj):
+    path = os.path.join(os.path.dirname(os.path.abspath(out)), rel)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    txt = json.dumps(obj, separators=(",", ":"))
+    with open(path, "w") as fh:
+        fh.write(txt)
+    return len(txt) // 1000
 
 
 SPLIT = ("bathy-data", "swan-data", "funwave-data", "history-data", "chopspots-data")   # funwave: one file per run
@@ -272,6 +286,20 @@ def main():
                     txt = json.dumps(r, separators=(",", ":")); fh.write(txt); sizes[rel] = len(txt) // 1000
                 stubs.append({k: v for k, v in r.items() if k != "hsig"} | {"eta": {k: v for k, v in r["eta"].items() if k != "data"}, "src": rel})
             html = put(html, f'<script id="{tag}" type="application/json">', stubs)
+        elif a.split and tag == "swan-data":     # case tables in data/swan.json; each domain's arrays in parts under data/swan/
+            idx = {"version": obj.get("version"), "model": obj.get("model"), "domains": {}}
+            for name, v in obj["domains"].items():
+                g = v["grid"]; nc = len(v["cases"]); n = g["nx"] * g["ny"]
+                arr = {k: np.frombuffer(gzip.decompress(base64.b64decode(v[k])), np.uint8).reshape(nc, n) for k in ("ratio", "dir")}
+                per = max(1, SWAN_PART_BYTES // n)          # cases per part
+                parts = []
+                for k0 in range(0, nc, per):
+                    rel = f"data/swan/{name}-{k0 // per}.json"
+                    part = {"cases": [k0, min(k0 + per, nc)]} | {k: base64.b64encode(gzip.compress(arr[k][k0:k0 + per].tobytes(), 9)).decode() for k in arr}
+                    sizes[rel] = write_side(a.out, rel, part); parts.append({"src": rel, "cases": part["cases"]})
+                idx["domains"][name] = {k: x for k, x in v.items() if k not in ("ratio", "dir")} | {"parts": parts}
+            sizes["data/swan.json"] = write_side(a.out, "data/swan.json", idx)
+            html = html.replace(f'<script id="{tag}" type="application/json">', f'<script id="{tag}" type="application/json" data-src="data/swan.json">', 1)
         elif a.split and tag in SPLIT:
             rel = f"data/{tag[:-len('-data')]}.json"
             os.makedirs(os.path.join(os.path.dirname(os.path.abspath(a.out)), "data"), exist_ok=True)

@@ -48,7 +48,8 @@ MODEL_BBOX = (41.905, -87.648, 41.945, -87.598)
 # corridor = the Lake Michigan Water Trail stretch paddled most: Monroe Harbor to Montrose, out past the lidar's
 # reach (~1 km); the page draws its shoreline and nearshore bottom from it (the 10 m world grid covers the lane
 # out to the Harrison-Dever crib)
-CORRIDOR_BBOX = (41.866, -87.648, 41.974, -87.578)
+# (north past Montrose to Kathy Osterman Beach, so the SWAN trail domain's north boundary sits ~2 km from Montrose Beach)
+CORRIDOR_BBOX = (41.866, -87.656, 41.988, -87.578)
 MODEL_BBOXES = {"route": MODEL_BBOX, "montrose": (41.950, -87.648, 41.975, -87.600), "corridor": CORRIDOR_BBOX}
 ISGS_PAGES = ["https://clearinghouse.isgs.illinois.edu/data/coastal/chicago-beaches-chicago-park-district-topobathymetric-models"]
 ISGS_DIR = os.environ.get("ISGS_DIR", "isgs_cache")
