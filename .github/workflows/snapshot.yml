@@ -72,9 +72,10 @@ jobs:
             br=${b%%:*}; f=${b#*:}; git fetch -q --depth 1 origin "$br" 2>/dev/null && git show "origin/$br:$f" > "$M/$f" 2>/dev/null || rm -f "$M/$f"; done
           git fetch -q --depth 1 origin funwave 2>/dev/null && for f in $(git ls-tree --name-only origin/funwave | grep '^funwave_.*\.json$'); do git show "origin/funwave:$f" > "$M/$f"; done || true
           git fetch -q --depth 1 origin history 2>/dev/null && for f in $(git ls-tree --name-only origin/history | grep '^history-.*\.json$'); do git show "origin/history:$f" > "$M/$f"; done || true
+          python -m app.levels --days 800 --out "$M/levels.json" || echo "no water levels"
           ls -la "$M"
           python tools/build_world.py --out "$OUT/world.html" --scene "$OUT/scene.json" --sup "$OUT/sup.json" --lakefront "$OUT/lakefront.json" \
-            --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M"/funwave_*.json --validate "$M/validate.json" \
+            --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M"/funwave_*.json --validate "$M/validate.json" --levels "$M/levels.json" \
             --history "$M"/history-*.json --sessions sessions/*.json --imports examples/*.json --split \
             --learn "$RUNNER_TEMP/correction.json" --scorecard "$RUNNER_TEMP/L/scorecard.json" \
             --start '{"mode":"live","view":[41.9203,-87.6195,1.58,284,34]}'

@@ -228,7 +228,7 @@ SPLIT = ("bathy-data", "swan-data", "funwave-data", "history-data", "chopspots-d
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
-    for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track"):
+    for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track", "levels"):
         ap.add_argument("--" + k)
     ap.add_argument("--learn", help="correction.json from the learn branch (experimental learned wave correction)")
     ap.add_argument("--scorecard", help="scorecard.json from the learn branch (forecast vs buoy by lead time)")
@@ -250,7 +250,7 @@ def main():
         "funwave-data": quantize_funwave([load(p) for p in a.funwave]) or None, "validate-data": summarize_validation(load(a.validate)),
         "import-data": [d for d in (load(p) for p in a.imports) if d] or None,
         "learn-data": summarize_learn(load(a.learn), load(a.scorecard)),
-        "chopspots-data": None,
+        "chopspots-data": None, "levels-data": load(a.levels),
         "meta-data": {"generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), **({"start": json.loads(a.start)} if a.start else {})},
     }
     blocks["chopspots-data"] = chop_spots(blocks["swan-data"], load(a.chop_climate))

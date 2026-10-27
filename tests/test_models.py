@@ -137,3 +137,22 @@ def test_swan_collect_merge(tmp_path):
     r = np.frombuffer(gzip.decompress(base64.b64decode(new["domains"]["lane"]["ratio"])), np.uint8).reshape(len(cs), 3, 4)
     for k, c in enumerate(cs):
         assert r[k].max() == (80 if (c["tp"], c["hs"]) in sc.CASE_GROUPS["storm"] else 50)
+
+
+def test_levels_hourly():
+    import datetime as dt
+    import urllib.parse as up
+    from app import levels as lv
+
+    def get(url, timeout=90):
+        q = dict(up.parse_qsl(up.urlparse(url).query))
+        b = dt.datetime.strptime(q["begin_date"], "%Y%m%d %H:%M"); e = dt.datetime.strptime(q["end_date"], "%Y%m%d %H:%M")
+        step = dt.timedelta(hours=1) if q.get("interval") == "h" else dt.timedelta(minutes=6)
+        rows, t = [], b
+        while t <= e:
+            rows.append({"t": t.strftime("%Y-%m-%d %H:%M"), "v": "176.500" if step.seconds == 3600 else "176.700"}); t += step
+        return json.dumps({"data": rows})
+    d = lv.build(days=30, get=get)
+    assert d["station"] == "9087044" and d["step_s"] == 3600
+    assert d["cm"][0] == 50 and d["cm"][-1] == 70            # recent hours from the 6-minute series
+    assert len(d["cm"]) == 30 * 24 + 1

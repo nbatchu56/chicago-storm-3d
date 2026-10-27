@@ -339,6 +339,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 <script id="funwave-data" type="application/json"></script>
 <script id="validate-data" type="application/json"></script>
 <script id="learn-data" type="application/json"></script>
+<script id="levels-data" type="application/json"></script>
 <script id="meta-data" type="application/json"></script>
 <script id="import-data" type="application/json"></script>
 <script>
@@ -471,7 +472,7 @@ function lunar(date, lat = 41.88, lon = -87.63) {
 const azElDir = (o, v) => { const a = o.az * Math.PI / 180, e = o.el * Math.PI / 180; return v.set(Math.sin(a) * Math.cos(e), Math.sin(e), -Math.cos(a) * Math.cos(e)).normalize(); };
 
 // ---------------------------------------------------------------- data
-const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), learn: parseJSON("learn-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
+const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), learn: parseJSON("learn-data"), levels: parseJSON("levels-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
 { const h = parseJSON("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
 const S = { mode: "live", t: 0, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, view: "overview", histIdx: 0,
   x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, hour: 14, seed: 7 } };
@@ -1573,7 +1574,7 @@ const WAVE = `
 #define N ${NW}
 #define TABW ${TABW}
 #define DMAX ${DMAX}.0
-uniform float uTime, uQ, uA[N], uKy[N], uW[N], uP[N], uShoreD2, uHsB; uniform vec2 uShoreN2, uPatchRel; uniform sampler2D uTab;
+uniform float uTime, uQ, uA[N], uKy[N], uW[N], uP[N], uShoreD2, uHsB, uLevelD, uSetupShore; uniform vec2 uShoreN2, uPatchRel; uniform sampler2D uTab;
 float distOff(vec2 p) { return uShoreD2 - dot(p, uShoreN2); }
 float depthAt(vec2 p) { return 0.1 * pow(max(distOff(p), 0.0), 0.6667); }
 float limAt(vec2 p) { return clamp(0.62 * depthAt(p) / max(uHsB, 0.02), 0.0, 1.0); }
@@ -1591,7 +1592,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
   vertexShader: `${LOGV[0]} ${WAVE} ${TEMP_GLSL} ${FW_GLSL}
     uniform sampler2D uMapMask; uniform vec2 uMapMin, uMapSize; uniform float uHasMap; uniform float uPatchR; uniform sampler2D uShelter;
     uniform sampler2D uOcC; uniform float uOcL, uOcOn;
-    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD; varying float vShel;
+    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD; varying float vShel; varying float vFlood;
     void main() {
       vec2 loc = position.xz; vec2 p = loc + uPatchRel;
       vec4 wk = modelMatrix * vec4(position, 1.0); vec2 pk = vec2(wk.x, -wk.z);
@@ -1602,6 +1603,11 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       // refraction, breaking, diffraction and reflection), the 1-D profile tables elsewhere
       float dep = bathyDepth(pk, depthAt(p)), kr = swanRatio(pk), sw = kr >= 0.0 && uHsB > 0.0 ? 1.0 : 0.0;
       float G = sw > 0.5 ? kr / max(uSwanRef, 0.02) : 1.0;
+      // water level: the measured lake level for this time (surge, seiche) over the survey's, plus wave setup, which
+      // grows through the surf zone to ~0.18 Hs offshore at the shoreline. Low beach under the raised water floods.
+      float dep0 = dep, satL = 1.0 - clamp(0.62 * max(dep, 0.0) / max(uHsB * (sw > 0.5 ? G : 1.0), 0.02), 0.0, 1.0);
+      float lvl = uLevelD + uSetupShore * satL * satL; dep += lvl;
+      vFlood = cls < 0.5 && dep0 < 0.0 && dep > 0.03 && dep0 > -3.0 ? 1.0 : 0.0;
       float lim = (sw > 0.5 ? G : clamp(0.62 * max(dep, 0.0) / max(uHsB, 0.02), 0.0, 1.0)) * shelter * step(0.02, dep);
       vec3 disp = vec3(0.0);
       vec2 tn = vec2(-uShoreN2.y, uShoreN2.x); float sAl = dot(p, tn), dO = distOff(p);
@@ -1617,6 +1623,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       // short wind waves from the spectral tile: everywhere the wind reaches (less in the harbours), fading out on the beach
       float gD = uOcOn * (cls < 0.5 ? 0.0 : cls > 1.5 ? 0.55 : 1.0) * smoothstep(0.05, 0.6, dep); vGD = gD;
       if (gD > 0.0) disp += texture(uOcC, p / uOcL).xyz * gD;
+      disp.y += lvl;
       vec3 local = vec3(loc.x + disp.x, disp.y, loc.y + disp.z);
       vec4 w = modelMatrix * vec4(local, 1.0); vW = w.xyz; vGain = lim; vSw = sw; vDep = dep; vLim = clamp(0.62 * max(dep, 0.0) / max(uHsB * (sw > 0.5 ? G : 1.0), 0.02), 0.0, 1.0); vP = p; vEdge = 1.0 - smoothstep(uPatchR * 0.75, uPatchR, max(abs(loc.x), abs(loc.y)));
       gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
@@ -1624,7 +1631,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
     uniform vec3 uCamPos, uAmbTop, uAmbBot; uniform float uWindSpd, uCity, uGust, uTempOn, uWcFetch; uniform vec2 uWindDir2;
     uniform sampler2D uMapMask, uMapLooks; uniform vec2 uMapMin, uMapSize; uniform float uHasMap;
     uniform sampler2D uOcC, uOcF; uniform float uOcL, uOcOn, uOcVarLo, uOcVarHi;   // (uOcF2, uOcL2: in the shared chunk)
-    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD; varying float vShel;
+    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD; varying float vShel; varying float vFlood;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
     void main() {
@@ -1632,7 +1639,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       vec2 pk = vec2(vW.x, -vW.z); float wetF = 1.0;
       if (uHasMap > 0.5 && pk.x > uMapMin.x && pk.y > uMapMin.y && pk.x < uMapMin.x + uMapSize.x && pk.y < uMapMin.y + uMapSize.y) {
         vec2 muv = (pk - uMapMin) / uMapSize; float cls = floor(texture2D(uMapMask, muv).r * 3.0 + 0.5); if (cls > 2.5) discard;
-        wetF = texture2D(uMapLooks, muv).r + noise(pk * 300.0) * 0.12 - 0.06; if (wetF <= 0.5) discard; }
+        wetF = texture2D(uMapLooks, muv).r + noise(pk * 300.0) * 0.12 - 0.06; if (wetF <= 0.5 && vFlood < 0.5) discard; }
       if (iceAt(pk, 0.2, noise(pk * 1.7)) > 0.3) discard;
       vec2 p = vP; vec3 V = normalize(uCamPos - vW); float foot = max(length(fwidth(p)), 1e-3);
       vec2 grad = vec2(0.0); float steep = 0.0, unres = 0.0, eta = 0.0, etaP = 0.0; vec2 tn = vec2(-uShoreN2.y, uShoreN2.x); float sAl = dot(p, tn), dO = distOff(p);
@@ -1698,6 +1705,13 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
 const patch = new THREE.Mesh(new THREE.PlaneGeometry(660, 660, 330, 330).rotateX(-Math.PI / 2), patchMat);
 patch.scale.setScalar(0.001); patch.frustumCulled = false; patch.renderOrder = 2; patch.visible = false; scene.add(patch);
 const WAVES = { origin: [0, 0], ready: false };
+// measured lake level (m IGLD85) at time t from the hourly Calumet Harbor series; past its end, the latest value
+function levelAt(tMs) { const L = DATA.levels; if (!L || !L.cm || !L.cm.length) return null; const n = L.cm.length, x = (tMs / 1000 - L.t0) / L.step_s;
+  if (x < -6) return null; const near = (i) => { for (let k = 0; k < 7; k++) for (const j of [i - k, i + k]) if (j >= 0 && j < n && L.cm[j] != null) return L.cm[j]; return null; };
+  if (x >= n - 1) { for (let j = n - 1; j >= Math.max(0, n - 48); j--) if (L.cm[j] != null) return (L.base_cm + L.cm[j]) / 100; return null; }
+  const i = Math.max(0, Math.floor(x)), f = clamp(x - i, 0, 1), a = near(i), b = near(Math.min(i + 1, n - 1));
+  if (a == null && b == null) return null; return (L.base_cm + (a == null ? b : b == null ? a : a + (b - a) * f)) / 100; }
+
 // ---------------------------------------------------------------- spray where storm waves hit walls
 // Emitters sit on the water's edge along walls, revetments and breakwaters (lake water against land with real depth
 // at the toe, not a beach) within the wave patch. Each burst follows the largest wave component's crest arriving at
@@ -1710,7 +1724,7 @@ sprayGeo.setAttribute("nrm", new THREE.BufferAttribute(new Float32Array(SPRAY_E 
 sprayGeo.setDrawRange(0, 0);
 const SPRAY = { at: null, n: 0 };
 WU.uWOrigin = { value: new THREE.Vector2() }; WU.uPxH = { value: 800 };
-WU.uWcFetch = { value: 1 };   // whitecaps need fetch: an offshore wind over a few hundred metres of water barely breaks
+WU.uWcFetch = { value: 1 }; WU.uLevelD = { value: 0 }; WU.uSetupShore = { value: 0 };   // whitecaps need fetch: an offshore wind over a few hundred metres of water barely breaks
 const sprayMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, depthWrite: false,
   vertexShader: `${LOGV[0]} ${WAVE} ${TEMP_GLSL}
     uniform sampler2D uShelter; uniform vec2 uMapMin, uMapSize, uWOrigin, uWindDir2; uniform float uHasMap, uPxH, uWindSpd;
@@ -1718,7 +1732,7 @@ const sprayMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, dep
     float h1(float n) { return fract(sin(n * 91.345 + seed.w * 47.13) * 43758.5453); }
     void main() {
       vec2 pk = vec2(position.x, -position.z), p = vec2(position.x - uWOrigin.x, position.z + uWOrigin.y) * 1000.0;
-      float kr = swanRatio(pk), sw = kr >= 0.0 ? 1.0 : 0.0, dep = bathyDepth(pk, 2.0);
+      float kr = swanRatio(pk), sw = kr >= 0.0 ? 1.0 : 0.0, dep = bathyDepth(pk, 2.0) + uLevelD + uSetupShore * 0.5;
       float shel = uHasMap > 0.5 ? texture2D(uShelter, (pk - uMapMin) / uMapSize).r : 1.0;
       float hloc = uHsB * (sw > 0.5 ? kr / max(uSwanRef, 0.02) : clamp(0.62 * max(dep, 0.3) / max(uHsB, 0.02), 0.0, 1.0)) * shel;
       // the crest of the largest component arriving here (components are sorted by amplitude)
@@ -1730,7 +1744,7 @@ const sprayMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, dep
       float t = f * Tp, tf = 2.0 * v0 / 9.81 + 0.6;                    // seconds since the hit; time aloft
       vec3 w = vec3(position.x, 0.0, position.z);
       vec2 side = vec2(-nrm.y, nrm.x) * (seed.y - 0.5) * 7.0 + nrm * (seed.z - 0.5) * 3.0 * vT * H, drift = uWindDir2 * uWindSpd * 0.18 * t - nrm * v0 * 0.25 * t;
-      vec2 off = side + drift; float y = max(v0 * t - 0.5 * 9.81 * t * t, 0.0) + 0.3;
+      vec2 off = side + drift; float y = max(v0 * t - 0.5 * 9.81 * t * t, 0.0) + 0.3 + uLevelD + uSetupShore * 0.5;
       w += vec3(off.x, y, -off.y) * 0.001;   // km; the map's z axis points south
       vT = t / tf; vA = (H > 0.15 && t < tf ? 1.0 : 0.0) * (1.0 - smoothstep(0.35, 1.0, vT)) * smoothstep(0.0, 0.06, vT) * (0.35 + 0.4 * grp);
       vec4 mv = viewMatrix * vec4(w, 1.0); gl_Position = projectionMatrix * mv;
@@ -1815,7 +1829,7 @@ function heightAtM(xm, zm) {   // metres relative to the wave origin (x east, z 
     const P = tabData[o0] * (1 - f) + tabData[o1] * f, A = tabData[o0 + 1] * (1 - f) + tabData[o1 + 1] * f;
     y += WU.uA.value[i] * (sw ? 1 : A) * lim * Math.sin(WU.uKy.value[i] * sAl - P - WU.uW.value[i] * U.uTime.value + WU.uP.value[i]); }
   if (WU.uOcOn.value > 0 && dHere != null && dHere > 0.3) y += OCEAN.heightAt(xm, zm) * clamp((dHere - 0.05) / 0.55, 0, 1);
-  return y;
+  return y + WU.uLevelD.value;
 }
 
 // ---------------------------------------------------------------- rain / snow around the camera
@@ -2730,6 +2744,8 @@ function tick() {
     const tot = Math.sqrt(sys.reduce((a, q) => a + q.hs * q.hs, 0)); U.uHs.value = tot; U.uTp.value = Math.max(sys[0] ? sys[0].tp : 1.2, 1.2);
     const wa = ((sys[0] ? sys[0].dir : C.dir) + 180) * Math.PI / 180; U.uWaveDir.value.set(Math.sin(wa), Math.cos(wa)); U.uWindSpd.value = C.wind;
     WU.uWcFetch.value = clamp((rayFetchKm(cx, cy, C.dir) - 0.15) / 2.5, 0.08, 1);
+    { const lv = levelAt(S.t); C.level = lv; WU.uLevelD.value = lv != null && BATHY.ok ? clamp(lv - BATHY.level, -1, 1.5) : 0;
+      const hs0 = C.off ? C.off.hs : Math.sqrt(sys.reduce((a, q) => a + q.hs * q.hs, 0)); WU.uSetupShore.value = Math.min(0.18 * hs0, 0.9); }
     U.uWhitecap.value = Math.min(3.84e-6 * Math.pow(C.wind, 3.41), 0.3) * WU.uWcFetch.value;
     U.uWaterC.value = C.waterC ?? 15; U.uIceExp.value = S.mode === "exp" ? S.x.ice : 0; U.uHasTemp.value = S.mode === "exp" ? 0 : GRIDS.temp ? 1 : 0;
     U.uHasIce.value = S.mode !== "exp" && GRIDS.ice ? 1 : 0; U.uSnowCover.value = C.snow && (C.airC ?? 5) < -1 ? 0.8 : 0; U.uSnow.value = C.snow ? 1 : 0;
@@ -2828,7 +2844,7 @@ function updateHud(rr, tp) {
 function renderModels() {
   const rows = [];
   rows.push(["Lake bottom", BATHY.ok ? `USACE 2020 lidar (1 m)${BATHY.cov ? ` ${Math.round(BATHY.cov.lidar * 100)}%` : ""}, NOAA chart beyond` : "idealized slope"]);
-  rows.push(["Lake level", BATHY.ok ? `${(BATHY.level - LWD).toFixed(2)} m above low-water datum` : "–"]);
+  rows.push(["Lake level", BATHY.ok ? `${(BATHY.level - LWD).toFixed(2)} m above low-water datum (survey)${DATA.levels ? `; measured hourly at Calumet Harbor for the time shown (${DATA.levels.station}), plus wave setup in the surf zone` : ""}` : "–"]);
   rows.push(["Open-lake waves", "CEM growth with memory, 10 m wind + stability"]);
   rows.push(["Nearshore", SWAN.domains.length ? `SWAN 41.51: ${SWAN.domains.map((d) => `${d.name} (${d.cases.length} cases, ${d.obstacles} walls)`).join(", ")}` : "1-D refraction/shoaling on the real profile"]);
   rows.push(["Walls, wave by wave", FW.runs.length ? `FUNWAVE-TVD: ${[...new Set(FW.runs.map((r) => r.tile_label))].join(", ")} (${Object.keys(FW.byCase).length} conditions)` : "not run"]);
