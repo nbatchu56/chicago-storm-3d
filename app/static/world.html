@@ -2166,7 +2166,7 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
   const withChop = (sys, U10, dir) => { const ch = cem(U10, 300, 1); if (ch.hm0 > 0.01) sys.push({ hs: Math.max(ch.hm0, 0.02 + 0.006 * U10), tp: Math.max(0.9, ch.tp), dir, spread: 50 }); return sys; };
   if (S.mode === "import") {
     const r = impRow(tMs), I = IMP.list[IMP.idx];
-    if (r) { Object.assign(c, { wind: r.wind_mph / MPH, dir: r.wind_from_deg, gust: r.gust_mph != null ? r.gust_mph / MPH : null, airC: r.air_f != null ? (r.air_f - 32) * 5 / 9 : null, sky: r.precip_in > 0 ? 85 : r.cloud_pct ?? 10 });
+    if (r) { Object.assign(c, { wind: r.wind_mph / MPH, dir: r.wind_from_deg, gust: r.gust_mph != null ? r.gust_mph / MPH : null, airC: r.air_f != null ? (r.air_f - 32) * 5 / 9 : null, sky: r.precip_in > 0 ? 85 : r.cloud_pct ?? (r.wind_mph >= 25 ? 70 : r.wind_mph >= 18 ? 40 : 10), pop: r.precip_in > 0 ? 70 : 0 });
       const comp = (w, spread) => w && w.ft > 0.04 && w.s > 0.5 ? { hs: w.ft / FT, tp: w.s, dir: ((w.toward_deg ?? (r.wind_from_deg + 180)) + 180) % 360, spread } : null;
       c.systems = [comp(r.wind_wave, 30), comp(r.swell1, 18), comp(r.swell2, 15)].filter(Boolean);
       if (!c.systems.length && r.waves) { const q = comp(r.waves, 25); if (q) c.systems = [q]; }
@@ -2750,7 +2750,7 @@ function tick() {
     U.uWaterC.value = C.waterC ?? 15; U.uIceExp.value = S.mode === "exp" ? S.x.ice : 0; U.uHasTemp.value = S.mode === "exp" ? 0 : GRIDS.temp ? 1 : 0;
     U.uHasIce.value = S.mode !== "exp" && GRIDS.ice ? 1 : 0; U.uSnowCover.value = C.snow && (C.airC ?? 5) < -1 ? 0.8 : 0; U.uSnow.value = C.snow ? 1 : 0;
     // clouds beyond radar: forecast sky cover, or the chosen fair-weather layer
-    U.uExtra.value = (S.mode === "forecast" || S.mode === "live") && !RS ? clamp((C.sky - 10) / 90, 0, 1) * 0.95 : S.mode === "exp" && S.x.type === "cumulus" ? 0.55 * S.x.cov : 0;
+    U.uExtra.value = (S.mode === "forecast" || S.mode === "live" || S.mode === "import") && !RS ? clamp((C.sky - 10) / 90, 0, 1) * 0.95 : S.mode === "exp" && S.x.type === "cumulus" ? 0.55 * S.x.cov : 0;
     // wave patch: origin at the nearest shore frame; rebuild when conditions or place change
     const sf = C.shore, key = JSON.stringify([SWAN.key, sys.map((q) => [q.hs.toFixed(3), q.tp.toFixed(1), Math.round(q.dir)]), C.dRef, Math.round(sf.nx * 50), Math.round(sf.ny * 50), Math.round(C.wind)]);
     const ox = cx + sf.nx * (sf.d - C.dRef / 1000) * 0 , oy = cy;
