@@ -34,22 +34,44 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 #hudmin:hover { color: var(--fg); border-color: var(--line); }
 #hudmin svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s; }
 /* minimized: just the title, time and status chip */
-#hud.min { width: auto; } #hud.min .src, #hud.min .age, #hud.min #refreshbox, #hud.min .readouts, #hud.min .launches { display: none !important; }
+#hud.min { width: auto; } #hud.min .src, #hud.min .age, #hud.min #refreshbox, #hud.min .readouts, #hud.min .launches, #hud.min .hero, #hud.min .wxline { display: none !important; }
 #hud.min #hudmin svg { transform: rotate(180deg); }
-.src { color: var(--muted); font-size: 12.5px; }
+.src { color: var(--muted); font-size: 11px; line-height: 1.35; opacity: .8; border-top: 1px solid var(--line); padding-top: 7px; }
 .timebox { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-#clock { font: 500 21px/1 var(--font-data); font-variant-numeric: tabular-nums; }
+#clock { font: 500 15px/1 var(--font-data); font-variant-numeric: tabular-nums; }
 .chip { font: 600 11px/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; padding: 4px 7px; border-radius: 3px; border: 1px solid currentColor; }
 .chip.live { color: var(--obs); } .chip.forecast { color: var(--fc); } .chip.history { color: var(--hist); } .chip.exp { color: var(--exp); }
-.readouts { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 8px; margin: 0; }
+.readouts { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12px; margin: 0; }
+.readouts:empty { display: none; }
+/* conditions box: alert banners, the two big numbers (wind, waves), a one-line weather strip */
+.alerts { display: grid; gap: 4px; }
+.alerts .al { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; align-items: baseline; padding: 5px 8px; border-radius: 4px; border-left: 3px solid var(--accent); background: rgba(240, 180, 76, .10); font-size: 12px; }
+.alerts .al.warn { border-color: var(--danger); background: rgba(242, 112, 90, .13); } .alerts .al.stmt { border-color: var(--muted); background: rgba(142, 162, 180, .08); }
+.alerts .al b { font-weight: 600; } .alerts .al span { color: var(--muted); font: 11px var(--font-data); text-align: right; white-space: nowrap; }
+.hero { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.hero:empty { display: none; }
+.hero .tile { min-width: 0; padding: 8px 10px 9px; border-radius: 6px; background: rgba(255, 255, 255, .035); border: 1px solid rgba(255, 255, 255, .05); }
+.hero .k { font: 600 10.5px var(--font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: center; height: 18px; }
+.hero .v { display: flex; align-items: baseline; gap: 5px; margin-top: 3px; white-space: nowrap; }
+.hero .n { font: 600 30px/1 var(--font-ui); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.hero .u { font: 500 12px var(--font-data); color: var(--muted); }
+.hero .s { font: 11.5px var(--font-data); color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hero .s em { font-style: normal; color: var(--fg); }
+.hero .arw { width: 18px; height: 18px; flex: none; transition: transform .4s; } .hero .arw path { fill: var(--obs); }
+.wxline { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 12px; }
+.wxline:empty { display: none; }
+.wxline .p { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; background: rgba(255, 255, 255, .05); white-space: nowrap; }
+.wxline .p svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.wxline .p i { font-style: normal; color: var(--muted); } .wxline .p.spc { color: #10161c; font-weight: 600; }
 .readouts dt { color: var(--muted); }
-.launches { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 4px 8px; align-items: center; font-size: 12px; }
+.launches { border-top: 1px solid var(--line); padding-top: 8px; display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 4px 8px; align-items: center; font-size: 12px; }
 .launches b { grid-column: 1 / -1; font: 600 11px var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .launches button { all: unset; cursor: pointer; white-space: nowrap; text-decoration: underline dotted; text-underline-offset: 3px; }
 .launches .cr { font: 600 11px var(--font-data); padding: 1px 6px; border-radius: 3px; color: #10161c; white-space: nowrap; }
 .launches .strip { display: flex; gap: 2px; justify-content: flex-end; }
 .launches .strip i { flex: 0 1 9px; min-width: 3px; height: 12px; border-radius: 2px; display: block; }   /* squares narrow on a phone instead of pushing the box wider */
 .launches .note { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
+.launches .axis { grid-column: 3; display: flex; justify-content: space-between; font: 10px var(--font-data); color: var(--muted); margin-top: -2px; }
 table.score { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
 table.score th, table.score td { padding: 2px 4px; text-align: right; border-bottom: 1px solid var(--line); }
 table.score th { color: var(--muted); font-weight: 500; } table.score td:first-child, table.score th:first-child { text-align: left; }
@@ -170,6 +192,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 @media (max-width: 760px) {
   #hud { padding: 10px 12px; gap: 6px; width: calc(100vw - 2 * var(--gut) - 100px); }
   #hud .src { display: none; }
+  .hero .n { font-size: 25px; } .hero .tile { padding: 7px 8px 8px; } .wxline { font-size: 11.5px; }
   .launches { gap: 4px 6px; } .launches .cr { padding: 1px 4px; font-size: 10.5px; } .launches .strip { gap: 1px; }   /* fit the 12-hour squares on a phone */
   #toggle { display: block; position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); top: calc(var(--gut) + env(safe-area-inset-top, 0px)); background: var(--panel); }
   #controls { top: auto; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); width: auto; bottom: calc(var(--gut) + 92px + env(safe-area-inset-bottom, 0px)); max-height: 58%; }
@@ -182,12 +205,15 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
   <div id="labels"></div>
   <div id="hud" class="panel" aria-live="polite">
     <div class="hudhead"><h1>Lakefront Local</h1><button id="hudmin" aria-expanded="true" aria-controls="readouts" title="Minimize" aria-label="Minimize the conditions box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button></div>
-    <div class="src" id="source">Loading…</div>
     <div class="timebox"><span id="clock">--:--</span><span class="chip live" id="status">Live</span><button id="nowbtn" hidden style="padding:4px 8px;font-size:11px">Back to now</button></div>
     <div class="age" id="age"></div>
     <div id="refreshbox" hidden style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button id="refreshbtn" style="padding:6px 10px;font-size:12px">Refresh now</button><span class="age" id="refreshmsg"></span></div>
+    <div class="alerts" id="alerts" hidden></div>
+    <div class="hero" id="hero"></div>
+    <div class="wxline" id="wxline"></div>
     <dl class="readouts" id="readouts"></dl>
     <div class="launches" id="launches" hidden></div>
+    <div class="src" id="source">Loading…</div>
   </div>
   <button id="toggle" aria-expanded="true" aria-controls="controls">Settings</button>
   <div id="goto"><div id="goto-list" class="panel" role="menu" aria-label="Places" hidden></div><button id="goto-btn" class="panel" aria-label="Go to a place" title="Go to a place" aria-haspopup="menu" aria-expanded="false" aria-controls="goto-list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.4-6-11a6 6 0 0 1 12 0c0 5.6-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg><span>Go to a place</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button></div>
@@ -2237,13 +2263,13 @@ function renderLaunches() {
   const key = `${S.mode}|${Math.round(S.t / 600e3)}|${FW.case || ""}|${SWAN.domains.length}`; if (key === LAUNCH_KEY) return; LAUNCH_KEY = key;
   const ahead = S.mode === "live" || S.mode === "forecast" ? 12 : 0, sp0 = supSpots()[0], hl = sp0 && sp0.hourly.length ? sp0.hourly[sp0.hourly.length - 1].t : null;
   const t1 = hl ? new Date(hl).getTime() : range()[1];   // the forecast model's last hour
-  let h = `<b>Chicago SUP launches · chop</b>`;
+  let h = `<b>SUP launches · chop</b>`;
   for (const [name, lat, lon] of LAUNCHES) { const [x, y] = ll(lat, lon), r = chopRating(conditions(S.t, x, y, true));
     let strip = "";
     for (let k = 1; k <= ahead; k++) { const t = S.t + k * 3600e3; if (t > t1) break; const q = chopRating(conditions(t, x, y, true));
       strip += `<i style="background:${q.color}" title="${fmtHM.format(new Date(t))}: ${q.label}, ${ft(q.hs)} ft, ${Math.round(q.E)} J/m²"></i>`; }
     h += `<button data-launch="${lat},${lon}" title="Go there">${name}</button><span class="cr" style="background:${r.color}" title="${Math.round(r.E)} J/m² of waves · ${r.tp.toFixed(1)} s">${r.label} · ${ft(r.hs)} ft</span><span class="strip">${strip}</span>`; }
-  if (ahead) h += `<span class="note">Squares: the next ${ahead} hours. Energy from the wave model; short, steep waves count more.</span>`;
+  if (ahead) h += `<span></span><span></span><span class="axis"><span>+1 h</span><span>+${ahead} h</span></span><span class="note" title="Wave energy from the model; short, steep waves count more">Next ${ahead} hours of chop · tap a launch to fly there</span>`;
   el.innerHTML = h; el.hidden = false;
   el.querySelectorAll("[data-launch]").forEach((b) => b.onclick = () => { const [la, lo] = b.dataset.launch.split(",").map(Number), [x, y] = ll(la, lo); S.view = "free"; flyTo(x, y, 0.35, 250, 22); });
 }
@@ -2814,6 +2840,19 @@ function tick() {
   updateLabels();
   if (now - lastHud > 150) { lastHud = now; updateHud(rr, tp); updateCompass(); drawMinimap(); }
 }
+const WXI = (() => { const cl = (y = 0) => `<path d="M7 ${18 - y}h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 ${11 - y}a3.5 3.5 0 0 0 1 7z"/>`, sv = (b) => `<svg viewBox="0 0 24 24" aria-hidden="true">${b}</svg>`;
+  return { sun: sv(`<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>`),
+    night: sv(`<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>`), cloud: sv(cl()), partly: sv(`<path d="M8.5 6.2a4 4 0 0 1 6.9 1.6M5 4l1 1M10 2v1.5"/>` + cl()),
+    rain: sv(cl(3) + `<path d="M9 19l-1 3M13 19l-1 3M17 19l-1 3"/>`), snow: sv(cl(3) + `<path d="M8 20h.01M12 21h.01M16 20h.01M10 23h.01M14 23h.01"/>`), "": "" }; })();
+let ALERT_KEY = "";
+function renderAlerts(list, nowMs) {
+  const act = list.filter((a) => (!a.ends || new Date(a.ends).getTime() > nowMs) && (!a.onset || new Date(a.onset).getTime() < nowMs + 24 * 3600e3));
+  const key = act.map((a) => a.event + a.ends).join("|"); if (key === ALERT_KEY) return; ALERT_KEY = key;
+  const el = $("#alerts"); el.hidden = !act.length;
+  el.innerHTML = act.slice(0, 3).map((a) => { const on = a.onset && new Date(a.onset).getTime() > nowMs;
+    const when = on ? `from ${fmtDH.format(new Date(a.onset))}` : a.ends ? `until ${fmtDH.format(new Date(a.ends))}` : "";
+    return `<div class="al ${/Warning/.test(a.event) ? "warn" : /Statement/.test(a.event) ? "stmt" : ""}" title="${(a.headline || "").replace(/"/g, "&quot;")}"><b>${a.event}</b><span>${when}</span></div>`; }).join("");
+}
 function updateHud(rr, tp) {
   const C = COND; if (!C) return; const [t0, t1] = range();
   $("#clock").textContent = fmtFull.format(new Date(S.t)).replace(/^\w+, /, "");
@@ -2827,14 +2866,29 @@ function updateHud(rr, tp) {
   const sc = $("#scrub"); if (document.activeElement !== sc) sc.value = Math.round((S.t - t0) / Math.max(t1 - t0, 1) * 1000);
   if (Date.now() - (MM.ticksAt || 0) > 60e3) { MM.ticksAt = Date.now(); buildTicks(); }   // live: the range grows with the clock; keep "now" and the ticks in place
   const tot = Math.sqrt(C.systems.reduce((a, q) => a + q.hs * q.hs, 0)), tpk = C.systems[0] ? C.systems[0].tp : 0;
-  const wx = rr > 0.2 ? `${C.snow ? "snow" : "rain"} ${rr.toFixed(1)} mm/h` : U.uOvercast.value > 0.6 ? "overcast" : U.uOvercast.value > 0.25 ? "partly cloudy" : C.sun && C.sun.el < -6 ? "clear night" : "clear";
-  const rows = [["Weather here", wx], ["Wind", `${mph(C.wind)} mph ${compass(C.dir)}${C.gust ? ` · gusts ${mph(C.gust)}` : ""}`], ["Waves", tot > 0.01 ? `${ft(tot)} ft · ${tpk.toFixed(1)} s` : "calm"],
-    ...(C.depth != null ? [["Depth here", C.depth > 0 ? `${(C.depth * FT).toFixed(C.depth * FT < 10 ? 1 : 0)} ft` : "dry"]] : []),
-    ...(C.fwHs != null ? [["FUNWAVE Hs here", `${ft(C.fwHs)} ft`]] : []),
-    ...((C.fwHs != null ? C.fwHs : tot) > 0.01 ? [["Wave energy", `${Math.round(613 * (C.fwHs != null ? C.fwHs : tot) ** 2)} J/m²${C.fwCross != null ? ` · crossing ${Math.round(C.fwCross * 100)}%${C.fwCross >= 0.5 ? " (confused)" : ""}` : ""}`]] : []),
-    ...(C.swan && C.off ? [["Offshore", `${ft(C.off.hs)} ft · ${C.off.tp.toFixed(1)} s from ${compass(C.off.dir)}`]] : []),
-    ["Water", C.waterC != null ? `${Math.round(cToF(C.waterC))}°F` : "–"], ["Air", C.airC != null ? `${Math.round(cToF(C.airC))}°F` : "–"]];
-  if (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) rows.push(["Ice", S.mode === "exp" ? `${Math.round(S.x.ice * 100)}% setting` : "from NOAA analysis"]);
+  const sky = rr > 0.2 ? (C.snow ? "snow" : "rain") : U.uOvercast.value > 0.6 ? "cloud" : U.uOvercast.value > 0.25 ? "partly" : C.sun && C.sun.el < -6 ? "night" : "sun";
+  const wx = rr > 0.2 ? `${C.snow ? "Snow" : "Rain"} ${rr.toFixed(1)} mm/h` : { cloud: "Overcast", partly: "Partly cloudy", night: "Clear night", sun: "Clear" }[sky];
+  const hs = C.fwHs != null ? C.fwHs : tot, live = S.mode === "live" || S.mode === "forecast", W = (DATA.lake && DATA.lake.wx) || {};
+  // the two numbers that matter on the water
+  $("#hero").innerHTML = `<div class="tile"><div class="k">Wind<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${(C.dir + 180) % 360}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg></div>
+      <div class="v"><span class="n">${mph(C.wind)}</span><span class="u">mph</span></div><div class="s">from <em>${compass(C.dir)}</em>${C.gust ? ` · G <em>${mph(C.gust)}</em>` : ""}</div></div>
+    <div class="tile"><div class="k">Waves${C.fwHs != null ? " · FUNWAVE" : ""}</div>
+      <div class="v">${hs > 0.01 ? `<span class="n">${ft(hs)}</span><span class="u">ft</span>` : `<span class="n" style="font-size:22px">Calm</span>`}</div>
+      <div class="s">${hs > 0.01 ? `<em>${tpk.toFixed(1)} s</em> · ${Math.round(613 * hs ** 2)} J/m²` : "under 0.1 ft"}</div></div>`;
+  const pill = (icon, html, cls = "", st = "") => `<span class="p ${cls}"${st ? ` style="${st}"` : ""}>${icon ? WXI[icon] : ""}${html}</span>`;
+  let wl = pill(sky, wx) + (C.airC != null ? pill("", `<i>Air</i> ${Math.round(cToF(C.airC))}°`) : "") + (C.waterC != null ? pill("", `<i>Water</i> ${Math.round(cToF(C.waterC))}°`) : "");
+  if (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) wl += pill("", `<i>Ice</i> ${S.mode === "exp" ? Math.round(S.x.ice * 100) + "%" : "NOAA"}`);
+  const spc = W.spc, nowMs = Date.now();
+  if (live && spc && spc.cat && (!spc.expire || new Date(spc.expire).getTime() > nowMs))
+    wl += pill("", spc.cat === "TSTM" ? "Thunder possible" : `Severe: ${spc.label.replace(/ risk$/i, "")} ${spc.level}/5`, "spc", `background:${spc.color || "#f6f67f"}`);
+  $("#wxline").innerHTML = wl;
+  renderAlerts(live ? (W.alerts || []) : [], nowMs);
+  const rows = [...(C.depth != null ? [["Depth here", C.depth > 0 ? `${(C.depth * FT).toFixed(C.depth * FT < 10 ? 1 : 0)} ft` : "dry"]] : []),
+    ...(C.fwCross != null ? [["Crossing seas", `${Math.round(C.fwCross * 100)}%${C.fwCross >= 0.5 ? " (confused)" : ""}`]] : []),
+    ...(C.fwHs != null && tot > 0.01 ? [["Model waves", `${ft(tot)} ft`]] : []),
+    ...(C.swan && C.off ? [["Offshore", `${ft(C.off.hs)} ft · ${C.off.tp.toFixed(1)} s from ${compass(C.off.dir)}`]] : [])];
+  if (S.mode === "live") for (const m of W.metar || []) { if (nowMs - new Date(m.t).getTime() > 3 * 3600e3 || m.wspd_kt == null) continue;
+    const k = (v) => Math.round(v * 1.15078); rows.push([m.name, `${m.wspd_kt < 1 ? "calm" : `${k(m.wspd_kt)} mph ${m.vrb ? "var" : compass(m.wdir)}${m.wgst_kt ? ` G${k(m.wgst_kt)}` : ""}`}${m.temp_c != null ? ` · ${Math.round(cToF(m.temp_c))}°` : ""}`]); }
   if (tp && tp.inside) rows.push(["Your paddle", `${(tp.v * MPH).toFixed(1)} mph ${compass(tp.hd)}${tp.hr ? ` · ${tp.hr} bpm` : ""}`]);
   if (tp && tp.inside && C.wind > 0.5) { const rel = Math.abs(angd(tp.hd, C.dir)); rows.push(["Into wind?", rel < 60 ? "into the wind" : rel > 120 ? "with the wind" : "cross-wind"]); }
   $("#readouts").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");

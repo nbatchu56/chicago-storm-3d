@@ -6,6 +6,7 @@ Lakefront layers for the SUP route view.
   water temp NOAA GLERL GLSEA daily lake-surface temperature (satellite, ~1.4 km) and ice
              concentration when present, via ERDDAP; plus every NDBC station in the area reporting WTMP
   history    last 48 h of wind, waves and water temperature from those stations
+  wx         NWS alerts, SPC Day 1 outlook at the lakefront, Midway/O'Hare METAR (app.wx_now)
 
     python -m app.lakefront --out lakefront.json [--probe probe.json]
 
@@ -397,6 +398,12 @@ def build(get=http_get, probe=None, skip_osm=False):
     except Exception as e:  # noqa: BLE001
         notes.append(f"station list unavailable: {e}")
     data["stations"] = stations
+    try:
+        from . import wx_now
+        data["wx"] = wx_now.build(get)
+        notes += data["wx"].pop("notes", [])
+    except Exception as e:  # noqa: BLE001
+        notes.append(f"weather headlines unavailable: {e}")
     data["notes"] = notes
     return data
 
