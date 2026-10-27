@@ -544,6 +544,7 @@ const U = {
   uHs: { value: 0.3 }, uTp: { value: 3 }, uWaveDir: { value: new THREE.Vector2(0, 1) }, uWhitecap: { value: 0 }, uWindSpd: { value: 4 },
   // lakefront map
   uMapCol: { value: blank2D }, uMapMask: { value: blank2D }, uMapLooks: { value: blank2D }, uMapMin: { value: new THREE.Vector2(1e6, 1e6) }, uMapSize: { value: new THREE.Vector2(1, 1) }, uHasMap: { value: 0 },
+  uShelter: { value: (() => { const t = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1); t.needsUpdate = true; return t; })() },   // 1 = open lake (see updateShelter)
   uTempTex: { value: blank2D }, uTempMin: { value: new THREE.Vector2() }, uTempSize: { value: new THREE.Vector2(1, 1) }, uTempN: { value: new THREE.Vector2(1, 1) }, uHasTemp: { value: 0 },
   uIceTex: { value: blank2D }, uIceMin: { value: new THREE.Vector2() }, uIceSize: { value: new THREE.Vector2(1, 1) }, uIceN: { value: new THREE.Vector2(1, 1) }, uHasIce: { value: 0 },
   uBathy: { value: blank2D }, uBathyMin: { value: new THREE.Vector2() }, uBathySize: { value: new THREE.Vector2(1, 1) }, uHasBathy: { value: 0 },
@@ -698,13 +699,29 @@ sky.renderOrder = -10; sky.frustumCulled = false; scene.add(sky);
 const MAXP = 64;
 U.uLake = { value: LAKE.map(([x, y]) => new THREE.Vector2(x, y)).concat(Array(MAXP - LAKE.length).fill(new THREE.Vector2())) }; U.uLakeN = { value: LAKE.length };
 U.uShore = { value: SHORE.map(([x, y]) => new THREE.Vector2(x, y)).concat(Array(MAXP - SHORE.length).fill(new THREE.Vector2())) }; U.uShoreN = { value: SHORE.length };
+// shelter from the open lake: march up-wave (two rays, +-15 deg of the mean direction) through the map mask, 6-130 m; water
+// with a pier, wall or point between it and the waves gets only what bends around (the inside of the North Ave hook,
+// the lee of jetties and breakwaters). 1 = open, ~0.12 right behind a wall, more further back. Rendered once per wave
+// direction into a half-resolution map texture (updateShelter); the water shaders read uShelter.
+const SHELTER_GLSL = `
+float shelterAt(vec2 pk) {
+  if (uHasMap < 0.5) return 1.0;
+  float tot = 0.0;
+  for (int r = 0; r < 2; r++) { float a = r == 0 ? 0.26 : -0.26; vec2 wd = vec2(cos(a) * uWaveDir.x - sin(a) * uWaveDir.y, sin(a) * uWaveDir.x + cos(a) * uWaveDir.y);
+    float s = 1.0;
+    for (int i = 1; i <= 7; i++) { float d = 0.004 + float(i * i) * 0.0026; vec2 uv = (pk - wd * d - uMapMin) / uMapSize;
+      if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) break;
+      if (texture2D(uMapMask, uv).r < 0.17) { s = 0.12 + 0.45 * smoothstep(0.02, 0.13, d); break; } }
+    tot += s; }
+  return tot * 0.5; }
+`;
 const groundMat = new THREE.ShaderMaterial({ uniforms: U, extensions: { derivatives: true },
   vertexShader: `${LOGV[0]} varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
   fragmentShader: `${LOGF[0]} ${GRID_GLSL} ${SKY_FN} ${TEMP_GLSL}
 uniform vec3 uCamPos, uAmbTop, uAmbBot, uFlashPos, uLand; uniform float uCity, uHaze, uTempOn, uSnowCover, uHasMap; uniform vec2 uLocalC;
 uniform vec2 uLake[${MAXP}]; uniform int uLakeN; uniform vec2 uShore[${MAXP}]; uniform int uShoreN;
 uniform float uHs, uTp, uWhitecap, uWindSpd; uniform vec2 uWaveDir;
-uniform sampler2D uMapCol, uMapMask, uMapLooks; uniform vec2 uMapMin, uMapSize;
+uniform sampler2D uMapCol, uMapMask, uMapLooks, uShelter; uniform vec2 uMapMin, uMapSize;
 varying vec3 vW;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
@@ -739,16 +756,22 @@ void main(){
     float rel[8]; rel[0]=1.6; rel[1]=1.0; rel[2]=0.74; rel[3]=0.55; rel[4]=0.38; rel[5]=0.26; rel[6]=0.17; rel[7]=0.11;
     float ang[8]; ang[0]=-0.45; ang[1]=0.2; ang[2]=-0.15; ang[3]=0.6; ang[4]=-0.75; ang[5]=0.35; ang[6]=0.95; ang[7]=-0.5;
     float calm = cls > 1.5 ? 0.25 : 1.0;                       // harbours and ponds: sheltered
+    float shel = inMap && cls < 1.5 ? texture2D(uShelter, muv).r : 1.0; calm *= mix(0.35, 1.0, shel);   // and the lee of piers, walls and points
     float crest = 0.0;
     float slopeT = (0.06 + 0.012 * uWindSpd) * calm;
     // glass (wind under ~1 m/s): no short wind waves, only the long-crested remains of old swell, smooth enough to mirror the sky
     // (your Oct 21 sunrise paddle: long low undulations, orange and slate reflections, no ripples)
     float windy = smoothstep(0.6, 3.0, uWindSpd);
+    // 8 plane waves alone add up to a fixed lattice of diamonds that repeats across the whole lake: each component's phase
+    // wanders over a few wavelengths and its height comes and goes in groups (as real wind waves do), so no two patches match
+    vec2 wq = p * 1000.0 / Lp; float g1 = vnoise(wq * 0.29 + 3.7), g2 = vnoise(wq * 0.21 + vec2(-1.9, 5.1)), g3 = vnoise(wq * 0.47 + 11.3);
     for (int i = 0; i < 8; i++) { float L = Lp * rel[i]; float k = 6.2832 / (L * 0.001); float a = ang[i] * mix(0.35, 1.0, windy);
+      float fi = float(i), grp = clamp(0.5 + (g1 - 0.5) * 1.6 * cos(fi * 2.7 + 0.4) + (g3 - 0.5) * 1.6 * sin(fi * 1.7 + 1.2), 0.0, 1.0);
       vec2 d = vec2(cos(a) * wd.x - sin(a) * wd.y, sin(a) * wd.x + cos(a) * wd.y);
       float s = slopeT * (uHs > 0.02 ? 1.0 : 0.25) * (0.55 + 0.45 * sin(float(i) * 2.1)) / 2.4 * (i < 2 ? mix(0.7, 1.0, windy) : windy), fade = clamp(1.0 - foot / (L * 0.001 * 0.6), 0.0, 1.0);
-      float ph = k * dot(p, d) - sqrt(9.81 * 6.2832 / L) * uTime + float(i) * 1.7;
-      grad += d * s * cos(ph) * fade; crest += sin(ph) * fade * rel[i]; unres += s * s * (1.0 - fade); }
+      float ph = k * dot(p, d) - sqrt(9.81 * 6.2832 / L) * uTime + float(i) * 1.7 + 4.0 * ((g1 - 0.5) * cos(fi * 1.9 + 0.3) + (g2 - 0.5) * sin(fi * 1.3 + 1.1));
+      s *= 0.35 + 1.3 * grp;
+      grad += d * s * cos(ph) * fade; crest += sin(ph) * fade * rel[i] * (0.35 + 1.3 * grp); unres += s * s * (1.0 - fade); }
     // capillary ripples (metre scale) riding on the waves: wind-driven, gone in calm water, blend into roughness with distance
     { vec2 rp = p * 1000.0, wv = uWaveDir * (0.4 + 0.08 * uWindSpd) * uTime; float ra = (0.03 * windy + 0.012 * uWindSpd) * calm, rf = clamp(1.0 - foot * 1000.0 / 1.2, 0.0, 1.0);
       float r0 = vnoise(rp * 1.1 - wv), rx = vnoise(rp * 1.1 - wv + vec2(0.18, 0.0)), ry = vnoise(rp * 1.1 - wv + vec2(0.0, 0.18));
@@ -757,7 +780,8 @@ void main(){
     // the spectral short waves (the same FFT tile as the patch under the camera) everywhere else too: two rotated octaves,
     // fading into glitter roughness once a pixel covers more than a couple of metres
     if (uOcOnG > 0.5 && cls < 2.5) { vec2 uv = p * 1000.0 / uOcLG; float fm = foot * 1000.0, w1 = clamp(1.0 - fm / 2.5, 0.0, 1.0), w2 = clamp(1.0 - fm / 0.9, 0.0, 1.0);
-      vec2 sl = texture2D(uOcFG, uv).xy * w1 + texture2D(uOcFG, mat2(0.799, 0.602, -0.602, 0.799) * uv * 2.71 + 0.37).xy * 0.35 * w2
+      float tb = smoothstep(0.3, 0.7, vnoise(uv * 0.43 + 2.3)); vec2 tA = texture2D(uOcFG, uv).xy, tB = texture2D(uOcFG, uv + vec2(0.413, 0.727)).xy;
+      vec2 sl = (tA * (1.0 - tb) + tB * tb) / sqrt((1.0 - tb) * (1.0 - tb) + tb * tb) * w1 + texture2D(uOcFG, mat2(0.799, 0.602, -0.602, 0.799) * uv * 2.71 + 0.37).xy * 0.35 * w2
         + fineSlope(p * 1000.0) * clamp(1.0 - fm / 0.15, 0.0, 1.0);
       grad += sl * calm * (cls > 1.5 ? 0.55 : 1.0); unres += uOcVarG * (1.0 - w1) * calm; }
     vec3 N = normalize(vec3(-grad.x, 1.0, grad.y)); float rough = sqrt(max(unres, (0.003 + 0.00512 * uWindSpd) * calm * 0.55)) + 0.02;   // Cox & Munk: the slopes no grid resolves still spread the glitter
@@ -765,7 +789,7 @@ void main(){
     vec3 R = reflect(-V, N); R.y = abs(R.y);
     vec3 refl = skyColor(R, false) * (0.55 + 0.45 * shadow);
     float dep = bathyDepth(p, 9.0), kr = swanRatio(p);
-    vec3 bodyTint = mix(vec3(0.10, 0.16, 0.12), vec3(0.012, 0.045, 0.05), smoothstep(0.3, 7.0, dep));
+    vec3 bodyTint = mix(vec3(0.095, 0.145, 0.12), vec3(0.010, 0.030, 0.046), smoothstep(0.3, 7.0, dep));
     if (uTempOn > 0.5) bodyTint = tempColor(waterTempC(p)) * 0.35;
     if (uDepthOn > 0.5 && inBathy(p)) { float lw = fwidth(dep) * 1.2 + 0.02;
       bodyTint = depthColor(dep) * 0.5 * (1.0 - 0.55 * (1.0 - smoothstep(0.0, lw, min(fract(dep), 1.0 - fract(dep))))); }
@@ -778,21 +802,21 @@ void main(){
     // light in the water comes through the surface: facets turned to the sun are brighter, those turned away darker, and a
     // low sun shines through the thin wave tops toward you (what makes waves read in daylight seen from above)
     { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn;
-      body *= mix(clamp(1.0 + dot(N.xz, normalize(sl.xz + 1e-4)) * 4.5, 0.45, 1.9), 1.0, step(0.5, ov));
-      body += vec3(0.010, 0.060, 0.045) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - N.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
+      body *= mix(clamp(1.0 + dot(N.xz, normalize(sl.xz + 1e-4)) * 3.2, 0.55, 1.6), 1.0, step(0.5, ov));
+      body += vec3(0.008, 0.038, 0.040) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - N.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
     vec3 H = normalize(uSunDir + V); float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
     col = mix(body, refl, uTempOn > 0.5 ? F * 0.45 : F) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice);
     // light through the thin tops of the waves: a lighter green-blue on the crests, stronger as the waves grow
-    float hsLook = (kr >= 0.0 ? uHsOff * kr : uHs) * calm;
-    col += vec3(0.02, 0.075, 0.07) * (sunL + amb * 2.0) * smoothstep(0.4, 2.2, crest) * clamp(hsLook * 2.5, 0.15, 1.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn > 0.5 ? 0.0 : 1.0);
-    float hsHere = (kr >= 0.0 ? uHsOff * kr : uHs) * calm, brk = inBathy(p) && cls < 1.5 ? smoothstep(0.6, 1.0, hsHere / max(dep, 0.05)) * step(0.08, hsHere) : 0.0;
+    float hsLook = (kr >= 0.0 ? uHsOff * kr : uHs) * calm * shel;
+    col += vec3(0.012, 0.040, 0.044) * (sunL + amb * 2.0) * smoothstep(0.9, 3.2, crest) * clamp(hsLook * 2.5, 0.15, 1.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn > 0.5 ? 0.0 : 1.0);
+    float hsHere = (kr >= 0.0 ? uHsOff * kr : uHs) * calm * shel, brk = inBathy(p) && cls < 1.5 ? smoothstep(0.6, 1.0, hsHere / max(dep, 0.05)) * step(0.08, hsHere) : 0.0;
     float wc = vnoise(p * 900.0 + uTime * 0.6) * vnoise(p * 310.0 - uTime * 0.3), cover = max(clamp(uWhitecap, 0.0, 0.3) * calm, brk * 0.3 * (0.4 + 0.6 * vnoise(p * 400.0 - uTime * 0.4)));
     float foam = mix(smoothstep(1.0 - cover * 4.0, 1.0 - cover * 3.0, wc), cover, clamp(foot * 60.0, 0.0, 1.0));
     col = mix(col, (sunL + amb * 2.2) * 0.75, foam * 0.85);
     // swash line along the beach and walls: a thin band of foam that comes and goes with the waves
     if (inMap && cls < 1.5) { float band = smoothstep(0.92, 0.6, wetF + edgeN) * clamp(1.0 - foot * 120.0, 0.0, 1.0);
       float pulse = 0.55 + 0.45 * sin(uTime * 6.2832 / max(uTp, 1.0) + vnoise(p * 300.0) * 6.0);
-      float swash = band * clamp(0.25 + hsHere * 2.5, 0.0, 1.0) * pulse * (0.6 + 0.4 * vnoise(p * 1500.0 + uTime * 0.5));
+      float swash = band * clamp(0.25 + hsHere * 2.5, 0.0, 1.0) * smoothstep(0.12, 0.6, shel) * pulse * (0.6 + 0.4 * vnoise(p * 1500.0 + uTime * 0.5));
       col = mix(col, (sunL + amb * 2.2) * 0.8 + vec3(0.9, 0.95, 1.0) * uCity * 0.15, swash * 0.75 * (1.0 - ice)); }
     if (ice > 0.02) { float cr = smoothstep(0.02, 0.0, abs(vnoise(p * 40.0) - 0.5)) * 0.25;
       vec3 iceC = mix(vec3(0.55, 0.62, 0.66), vec3(0.85, 0.9, 0.93), n) * (1.0 - cr) * (sunL * 0.9 + amb * 2.4);
@@ -1552,15 +1576,15 @@ float fwEta(vec2 pk) { vec2 f = clamp((pk - uFwMin) / uFwSize, 0.0, 1.0); return
 `;
 const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, extensions: { derivatives: true },
   vertexShader: `${LOGV[0]} ${WAVE} ${TEMP_GLSL} ${FW_GLSL}
-    uniform sampler2D uMapMask; uniform vec2 uMapMin, uMapSize; uniform float uHasMap; uniform float uPatchR;
+    uniform sampler2D uMapMask; uniform vec2 uMapMin, uMapSize; uniform float uHasMap; uniform float uPatchR; uniform sampler2D uShelter;
     uniform sampler2D uOcC; uniform float uOcL, uOcOn;
-    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD;
+    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD; varying float vShel;
     void main() {
       vec2 loc = position.xz; vec2 p = loc + uPatchRel;
       vec4 wk = modelMatrix * vec4(position, 1.0); vec2 pk = vec2(wk.x, -wk.z);
       float cls = 1.0; if (uHasMap > 0.5 && pk.x > uMapMin.x && pk.y > uMapMin.y && pk.x < uMapMin.x + uMapSize.x && pk.y < uMapMin.y + uMapSize.y)
         cls = floor(texture(uMapMask, (pk - uMapMin) / uMapSize).r * 3.0 + 0.5);
-      float shelter = cls < 0.5 ? 0.0 : cls > 1.5 ? 0.18 : 1.0;
+      float shelter = cls < 0.5 ? 0.0 : cls > 1.5 ? 0.18 : texture(uShelter, (pk - uMapMin) / uMapSize).r; vShel = shelter;
       // real depth (lidar/NCEI) where surveyed; SWAN's height ratio where modelled (it already holds shoaling,
       // refraction, breaking, diffraction and reflection), the 1-D profile tables elsewhere
       float dep = bathyDepth(pk, depthAt(p)), kr = swanRatio(pk), sw = kr >= 0.0 && uHsB > 0.0 ? 1.0 : 0.0;
@@ -1583,7 +1607,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
     uniform vec3 uCamPos, uAmbTop, uAmbBot; uniform float uWindSpd, uCity, uGust, uTempOn; uniform vec2 uWindDir2;
     uniform sampler2D uMapMask, uMapLooks; uniform vec2 uMapMin, uMapSize; uniform float uHasMap;
     uniform sampler2D uOcC, uOcF; uniform float uOcL, uOcOn, uOcVarLo, uOcVarHi;   // (uOcF2, uOcL2: in the shared chunk)
-    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD;
+    varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD; varying float vShel;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
     void main() {
@@ -1619,7 +1643,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       vec3 sunL = uSunCol * max(uSunDir.y, 0.0) * sunUp * (1.0 - 0.6 * uOvercast), amb = mix(uAmbBot, uAmbTop, 0.7) * (1.0 - 0.45 * uOvercast);
       float depth = vDep;
       // clear Lake Michigan water: the sand shows through in the shallows
-      vec3 tint = mix(vec3(0.10, 0.16, 0.12), vec3(0.012, 0.045, 0.05), smoothstep(0.3, 7.0, depth));
+      vec3 tint = mix(vec3(0.095, 0.145, 0.12), vec3(0.010, 0.030, 0.046), smoothstep(0.3, 7.0, depth));
       if (uTempOn > 0.5) tint = tempColor(waterTempC(pk)) * 0.35;
       if (uDepthOn > 0.5) tint = depthColor(depth) * 0.5 * (1.0 - 0.55 * smoothstep(0.43, 0.48, abs(fract(depth) - 0.5)));
       if (uHsOn > 0.5) tint = hsColor(vFw > 0.0 ? mix(uHsB * vGain, texture2D(uFwHs, clamp((pk - uFwMin) / uFwSize, 0.0, 1.0)).r, vFw) : uHsB * vGain) * 0.5;
@@ -1629,8 +1653,8 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       // light in the water comes through the surface: facets turned to the sun are brighter, those turned away darker, and a
       // low sun shines through the thin wave tops toward you (what makes waves read in daylight seen from above)
       { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn;
-        body *= mix(clamp(1.0 + dot(Nn.xz, normalize(sl.xz + 1e-4)) * 4.5, 0.45, 1.9), 1.0, step(0.5, ov));
-        body += vec3(0.010, 0.060, 0.045) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - Nn.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
+        body *= mix(clamp(1.0 + dot(Nn.xz, normalize(sl.xz + 1e-4)) * 3.2, 0.55, 1.6), 1.0, step(0.5, ov));
+        body += vec3(0.008, 0.038, 0.040) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - Nn.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
       vec3 c = mix(body, skyColor(R, false), uTempOn > 0.5 ? F * 0.45 : F);
       vec3 Hv = normalize(uSunDir + V); float rough = sqrt(max(unres + 0.0025, (0.003 + 0.00512 * uWindSpd) * 0.55)) + 0.01;   // Cox & Munk floor
       c += uSunCol * pow(max(dot(Nn, Hv), 0.0), 2.0 / (rough * rough)) / (1.0 + rough * 20.0) * sunUp * (1.0 - 0.8 * uOvercast) * 0.6;
@@ -1640,12 +1664,12 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       float brk = mix(noise(p * 1.3 + uTime * 0.3), 0.3 + 0.7 * smoothstep(1.0, 0.8, crest), wfF);
       float wc = smoothstep(1.0 - 3.0 * W, 1.0 - 1.5 * W, smoothstep(0.08, 0.3, steep) * brk) * step(0.002, W);
       wc = max(wc, smoothstep(0.78, 0.55, crest) * clamp((uWindSpd - 6.0) / 6.0, 0.0, 1.0) * 0.8);
-      float surf = (1.0 - vLim) * step(0.05, vLim) * smoothstep(0.03, 0.15, uHsB) * (0.5 + 0.5 * noise(p * 0.8 - uTime * 0.5));
+      float surf = (1.0 - vLim) * step(0.05, vLim) * smoothstep(0.03, 0.15, uHsB) * smoothstep(0.15, 0.6, vShel) * (0.5 + 0.5 * noise(p * 0.8 - uTime * 0.5));
       surf = mix(surf, smoothstep(0.18, 0.32, fwSteep) * (0.6 + 0.4 * noise(p * 1.1 - uTime * 0.7)), vFw);
       c = mix(c, (sunL + amb * 2.2) * 0.75, clamp(max(wc, surf), 0.0, 1.0) * 0.85);
       // swash line where the water meets the beach or wall (same as the far-field shading)
       float band = smoothstep(0.92, 0.6, wetF), pulse = 0.55 + 0.45 * sin(uTime * 1.3 + noise(pk * 300.0) * 6.0);
-      c = mix(c, (sunL + amb * 2.2) * 0.8 + vec3(0.9, 0.95, 1.0) * uCity * 0.15, band * clamp(0.25 + uHsB * vGain * 2.5, 0.0, 1.0) * pulse * (0.6 + 0.4 * noise(p * 1.5 + uTime * 0.5)) * 0.75);
+      c = mix(c, (sunL + amb * 2.2) * 0.8 + vec3(0.9, 0.95, 1.0) * uCity * 0.15, band * clamp(0.25 + uHsB * vGain * 2.5, 0.0, 1.0) * smoothstep(0.12, 0.6, vShel) * pulse * (0.6 + 0.4 * noise(p * 1.5 + uTime * 0.5)) * 0.75);
       gl_FragColor = vec4(c, vEdge);
     }` });
 const patch = new THREE.Mesh(new THREE.PlaneGeometry(660, 660, 330, 330).rotateX(-Math.PI / 2), patchMat);
@@ -2561,8 +2585,22 @@ function renderLegend() {
 
 // ---------------------------------------------------------------- frame loop
 const clock = new THREE.Clock(); let lastHud = 0, lastCond = 0, COND = null, RS = null, flashT = -1e9, nextStrike = 0, flashPos = [0, 0, 5];
+// the shelter map (SHELTER_GLSL) for the current wave direction: one small render pass when the direction changes
+const SHEL = { dir: null };
+function updateShelter() {
+  if (!U.uHasMap.value || !MAP.WPX) return;
+  const d = U.uWaveDir.value; if (SHEL.dir && Math.abs(SHEL.dir.x - d.x) + Math.abs(SHEL.dir.y - d.y) < 0.02) return;
+  if (!SHEL.rt) {
+    SHEL.rt = new THREE.WebGLRenderTarget(Math.ceil(MAP.WPX / 2), Math.ceil(MAP.HPX / 2), { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, stencilBuffer: false });
+    SHEL.scene = new THREE.Scene(); SHEL.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    SHEL.scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ uniforms: U, depthTest: false, depthWrite: false,
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+      fragmentShader: `uniform sampler2D uMapMask; uniform vec2 uMapMin, uMapSize, uWaveDir; uniform float uHasMap; varying vec2 vUv; ${SHELTER_GLSL}
+        void main(){ gl_FragColor = vec4(vec3(shelterAt(uMapMin + vUv * uMapSize)), 1.0); }` })));
+    U.uShelter.value = SHEL.rt.texture; }
+  SHEL.dir = d.clone(); const prev = renderer.getRenderTarget(); renderer.setRenderTarget(SHEL.rt); renderer.render(SHEL.scene, SHEL.cam); renderer.setRenderTarget(prev); }
 function tick() {
-  requestAnimationFrame(tick);
+  requestAnimationFrame(tick); updateShelter();
   const dt = Math.min(clock.getDelta(), 0.1), now = performance.now();
   if (!RM) U.uTime.value += dt;
   followFunwave();
