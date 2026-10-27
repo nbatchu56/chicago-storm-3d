@@ -239,7 +239,7 @@ def swn(g, level_above_lwd, d, tp, hs, obst):
         "MODE STATIONARY TWODIMENSIONAL",
         "COORDINATES CARTESIAN",
         # 0.06-1.2 Hz: the low end sits well below the peak of an 8.5 s storm sea (0.118 Hz)
-        f"CGRID REGULAR 0. 0. 0. {xl:.1f} {yl:.1f} {g['nx'] - 1} {g['ny'] - 1} CIRCLE 36 0.06 1.2 32",
+        f"CGRID REGULAR 0. 0. 0. {xl:.1f} {yl:.1f} {g['nx'] - 1} {g['ny'] - 1} CIRCLE 36 0.06 1.2 28",
         f"INPGRID BOTTOM REGULAR 0. 0. 0. {g['nx'] - 1} {g['ny'] - 1} {g['dx']:.1f} {g['dx']:.1f} EXCEPTION -99.",
         "READINP BOTTOM 1. '../bottom.txt' 3 0 FREE",
         "BOUND SHAPESPEC JONSWAP 3.3 PEAK DSPR DEGREES",

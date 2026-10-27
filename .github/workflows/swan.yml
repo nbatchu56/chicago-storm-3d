@@ -43,7 +43,7 @@ jobs:
   run:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 340
+    timeout-minutes: 355
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -72,7 +72,11 @@ jobs:
           EXE=$(find ~/swan -type f -perm -u+x -name 'swan*.exe' | head -1); [ -n "$EXE" ] || EXE=$(find ~/swan -type f -perm -u+x -name 'swan*' | grep -v run | head -1)
           echo "SWAN: $EXE"
           export OMP_NUM_THREADS=2
-          ls -d runs/*/d* | xargs -P 2 -I{} sh -c "cd {} && timeout 9000 $EXE > swan.log 2>&1; tail -3 PRINT 2>/dev/null | tr '\n' ' '; ls out.mat >/dev/null 2>&1 && echo ' ok {}' || echo ' FAILED {}'"
+          # the 20 m lane two at a time; the 8 m trail (~1.4 M cells, ~6 GB of spectra each) one at a time
+          run1() { cd "$1" && timeout 12000 $EXE > swan.log 2>&1; tail -3 PRINT 2>/dev/null | tr '\n' ' '; ls out.mat >/dev/null 2>&1 && echo " ok $1" || echo " FAILED $1"; }
+          export -f run1; export EXE
+          ls -d runs/lane/d* | xargs -P 2 -I{} bash -c 'run1 {}'
+          ls -d runs/trail/d* | OMP_NUM_THREADS=4 xargs -P 1 -I{} bash -c 'run1 {}'
           # a case that blew up (NaN in the output, read as zero waves everywhere) runs again without the
           # diffraction term, which is what goes unstable at narrow openings
           for c in $(python - <<'PY'

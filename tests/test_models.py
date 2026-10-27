@@ -114,4 +114,4 @@ def test_swan_case_groups(tmp_path):
     assert {(c["tp"], c["hs"]) for c in meta["cases"]} == set(sc.CASES[6:])
     assert set(sc.CASE_GROUPS["base"]) | set(sc.CASE_GROUPS["storm"]) == set(sc.CASES)
     txt = (tmp_path / "runs" / "route" / "d000_t8p5_h5p0" / "INPUT").read_text()
-    assert "CIRCLE 36 0.06 1.2 32" in txt and "BOUNDSPEC SIDE N CCW CONSTANT PAR 5.00 8.50 0.0" in txt
+    assert "CIRCLE 36 0.06 1.2 28" in txt and "BOUNDSPEC SIDE N CCW CONSTANT PAR 5.00 8.50 0.0" in txt
