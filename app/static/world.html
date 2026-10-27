@@ -1608,6 +1608,10 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       for (int i = 0; i < N; i++) { vec3 T = tab(i, dO); vec2 K = uKy[i] * tn + T.z * uShoreN2; float kk = max(length(K), 1e-4);
         float a = uA[i] * (sw > 0.5 ? 1.0 : T.y) * lim * smoothstep(5.0, 10.0, 6.2832 / kk); vec2 dir = K / kk; float th = uKy[i] * sAl - T.x - uW[i] * uTime + uP[i];
         float q = min(uQ, 1.0 / max(kk * a * float(N), 1e-4)); disp += vec3(q * a * dir.x * cos(th), a * sin(th), q * a * dir.y * cos(th)); }
+      // depth-limited (breaking) water: crests peak up and troughs flatten (shallow-water waves aren't sinusoids), which
+      // also lifts the mean level a little toward the shore, as wave setup does
+      { float satV = 1.0 - clamp(0.62 * max(dep, 0.0) / max(uHsB * (sw > 0.5 ? G : 1.0), 0.02), 0.0, 1.0);
+        disp.y *= disp.y > 0.0 ? 1.0 + 0.5 * satV : 1.0 - 0.35 * satV; }
       float fw = fwWeight(pk); vFw = fw;
       if (fw > 0.0) disp = mix(disp, vec3(0.0, fwEta(pk), 0.0), fw);
       // short wind waves from the spectral tile: everywhere the wind reaches (less in the harbours), fading out on the beach
@@ -1617,7 +1621,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       vec4 w = modelMatrix * vec4(local, 1.0); vW = w.xyz; vGain = lim; vSw = sw; vDep = dep; vLim = clamp(0.62 * max(dep, 0.0) / max(uHsB * (sw > 0.5 ? G : 1.0), 0.02), 0.0, 1.0); vP = p; vEdge = 1.0 - smoothstep(uPatchR * 0.75, uPatchR, max(abs(loc.x), abs(loc.y)));
       gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
   fragmentShader: `${LOGF[0]} ${WAVE} ${SKY_FN} ${TEMP_GLSL} ${FW_GLSL}
-    uniform vec3 uCamPos, uAmbTop, uAmbBot; uniform float uWindSpd, uCity, uGust, uTempOn; uniform vec2 uWindDir2;
+    uniform vec3 uCamPos, uAmbTop, uAmbBot; uniform float uWindSpd, uCity, uGust, uTempOn, uWcFetch; uniform vec2 uWindDir2;
     uniform sampler2D uMapMask, uMapLooks; uniform vec2 uMapMin, uMapSize; uniform float uHasMap;
     uniform sampler2D uOcC, uOcF; uniform float uOcL, uOcOn, uOcVarLo, uOcVarHi;   // (uOcF2, uOcL2: in the shared chunk)
     varying vec3 vW; varying float vLim; varying vec2 vP; varying float vEdge; varying float vGain; varying float vSw; varying float vDep; varying float vFw; varying float vGD; varying float vShel;
@@ -1631,9 +1635,10 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
         wetF = texture2D(uMapLooks, muv).r + noise(pk * 300.0) * 0.12 - 0.06; if (wetF <= 0.5) discard; }
       if (iceAt(pk, 0.2, noise(pk * 1.7)) > 0.3) discard;
       vec2 p = vP; vec3 V = normalize(uCamPos - vW); float foot = max(length(fwidth(p)), 1e-3);
-      vec2 grad = vec2(0.0); float steep = 0.0, unres = 0.0; vec2 tn = vec2(-uShoreN2.y, uShoreN2.x); float sAl = dot(p, tn), dO = distOff(p);
+      vec2 grad = vec2(0.0); float steep = 0.0, unres = 0.0, eta = 0.0, etaP = 0.0; vec2 tn = vec2(-uShoreN2.y, uShoreN2.x); float sAl = dot(p, tn), dO = distOff(p);
       for (int i = 0; i < N; i++) { vec3 T = tab(i, dO); vec2 K = uKy[i] * tn + T.z * uShoreN2; float kk = max(length(K), 1e-4); float wf = clamp(1.0 - foot * 3.0 * kk / 6.2832, 0.0, 1.0);
-        float a = uA[i] * (vSw > 0.5 ? 1.0 : T.y) * vGain; float th = uKy[i] * sAl - T.x - uW[i] * uTime + uP[i]; grad += K * a * cos(th) * wf; steep += max(sin(th), 0.0) * a * kk * wf; unres += (a * kk) * (a * kk) * (1.0 - wf); }
+        float a = uA[i] * (vSw > 0.5 ? 1.0 : T.y) * vGain; float th = uKy[i] * sAl - T.x - uW[i] * uTime + uP[i]; grad += K * a * cos(th) * wf; steep += max(sin(th), 0.0) * a * kk * wf; unres += (a * kk) * (a * kk) * (1.0 - wf);
+        eta += a * sin(th); etaP += a * sin(th + uW[i] * 1.6); }   // etaP: the surface 1.6 s ago (where a crest just passed)
       float fwSteep = 0.0;
       if (vFw > 0.0) { float ek = 0.0015, e0 = fwEta(pk), ex = fwEta(pk + vec2(ek, 0.0)), en = fwEta(pk + vec2(0.0, ek));
         vec2 gfw = vec2(ex - e0, -(en - e0)) / 1.5; grad = mix(grad, gfw, vFw); fwSteep = length(gfw); steep = mix(steep, fwSteep * 1.6, vFw); }
@@ -1671,15 +1676,20 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       vec3 c = mix(body, skyColor(R, false), uTempOn > 0.5 ? F * 0.45 : F);
       vec3 Hv = normalize(uSunDir + V); float rough = sqrt(max(unres + 0.0025, (0.003 + 0.00512 * uWindSpd) * 0.55)) + 0.01;   // Cox & Munk floor
       c += uSunCol * pow(max(dot(Nn, Hv), 0.0), 2.0 / (rough * rough)) / (1.0 + rough * 20.0) * sunUp * (1.0 - 0.8 * uOvercast) * 0.6;
-      float W = clamp(3.84e-6 * pow(uWindSpd * (1.0 + 0.5 * gust), 3.41), 0.0, 0.25);
+      float W = clamp(3.84e-6 * pow(uWindSpd * (1.0 + 0.5 * gust), 3.41), 0.0, 0.25) * uWcFetch;
       // whitecaps: on the steep faces of the big waves, broken up by where the short waves bunch (their Jacobian), plus
       // the short-wave crests themselves breaking in a fresh wind
       float brk = mix(noise(p * 1.3 + uTime * 0.3), 0.3 + 0.7 * smoothstep(1.0, 0.8, crest), wfF);
       float wc = smoothstep(1.0 - 3.0 * W, 1.0 - 1.5 * W, smoothstep(0.08, 0.3, steep) * brk) * step(0.002, W);
-      wc = max(wc, smoothstep(0.78, 0.55, crest) * clamp((uWindSpd - 6.0) / 6.0, 0.0, 1.0) * 0.8);
-      float surf = (1.0 - vLim) * step(0.05, vLim) * smoothstep(0.03, 0.15, uHsB) * smoothstep(0.15, 0.6, vShel) * (0.5 + 0.5 * noise(p * 0.8 - uTime * 0.5));
+      wc = max(wc, smoothstep(0.78, 0.55, crest) * clamp((uWindSpd - 6.0) / 6.0, 0.0, 1.0) * 0.8 * uWcFetch);
+      // surf zone: where the water is too shallow for the waves (depth-limited), each crest breaks. White water rides the
+      // crest and the bore behind it (where a crest was 1.6 s ago), with a thinner foam sheet between the breakers
+      float hl = max(uHsB * vGain, 0.02), satF = smoothstep(0.05, 0.45, 1.0 - vLim) * step(0.03, vLim);
+      float bands = max(smoothstep(0.22, 0.7, eta / hl), 0.8 * smoothstep(0.15, 0.65, etaP / hl)) * (0.6 + 0.4 * noise(p * 0.9 - uTime * 0.4));
+      float surf = satF * smoothstep(0.03, 0.15, uHsB) * smoothstep(0.15, 0.6, vShel) * max(0.3 * (0.5 + 0.5 * noise(p * 0.8 - uTime * 0.5)), bands);
       surf = mix(surf, smoothstep(0.18, 0.32, fwSteep) * (0.6 + 0.4 * noise(p * 1.1 - uTime * 0.7)), vFw);
-      c = mix(c, (sunL + amb * 2.2) * 0.75, clamp(max(wc, surf), 0.0, 1.0) * 0.85);
+      c = mix(c, (sunL + amb * 2.2) * 0.75, clamp(wc, 0.0, 1.0) * 0.85);
+      c = mix(c, (sunL + amb * 2.4) * 0.9, clamp(surf, 0.0, 1.0) * 0.92);   // breaking surf: thick, bright white water
       // swash line where the water meets the beach or wall (same as the far-field shading)
       float band = smoothstep(0.92, 0.6, wetF), pulse = 0.55 + 0.45 * sin(uTime * 1.3 + noise(pk * 300.0) * 6.0);
       c = mix(c, (sunL + amb * 2.2) * 0.8 + vec3(0.9, 0.95, 1.0) * uCity * 0.15, band * clamp(0.25 + uHsB * vGain * 2.5, 0.0, 1.0) * smoothstep(0.12, 0.6, vShel) * pulse * (0.6 + 0.4 * noise(p * 1.5 + uTime * 0.5)) * 0.75);
@@ -1688,6 +1698,69 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
 const patch = new THREE.Mesh(new THREE.PlaneGeometry(660, 660, 330, 330).rotateX(-Math.PI / 2), patchMat);
 patch.scale.setScalar(0.001); patch.frustumCulled = false; patch.renderOrder = 2; patch.visible = false; scene.add(patch);
 const WAVES = { origin: [0, 0], ready: false };
+// ---------------------------------------------------------------- spray where storm waves hit walls
+// Emitters sit on the water's edge along walls, revetments and breakwaters (lake water against land with real depth
+// at the toe, not a beach) within the wave patch. Each burst follows the largest wave component's crest arriving at
+// that spot: water thrown up ballistically to about 1-2.5x the local wave height (bigger in the bigger waves of a
+// group), carried downwind and inland, fading as it falls. Nothing shows below ~0.6 m of local waves.
+const SPRAY_E = 1200, SPRAY_K = 8, sprayGeo = new THREE.BufferGeometry();
+sprayGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(SPRAY_E * SPRAY_K * 3), 3));
+sprayGeo.setAttribute("seed", new THREE.BufferAttribute(new Float32Array(SPRAY_E * SPRAY_K * 4), 4));
+sprayGeo.setAttribute("nrm", new THREE.BufferAttribute(new Float32Array(SPRAY_E * SPRAY_K * 2), 2));
+sprayGeo.setDrawRange(0, 0);
+const SPRAY = { at: null, n: 0 };
+WU.uWOrigin = { value: new THREE.Vector2() }; WU.uPxH = { value: 800 };
+WU.uWcFetch = { value: 1 };   // whitecaps need fetch: an offshore wind over a few hundred metres of water barely breaks
+const sprayMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, depthWrite: false,
+  vertexShader: `${LOGV[0]} ${WAVE} ${TEMP_GLSL}
+    uniform sampler2D uShelter; uniform vec2 uMapMin, uMapSize, uWOrigin, uWindDir2; uniform float uHasMap, uPxH, uWindSpd;
+    attribute vec4 seed; attribute vec2 nrm; varying float vA; varying float vT;
+    float h1(float n) { return fract(sin(n * 91.345 + seed.w * 47.13) * 43758.5453); }
+    void main() {
+      vec2 pk = vec2(position.x, -position.z), p = vec2(position.x - uWOrigin.x, position.z + uWOrigin.y) * 1000.0;
+      float kr = swanRatio(pk), sw = kr >= 0.0 ? 1.0 : 0.0, dep = bathyDepth(pk, 2.0);
+      float shel = uHasMap > 0.5 ? texture2D(uShelter, (pk - uMapMin) / uMapSize).r : 1.0;
+      float hloc = uHsB * (sw > 0.5 ? kr / max(uSwanRef, 0.02) : clamp(0.62 * max(dep, 0.3) / max(uHsB, 0.02), 0.0, 1.0)) * shel;
+      // the crest of the largest component arriving here (components are sorted by amplitude)
+      vec2 tn = vec2(-uShoreN2.y, uShoreN2.x); vec3 T = tab(0, distOff(p));
+      float th = uKy[0] * dot(p, tn) - T.x - uW[0] * uTime + uP[0] - 1.5708 + seed.z * 0.5;   // 0 at the crest
+      float cyc = -th / 6.2832, nW = floor(cyc), f = cyc - nW, Tp = 6.2832 / max(uW[0], 0.1);
+      float grp = 0.45 + 0.55 * h1(nW) * h1(nW + 0.37);                // some waves hit much harder than others
+      float H = hloc * mix(1.0, 2.5, grp) * smoothstep(0.6, 1.2, hloc), v0 = sqrt(2.0 * 9.81 * H) * (0.6 + 0.5 * seed.x);
+      float t = f * Tp, tf = 2.0 * v0 / 9.81 + 0.6;                    // seconds since the hit; time aloft
+      vec3 w = vec3(position.x, 0.0, position.z);
+      vec2 side = vec2(-nrm.y, nrm.x) * (seed.y - 0.5) * 7.0 + nrm * (seed.z - 0.5) * 3.0 * vT * H, drift = uWindDir2 * uWindSpd * 0.18 * t - nrm * v0 * 0.25 * t;
+      vec2 off = side + drift; float y = max(v0 * t - 0.5 * 9.81 * t * t, 0.0) + 0.3;
+      w += vec3(off.x, y, -off.y) * 0.001;   // km; the map's z axis points south
+      vT = t / tf; vA = (H > 0.15 && t < tf ? 1.0 : 0.0) * (1.0 - smoothstep(0.35, 1.0, vT)) * smoothstep(0.0, 0.06, vT) * (0.35 + 0.4 * grp);
+      vec4 mv = viewMatrix * vec4(w, 1.0); gl_Position = projectionMatrix * mv;
+      float sz = (0.45 + 1.4 * vT) * (0.5 + 0.9 * seed.x) * (0.7 + 0.3 * H);   // metres: droplet clouds spread as they rise
+      gl_PointSize = vA > 0.0 ? clamp(sz * 0.001 * projectionMatrix[1][1] * uPxH * 0.5 / max(-mv.z, 1e-4), 1.0, 160.0) : 0.0;
+      ${LOGV[1]} }`,
+  fragmentShader: `${LOGF[0]} uniform vec3 uSunCol, uAmbTop, uSunDir; uniform float uOvercast; varying float vA; varying float vT;
+    void main(){ ${LOGF[1]} vec2 q = gl_PointCoord * 2.0 - 1.0; float r = dot(q, q); if (r > 1.0 || vA <= 0.0) discard;
+      float a = vA * (1.0 - r) * (1.0 - r) * 0.85;
+      vec3 col = (uSunCol * max(uSunDir.y, 0.0) * (1.0 - 0.6 * uOvercast) + uAmbTop * 2.4) * 0.8;
+      gl_FragColor = vec4(col, a); }` });
+const spray = new THREE.Points(sprayGeo, sprayMat); spray.frustumCulled = false; spray.renderOrder = 3; spray.visible = false; scene.add(spray);
+// emitters within the patch around (cx, cy): lake water at the edge of land, at least 1 m deep (walls, not beaches)
+function placeSpray(cx, cy) {
+  const pos = sprayGeo.attributes.position.array, sd = sprayGeo.attributes.seed.array, nr = sprayGeo.attributes.nrm.array, st = 0.003, R = 0.32;
+  const r = mulberry(Math.round(cx * 1000) * 7 + Math.round(cy * 1000)); let n = 0;
+  const cand = [];
+  for (let y = cy - R; y <= cy + R; y += st) for (let x = cx - R; x <= cx + R; x += st) {
+    if (maskAt(x, y) !== 1) continue;
+    let lx = 0, ly = 0; for (const [dx, dy] of [[st, 0], [-st, 0], [0, st], [0, -st]]) if (maskAt(x + dx, y + dy) === 0) { lx += dx; ly += dy; }
+    if (!lx && !ly) continue;
+    const d = depthAtKm(x, y); if (d == null || d < 1.0) continue;
+    const L = Math.hypot(lx, ly); cand.push([x, y, -lx / L, -ly / L]); }   // normal: from the wall into the water
+  for (let i = cand.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [cand[i], cand[j]] = [cand[j], cand[i]]; }
+  for (const [x, y, nx, ny] of cand.slice(0, SPRAY_E)) for (let k = 0; k < SPRAY_K; k++, n++) {
+    pos.set([x, 0, -y], n * 3); sd.set([r(), r(), r(), r()], n * 4); nr.set([nx, ny], n * 2); }
+  sprayGeo.setDrawRange(0, n); sprayGeo.attributes.position.needsUpdate = sprayGeo.attributes.seed.needsUpdate = sprayGeo.attributes.nrm.needsUpdate = true;
+  SPRAY.at = [cx, cy]; SPRAY.n = n;
+}
+
 const wavenum = (w, hh) => { const g = 9.81; let k = w * w / g / Math.sqrt(Math.tanh(w * w / g * hh)); for (let it = 0; it < 12; it++) { const th = Math.tanh(k * hh); k -= (g * k * th - w * w) / (g * th + g * k * hh * (1 - th * th)); } return k; };
 const cgOf = (w, k, hh) => { const kh = k * hh; return 0.5 * (w / k) * (1 + 2 * kh / Math.sinh(Math.min(2 * kh, 700))); };
 const deanP = (d) => 0.1 * Math.pow(Math.max(d, 0.5), 0.6667);
@@ -2656,7 +2729,8 @@ function tick() {
     const sys = C.systems.length ? C.systems : [];
     const tot = Math.sqrt(sys.reduce((a, q) => a + q.hs * q.hs, 0)); U.uHs.value = tot; U.uTp.value = Math.max(sys[0] ? sys[0].tp : 1.2, 1.2);
     const wa = ((sys[0] ? sys[0].dir : C.dir) + 180) * Math.PI / 180; U.uWaveDir.value.set(Math.sin(wa), Math.cos(wa)); U.uWindSpd.value = C.wind;
-    U.uWhitecap.value = Math.min(3.84e-6 * Math.pow(C.wind, 3.41), 0.3);
+    WU.uWcFetch.value = clamp((rayFetchKm(cx, cy, C.dir) - 0.15) / 2.5, 0.08, 1);
+    U.uWhitecap.value = Math.min(3.84e-6 * Math.pow(C.wind, 3.41), 0.3) * WU.uWcFetch.value;
     U.uWaterC.value = C.waterC ?? 15; U.uIceExp.value = S.mode === "exp" ? S.x.ice : 0; U.uHasTemp.value = S.mode === "exp" ? 0 : GRIDS.temp ? 1 : 0;
     U.uHasIce.value = S.mode !== "exp" && GRIDS.ice ? 1 : 0; U.uSnowCover.value = C.snow && (C.airC ?? 5) < -1 ? 0.8 : 0; U.uSnow.value = C.snow ? 1 : 0;
     // clouds beyond radar: forecast sky cover, or the chosen fair-weather layer
@@ -2678,6 +2752,10 @@ function tick() {
   if (patch.visible || board.visible || camera.position.y < 3) { OCEAN.update(U.uTime.value, 0.85); if (camera.position.y < 0.15) OCEAN_FINE.update(U.uTime.value, 0.6); }   // fine ripples only when close
   if (patch.visible) { const sx = Math.round(camera.position.x * 50) / 50, sz = Math.round(camera.position.z * 50) / 50; patch.position.set(sx, 0, sz);
     WU.uPatchRel.value.set((sx - WAVES.origin[0]) * 1000, (sz + WAVES.origin[1]) * 1000); }
+  spray.visible = patch.visible && WU.uHsB.value > 0.6 && MAP.ok;
+  if (spray.visible) { const cx = camera.position.x, cy = -camera.position.z;
+    if (!SPRAY.at || Math.hypot(cx - SPRAY.at[0], cy - SPRAY.at[1]) > 0.12) placeSpray(cx, cy);
+    WU.uWOrigin.value.set(WAVES.origin[0], WAVES.origin[1]); WU.uPxH.value = renderer.domElement.height; }
   // track ribbon: bold from above, a faint wake line at paddler height
   TRK.group.visible = !!S.showTrack && camera.position.y > 0.03; TRK.group.children.forEach((m) => { m.material.opacity = clamp(camera.position.y / 0.08, 0.3, 0.9); });
   // board
