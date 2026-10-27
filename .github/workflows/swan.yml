@@ -5,6 +5,13 @@ on:
       dirs:
         description: "Offshore directions (deg from), comma list"
         default: "0,15,30,45,60,75,90,105,120,135,150,165"
+      groups:
+        description: "Case groups (app.swan_cases CASE_GROUPS), comma list"
+        default: "base,storm"
+      merge:
+        description: "Keep the swan branch's other cases (same grids) that this run doesn't redo"
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -16,9 +23,12 @@ jobs:
     timeout-minutes: 30
     outputs:
       dirs: ${{ steps.m.outputs.dirs }}
+      groups: ${{ steps.m.outputs.groups }}
     steps:
       - id: m
-        run: echo "dirs=$(python3 -c "import json,sys; print(json.dumps([int(x) for x in sys.argv[1].split(',')]))" '${{ inputs.dirs }}')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "dirs=$(python3 -c "import json,sys; print(json.dumps([int(x) for x in sys.argv[1].split(',')]))" '${{ inputs.dirs }}')" >> "$GITHUB_OUTPUT"
+          echo "groups=$(python3 -c "import json,sys; print(json.dumps([x.strip() for x in sys.argv[1].split(',') if x.strip()]))" '${{ inputs.groups }}')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         id: cache
         with:
@@ -49,7 +59,7 @@ jobs:
       max-parallel: 20
       matrix:
         dir: ${{ fromJson(needs.build.outputs.dirs) }}
-        group: [base, storm]          # app.swan_cases CASE_GROUPS: paddling-season grid, storm seas
+        group: ${{ fromJson(needs.build.outputs.groups) }}   # app.swan_cases CASE_GROUPS: base (paddling season), storm
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -132,7 +142,8 @@ jobs:
               m["cases"] = sorted({c["id"]: c for c in cases}.values(), key=lambda c: c["id"])
               json.dump(m, open(f"runs/{dom}/meta.json", "w"))
           PY
-          mkdir -p out && python -m app.swan_cases collect --runs runs --out out/swan.json
+          M=""; if [ "${{ inputs.merge }}" = "true" ] && git fetch -q --depth 1 origin swan; then git show origin/swan:swan.json > prev.json && M="--merge prev.json"; fi
+          mkdir -p out && python -m app.swan_cases collect --runs runs --out out/swan.json $M
           ls -la out; for f in runs/*/d*/PRINT; do tail -1 "$f"; done | sort | uniq -c | head
       - name: Publish to the swan branch
         run: |

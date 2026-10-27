@@ -115,3 +115,25 @@ def test_swan_case_groups(tmp_path):
     assert set(sc.CASE_GROUPS["base"]) | set(sc.CASE_GROUPS["storm"]) == set(sc.CASES)
     txt = (tmp_path / "runs" / "route" / "d000_t8p5_h5p0" / "INPUT").read_text()
     assert "CIRCLE 36 0.06 1.2 28" in txt and "BOUNDSPEC SIDE N CCW CONSTANT PAR 5.00 8.50 0.0" in txt
+
+
+def test_swan_collect_merge(tmp_path):
+    from scipy.io import savemat
+    g = {"x0": 0.0, "y0": 0.0, "dx": 10.0, "nx": 4, "ny": 3}
+
+    def run(root, cases, hs_val):
+        d = root / "lane"; d.mkdir(parents=True)
+        (d / "meta.json").write_text(json.dumps({"domain": "lane", "grid": g, "level_m_igld85": 176.5, "cases": cases}))
+        (d / "obstacles.json").write_text("[]")
+        for c in cases:
+            (d / c["id"]).mkdir()
+            savemat(d / c["id"] / "out.mat", {"Hsig": np.full((3, 4), hs_val * c["hs"]), "Dir": np.zeros((3, 4)), "Yp": np.arange(3)[:, None] * np.ones((1, 4))})
+    a = [{"id": sc.case_id(0, tp, hs), "dir": 0, "tp": tp, "hs": hs} for tp, hs in sc.CASE_GROUPS["base"]]
+    b = [{"id": sc.case_id(0, tp, hs), "dir": 0, "tp": tp, "hs": hs} for tp, hs in sc.CASE_GROUPS["storm"]]
+    run(tmp_path / "r1", a, 0.5); old = sc.collect(str(tmp_path / "r1"), str(tmp_path / "s1.json"))
+    run(tmp_path / "r2", b, 0.8); new = sc.collect(str(tmp_path / "r2"), str(tmp_path / "s2.json"), merge=old)
+    cs = new["domains"]["lane"]["cases"]
+    assert len(cs) == len(sc.CASES) and [c["id"] for c in cs] == sorted(c["id"] for c in cs)
+    r = np.frombuffer(gzip.decompress(base64.b64decode(new["domains"]["lane"]["ratio"])), np.uint8).reshape(len(cs), 3, 4)
+    for k, c in enumerate(cs):
+        assert r[k].max() == (80 if (c["tp"], c["hs"]) in sc.CASE_GROUPS["storm"] else 50)

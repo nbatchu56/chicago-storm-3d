@@ -312,7 +312,8 @@ def read_case(cdir):
     return hs, di
 
 
-def collect(runs_dir, out_path):
+def collect(runs_dir, out_path, merge=None):
+    """merge: an earlier library (swan.json); its cases on the same grid that this run didn't produce are kept."""
     out = {"version": 1, "model": "SWAN 41.51 stationary", "domains": {}}
     for meta_path in glob.glob(os.path.join(runs_dir, "*", "meta.json")):
         meta = json.load(open(meta_path)); dom = meta["domain"]; base = os.path.dirname(meta_path)
@@ -328,8 +329,19 @@ def collect(runs_dir, out_path):
             ratio.append(np.clip(np.round(hs / c["hs"] * 100), 0, 255).astype(np.uint8))
             dirs.append((np.mod(di, 360) * 256 / 360).astype(np.uint8))
             got.append(c)
+        old = (merge or {}).get("domains", {}).get(dom)
+        if old and old["grid"] == meta["grid"]:
+            g = meta["grid"]; shape = (len(old["cases"]), g["ny"], g["nx"])
+            r0 = np.frombuffer(gzip.decompress(base64.b64decode(old["ratio"])), np.uint8).reshape(shape)
+            d0 = np.frombuffer(gzip.decompress(base64.b64decode(old["dir"])), np.uint8).reshape(shape)
+            have = {c["id"] for c in got}
+            for k, c in enumerate(old["cases"]):
+                if c["id"] not in have:
+                    got.append(c); ratio.append(r0[k]); dirs.append(d0[k])
         if not got:
             continue
+        order = sorted(range(len(got)), key=lambda k: got[k]["id"])
+        got, ratio, dirs = [got[k] for k in order], [ratio[k] for k in order], [dirs[k] for k in order]
         enc = lambda arrs: base64.b64encode(gzip.compress(np.stack(arrs).tobytes(), 6)).decode()
         out["domains"][dom] = {"grid": meta["grid"], "level_m_igld85": meta["level_m_igld85"], "cases": got,
                                "obstacles": json.load(open(os.path.join(base, "obstacles.json"))),
@@ -347,11 +359,12 @@ if __name__ == "__main__":
     p.add_argument("--dirs", default=",".join(map(str, DIRS))); p.add_argument("--out", default="runs")
     p.add_argument("--group", choices=sorted(CASE_GROUPS), help="run only this group of (period, height) cases")
     c = sub.add_parser("collect"); c.add_argument("--runs", default="runs"); c.add_argument("--out", default="swan.json")
+    c.add_argument("--merge", help="earlier swan.json whose other cases (same grid) are kept")
     a = ap.parse_args()
     if a.cmd == "prepare":
         m = prepare(a.bathy, a.lakefront, a.domain, [int(x) for x in a.dirs.split(",")], a.out,
                     cases=CASE_GROUPS[a.group] if a.group else None)
         print(f"{a.domain}: grid {m['grid']['nx']}x{m['grid']['ny']} at {m['grid']['dx']} m, {len(m['cases'])} cases, {len(m['obstacles'])} obstacles")
     else:
-        o = collect(a.runs, a.out)
+        o = collect(a.runs, a.out, json.load(open(a.merge)) if a.merge and os.path.exists(a.merge) else None)
         print({k: len(v["cases"]) for k, v in o["domains"].items()})
