@@ -13,6 +13,7 @@ import argparse
 import base64
 import datetime as dt
 import gzip
+import hashlib
 import json
 import os
 
@@ -292,12 +293,14 @@ def main():
                 g = v["grid"]; nc = len(v["cases"]); n = g["nx"] * g["ny"]
                 arr = {k: np.frombuffer(gzip.decompress(base64.b64decode(v[k])), np.uint8).reshape(nc, n) for k in ("ratio", "dir")}
                 per = max(1, SWAN_PART_BYTES // n)          # cases per part
+                # parts carry the library's fingerprint: a page that gets a part from another build skips the domain
+                lib = hashlib.sha1(json.dumps([g, v["cases"]], sort_keys=True).encode()).hexdigest()[:12]
                 parts = []
                 for k0 in range(0, nc, per):
                     rel = f"data/swan/{name}-{k0 // per}.json"
-                    part = {"cases": [k0, min(k0 + per, nc)]} | {k: base64.b64encode(gzip.compress(arr[k][k0:k0 + per].tobytes(), 9)).decode() for k in arr}
+                    part = {"lib": lib, "cases": [k0, min(k0 + per, nc)]} | {k: base64.b64encode(gzip.compress(arr[k][k0:k0 + per].tobytes(), 9)).decode() for k in arr}
                     sizes[rel] = write_side(a.out, rel, part); parts.append({"src": rel, "cases": part["cases"]})
-                idx["domains"][name] = {k: x for k, x in v.items() if k not in ("ratio", "dir")} | {"parts": parts}
+                idx["domains"][name] = {k: x for k, x in v.items() if k not in ("ratio", "dir")} | {"parts": parts, "lib": lib}
             sizes["data/swan.json"] = write_side(a.out, "data/swan.json", idx)
             html = html.replace(f'<script id="{tag}" type="application/json">', f'<script id="{tag}" type="application/json" data-src="data/swan.json">', 1)
         elif a.split and tag in SPLIT:

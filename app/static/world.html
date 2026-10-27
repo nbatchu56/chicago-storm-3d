@@ -1332,7 +1332,7 @@ async function setSwan(sw) {
     if (d.parts) {   // split page: each domain's arrays sit beside it in parts (data/swan/<domain>-<k>.json), in case order
       try { const parts = await Promise.all(d.parts.map(async (q) => { const r = await fetch(q.src); if (!r.ok) throw new Error(`${q.src}: ${r.status}`); return r.json(); }));
         ratio = new Uint8Array(nc * n); dir = new Uint8Array(nc * n);
-        for (const q of parts) { const o = q.cases[0] * n; ratio.set(await gunzipB64(q.ratio), o); dir.set(await gunzipB64(q.dir), o); } }
+        for (const q of parts) { if (d.lib && q.lib !== d.lib) throw new Error("part from another build"); const o = q.cases[0] * n; ratio.set(await gunzipB64(q.ratio), o); dir.set(await gunzipB64(q.dir), o); } }
       catch (e) { console.warn("SWAN", name, e.message); continue; } }
     else { ratio = await gunzipB64(d.ratio); dir = await gunzipB64(d.dir); }
     // the heights run for each (direction, period): storm heights only with the longer periods
