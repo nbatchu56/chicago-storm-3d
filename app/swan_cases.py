@@ -37,6 +37,7 @@ DIRS = list(range(0, 180, 15))                 # N .. SSE: everything that can r
 CASES = [(2.5, 0.6), (2.5, 1.8), (4.0, 0.6), (4.0, 1.8), (6.0, 0.6), (6.0, 1.8),
          (6.0, 3.5), (8.5, 0.6), (8.5, 1.8), (8.5, 3.5), (8.5, 5.0)]
 CASE_GROUPS = {"base": CASES[:6], "storm": CASES[6:]}
+CASE_GROUPS |= {f"s{k + 1}": [c] for k, c in enumerate(CASES[6:])}   # one storm case each, for a slow direction
 SWAN_DX = 10.0                                 # computational grid spacing (m) for the older route/montrose domains
 # domains: bathy grid to take the bottom from, optional crop (S, W, N, E) and grid spacing (m)
 DOMAINS = {
