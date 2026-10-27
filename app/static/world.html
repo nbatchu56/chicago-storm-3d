@@ -285,7 +285,6 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
       <div class="row" hidden><label for="exag">Cloud height scale</label><output id="exag-o">×1</output></div>
       <input type="range" id="exag" min="1" max="5" step="0.5" value="1" hidden>
       <label class="check"><input type="checkbox" id="bolts" checked> Lightning flashes</label>
-      <label class="check"><input type="checkbox" id="showbld"> Buildings (off: the view is about the water)</label>
     </section>
     <section>
       <h2>Your paddle (optional)</h2>
@@ -1099,7 +1098,6 @@ function buildMap(LF) {
           float hc = max(uCamPos.y, 0.001), hf = hc < 0.05 ? 1.0 : 3.0 * (1.0 - exp(-hc / 3.0)) / hc;
           gl_FragColor = vec4(mix(c, mix(uAmbBot, uAmbTop, 0.5) * 1.2, 1.0 - exp(-length(uCamPos - vW) * hf / 70.0)), 1.0); }` });
     const mesh = new THREE.Mesh(merged, mat); mesh.frustumCulled = false; scene.add(mesh); MAP.buildings = geos.length;
-    MAP.bldMesh = mesh; mesh.visible = !!($("#showbld") && $("#showbld").checked);   // off by default: the page is about the water
     if (tops.length) { const tg = new THREE.BufferGeometry(), n = tops.length / 4, pos = new Float32Array(n * 3), ph = new Float32Array(n);
       for (let i = 0; i < n; i++) { pos.set(tops.slice(i * 4, i * 4 + 3), i * 3); ph[i] = tops[i * 4 + 3]; }
       tg.setAttribute("position", new THREE.BufferAttribute(pos, 3)); tg.setAttribute("ph", new THREE.BufferAttribute(ph, 1));
@@ -2477,7 +2475,6 @@ document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-presse
 $("#exag").oninput = (e) => setExag(+e.target.value);
 try { S.learned = localStorage.getItem("lakelocal-learned") === "1"; } catch (e) { S.learned = false; }
 $("#bolts").checked = S.bolts; $("#bolts").onchange = (e) => S.bolts = e.target.checked;
-$("#showbld").onchange = (e) => { if (MAP.bldMesh) MAP.bldMesh.visible = e.target.checked; };
 $("#spd").onchange = (e) => S.speed = +e.target.value;
 const XFMT = { int: (v) => `${Math.round(v * 100)}%`, cov: (v) => `${Math.round(v * 100)}%`, mspd: (v) => `${v} km/h`, mdir: (v) => `${v}° ${compass(v)}`, wspd: (v) => `${mph(v)} mph`, wdir: (v) => `${v}° ${compass(v)}`,
   dur: (v) => `${v} h`, air: (v) => `${Math.round(cToF(v))}°F`, water: (v) => `${Math.round(cToF(v))}°F`, ice: (v) => `${Math.round(v * 100)}%`, hour: (v) => { const h = Math.floor(v), m = Math.round((v - h) * 60); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; } };
