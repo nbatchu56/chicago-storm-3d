@@ -78,7 +78,11 @@ def build(days=800, get=lf.http_get):
     end = dt.datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     start = end - dt.timedelta(days=days)
     for st in bm.LEVEL_STATIONS:
-        vals = hourly(st, start, end, get)
+        raw = hourly(st, start, end, get)
+        acc = {}                                  # the "hourly" request can return 6-minute data: average to the hour
+        for k, v in raw.items():
+            acc.setdefault(k.replace(minute=0), []).append(v)
+        vals = {k: sum(vs) / len(vs) for k, vs in acc.items()}
         if len(vals) > 24:
             n = int((end - start).total_seconds() // 3600) + 1
             cm = [None] * n
