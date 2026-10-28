@@ -112,7 +112,8 @@ def _round(v, n):
     return None if v is None or (isinstance(v, float) and not math.isfinite(v)) else round(float(v), n)
 
 
-BQ_MAX_BYTES = 5 * 1024 ** 3     # a guard: a run reads ~25 MB when the geography clustering prunes as it should
+# No maximum_bytes_billed: BigQuery enforces it on its up-front estimate, which for this clustered view is the whole
+# table (~2.7 TB) even though the run itself reads ~95 MB once the clustering prunes; the actual bill is logged.
 
 
 def bq_query(table, bands, now, hours=HOURS):
@@ -157,12 +158,12 @@ def init_bq():
 
 def sample_bq(client, table, bands, now, hours=HOURS):
     from google.cloud import bigquery
-    cfg = bigquery.QueryJobConfig(maximum_bytes_billed=BQ_MAX_BYTES, labels={"app": "lakeview"})
-    rows = [dict(r) for r in client.query(bq_query(table, bands, now, hours), job_config=cfg).result()]
+    job = client.query(bq_query(table, bands, now, hours), job_config=bigquery.QueryJobConfig(labels={"app": "lakeview"}))
+    rows = [dict(r) for r in job.result()]
     init, ser = bq_series(rows, hours)
     if not init:
         raise RuntimeError(f"{table}: no init with all {hours} hours at every point ({len(rows)} rows)")
-    log.info("%s init %s: %d rows", table.rsplit(".", 1)[-1], init, len(rows))
+    log.info("%s init %s: %d rows, %.0f MB billed", table.rsplit(".", 1)[-1], init, len(rows), (job.total_bytes_billed or 0) / 1e6)
     return init, ser
 
 
