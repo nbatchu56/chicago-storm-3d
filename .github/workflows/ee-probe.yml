@@ -1,0 +1,24 @@
+name: Earth Engine probe
+
+# Lists which Earth Engine datasets the service account can read at the lakefront, and how fresh they are.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Probe
+        env:
+          GEE_SERVICE_ACCOUNT_KEY: ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          pip install -q earthengine-api
+          python tools/ee_probe.py
