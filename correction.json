@@ -25,15 +25,15 @@
    "m swell"
   ],
   "coef": [
-   0.13927,
-   0.29621,
-   0.08781,
-   0.11232,
-   0.03618,
-   0.02745,
-   0.01289,
-   0.03068,
-   0.16353
+   0.13868,
+   0.29531,
+   0.08811,
+   0.11504,
+   0.03629,
+   0.0268,
+   0.01309,
+   0.03062,
+   0.16437
   ],
   "ratio_clip": [
    0.33,
@@ -44,7 +44,7 @@
  "tp": {
   "global": 1.371,
   "swell": 1.235,
-  "n_swell": 8477,
+  "n_swell": 8526,
   "table": [
    [
     1.517,
@@ -53,84 +53,84 @@
     1.426
    ],
    [
-    1.63,
+    1.631,
     1.506,
     1.407,
     1.343
    ],
    [
     1.548,
-    1.384,
+    1.383,
     1.323,
     1.353
    ],
    [
-    1.553,
-    1.4,
-    1.4,
+    1.555,
+    1.403,
+    1.401,
     1.298
    ],
    [
-    1.564,
+    1.567,
     1.379,
     1.293,
     1.285
    ],
    [
-    1.583,
-    1.406,
-    1.316,
-    1.405
+    1.582,
+    1.4,
+    1.315,
+    1.403
    ],
    [
-    1.676,
-    1.475,
-    1.42,
-    1.491
+    1.674,
+    1.467,
+    1.419,
+    1.488
    ],
    [
-    1.825,
+    1.823,
     1.641,
     1.537,
     1.488
    ],
    [
-    1.904,
-    1.895,
-    1.756,
-    1.711
+    1.903,
+    1.891,
+    1.755,
+    1.71
    ],
    [
-    1.945,
-    1.962,
-    1.975,
+    1.94,
+    1.946,
+    1.971,
     2.0
    ],
    [
     2.0,
-    1.89,
+    1.884,
     2.0,
     2.0
    ],
    [
     1.661,
-    1.525,
-    1.601,
-    1.748
+    1.524,
+    1.602,
+    1.747
    ]
   ],
   "n": [
    [
     121,
-    768,
+    770,
     866,
     325
    ],
    [
-    191,
-    737,
+    193,
+    740,
     526,
-    180
+    179
    ],
    [
     199,
@@ -139,63 +139,63 @@
     188
    ],
    [
-    235,
-    713,
+    236,
+    711,
     194,
     143
    ],
    [
-    270,
-    634,
+    272,
+    645,
     180,
     60
    ],
    [
     293,
-    557,
+    565,
     219,
     25
    ],
    [
-    284,
-    552,
+    286,
+    558,
     244,
     62
    ],
    [
-    169,
-    573,
+    171,
+    574,
     360,
     91
    ],
    [
     74,
-    310,
+    314,
     259,
     84
    ],
    [
     47,
-    212,
-    220,
+    219,
+    221,
     130
    ],
    [
-    72,
-    232,
+    74,
+    235,
     231,
     185
    ],
    [
     119,
     495,
-    295,
+    296,
     203
    ]
   ]
  },
- "hours": 27758,
- "generated": "2026-10-24T22:41:03+00:00",
+ "hours": 27866,
+ "generated": "2026-10-28T03:00:28+00:00",
  "method": "height: regression of buoy Hs on the model's Hs (and its variation with wind direction), wind direction, 10 m wind speed and the swell share, applied as a factor on the model's sea (0.33-3.0); period: least-squares factor by wind direction x speed, shrunk toward broader averages",
  "data": {
   "45174": [
@@ -212,20 +212,20 @@
   ]
  },
  "hours_by_buoy": {
-  "45174": 7700,
-  "45198": 20058
+  "45174": 7797,
+  "45198": 20069
  },
  "fit_from": {
   "45174": "2025-01-01"
  },
- "left_out_hours": 41069,
+ "left_out_hours": 41072,
  "by_year": {
   "45174": {
    "2015": {
-    "hours": 1919,
-    "obs_m": 0.686,
+    "hours": 1922,
+    "obs_m": 0.685,
     "model_m": 0.445,
-    "ratio": 1.539
+    "ratio": 1.538
    },
    "2016": {
     "hours": 4191,
@@ -242,38 +242,38 @@
    "2018": {
     "hours": 4702,
     "obs_m": 0.597,
-    "model_m": 0.386,
-    "ratio": 1.546
+    "model_m": 0.387,
+    "ratio": 1.545
    },
    "2019": {
     "hours": 5039,
     "obs_m": 0.583,
     "model_m": 0.336,
-    "ratio": 1.737
+    "ratio": 1.735
    },
    "2020": {
     "hours": 3714,
     "obs_m": 0.593,
     "model_m": 0.355,
-    "ratio": 1.671
+    "ratio": 1.673
    },
    "2021": {
     "hours": 4378,
     "obs_m": 0.58,
-    "model_m": 0.362,
-    "ratio": 1.6
+    "model_m": 0.363,
+    "ratio": 1.596
    },
    "2022": {
     "hours": 4304,
     "obs_m": 0.577,
-    "model_m": 0.334,
-    "ratio": 1.728
+    "model_m": 0.335,
+    "ratio": 1.724
    },
    "2023": {
     "hours": 4678,
     "obs_m": 0.634,
     "model_m": 0.385,
-    "ratio": 1.645
+    "ratio": 1.644
    },
    "2024": {
     "hours": 3778,
@@ -282,16 +282,16 @@
     "ratio": 1.63
    },
    "2025": {
-    "hours": 3917,
+    "hours": 3933,
     "obs_m": 0.483,
-    "model_m": 0.443,
-    "ratio": 1.091
+    "model_m": 0.442,
+    "ratio": 1.092
    },
    "2026": {
-    "hours": 3783,
-    "obs_m": 0.447,
-    "model_m": 0.38,
-    "ratio": 1.177
+    "hours": 3864,
+    "obs_m": 0.451,
+    "model_m": 0.384,
+    "ratio": 1.176
    }
   },
   "45198": {
@@ -310,8 +310,8 @@
    "2023": {
     "hours": 4016,
     "obs_m": 0.489,
-    "model_m": 0.38,
-    "ratio": 1.287
+    "model_m": 0.381,
+    "ratio": 1.286
    },
    "2024": {
     "hours": 3689,
@@ -326,8 +326,8 @@
     "ratio": 1.297
    },
    "2026": {
-    "hours": 3641,
-    "obs_m": 0.457,
+    "hours": 3652,
+    "obs_m": 0.456,
     "model_m": 0.364,
     "ratio": 1.254
    }
@@ -352,10 +352,10 @@
      "bias_m": -0.021,
      "rmse_m": 0.23,
      "mae_m": 0.134,
-     "r": 0.62,
+     "r": 0.621,
      "big_hours": 85,
      "big_bias_m": -0.493,
-     "big_rmse_m": 0.563
+     "big_rmse_m": 0.562
     }
    },
    {
@@ -363,19 +363,19 @@
     "raw": {
      "hours": 3872,
      "bias_m": -0.117,
-     "rmse_m": 0.238,
-     "mae_m": 0.17,
-     "r": 0.764,
+     "rmse_m": 0.237,
+     "mae_m": 0.169,
+     "r": 0.765,
      "big_hours": 259,
      "big_bias_m": -0.299,
      "big_rmse_m": 0.565
     },
     "learned": {
      "hours": 3872,
-     "bias_m": -0.01,
+     "bias_m": -0.009,
      "rmse_m": 0.154,
      "mae_m": 0.109,
-     "r": 0.86,
+     "r": 0.861,
      "big_hours": 259,
      "big_bias_m": -0.233,
      "big_rmse_m": 0.345
@@ -387,20 +387,20 @@
      "hours": 4016,
      "bias_m": -0.109,
      "rmse_m": 0.239,
-     "mae_m": 0.172,
+     "mae_m": 0.171,
      "r": 0.806,
      "big_hours": 374,
-     "big_bias_m": -0.287,
+     "big_bias_m": -0.286,
      "big_rmse_m": 0.466
     },
     "learned": {
      "hours": 4016,
-     "bias_m": -0.013,
+     "bias_m": -0.012,
      "rmse_m": 0.164,
-     "mae_m": 0.121,
+     "mae_m": 0.12,
      "r": 0.879,
      "big_hours": 374,
-     "big_bias_m": -0.217,
+     "big_bias_m": -0.215,
      "big_rmse_m": 0.311
     }
    },
@@ -418,19 +418,19 @@
     },
     "learned": {
      "hours": 3689,
-     "bias_m": -0.057,
+     "bias_m": -0.056,
      "rmse_m": 0.198,
      "mae_m": 0.14,
      "r": 0.848,
      "big_hours": 387,
-     "big_bias_m": -0.346,
-     "big_rmse_m": 0.419
+     "big_bias_m": -0.345,
+     "big_rmse_m": 0.418
     }
    },
    {
     "year": "2025",
     "raw": {
-     "hours": 7142,
+     "hours": 7158,
      "bias_m": -0.07,
      "rmse_m": 0.234,
      "mae_m": 0.163,
@@ -440,105 +440,127 @@
      "big_rmse_m": 0.509
     },
     "learned": {
-     "hours": 7142,
+     "hours": 7158,
      "bias_m": 0.023,
      "rmse_m": 0.172,
      "mae_m": 0.127,
      "r": 0.851,
      "big_hours": 590,
-     "big_bias_m": -0.109,
-     "big_rmse_m": 0.325
+     "big_bias_m": -0.107,
+     "big_rmse_m": 0.324
     }
    },
    {
     "year": "2026",
     "raw": {
-     "hours": 7424,
+     "hours": 7516,
      "bias_m": -0.08,
-     "rmse_m": 0.229,
+     "rmse_m": 0.23,
      "mae_m": 0.158,
      "r": 0.805,
-     "big_hours": 539,
-     "big_bias_m": -0.178,
-     "big_rmse_m": 0.559
+     "big_hours": 564,
+     "big_bias_m": -0.186,
+     "big_rmse_m": 0.555
     },
     "learned": {
-     "hours": 7424,
-     "bias_m": 0.006,
+     "hours": 7516,
+     "bias_m": 0.005,
      "rmse_m": 0.169,
      "mae_m": 0.117,
-     "r": 0.861,
-     "big_hours": 539,
-     "big_bias_m": -0.218,
-     "big_rmse_m": 0.413
+     "r": 0.862,
+     "big_hours": 564,
+     "big_bias_m": -0.222,
+     "big_rmse_m": 0.411
     }
    }
   ],
   "overall": {
    "raw": {
-    "hours": 27758,
+    "hours": 27866,
     "bias_m": -0.101,
     "rmse_m": 0.243,
     "mae_m": 0.17,
     "r": 0.779,
-    "big_hours": 2234,
-    "big_bias_m": -0.239,
-    "big_rmse_m": 0.554
+    "big_hours": 2259,
+    "big_bias_m": -0.241,
+    "big_rmse_m": 0.553
    },
    "learned": {
-    "hours": 27758,
+    "hours": 27866,
     "bias_m": -0.004,
     "rmse_m": 0.175,
     "mae_m": 0.123,
     "r": 0.844,
-    "big_hours": 2234,
+    "big_hours": 2259,
     "big_bias_m": -0.223,
     "big_rmse_m": 0.376
+   }
+  },
+  "north_big": {
+   "raw": {
+    "hours": 1133,
+    "bias_m": -0.193,
+    "rmse_m": 0.554,
+    "mae_m": 0.469,
+    "r": 0.254,
+    "big_hours": 1133,
+    "big_bias_m": -0.193,
+    "big_rmse_m": 0.554
+   },
+   "learned": {
+    "hours": 1133,
+    "bias_m": -0.198,
+    "rmse_m": 0.358,
+    "mae_m": 0.296,
+    "r": 0.53,
+    "big_hours": 1133,
+    "big_bias_m": -0.198,
+    "big_rmse_m": 0.358
    }
   },
   "by_buoy": {
    "45198": {
     "raw": {
-     "hours": 20058,
-     "bias_m": -0.12,
+     "hours": 20069,
+     "bias_m": -0.119,
      "rmse_m": 0.248,
      "mae_m": 0.175,
-     "r": 0.767,
-     "big_hours": 1578,
+     "r": 0.768,
+     "big_hours": 1580,
      "big_bias_m": -0.273,
-     "big_rmse_m": 0.571
+     "big_rmse_m": 0.57
     },
     "learned": {
-     "hours": 20058,
+     "hours": 20069,
      "bias_m": -0.016,
      "rmse_m": 0.173,
      "mae_m": 0.12,
      "r": 0.84,
-     "big_hours": 1578,
-     "big_bias_m": -0.228,
+     "big_hours": 1580,
+     "big_bias_m": -0.227,
      "big_rmse_m": 0.373
     }
    },
    "45174": {
     "raw": {
-     "hours": 7700,
+     "hours": 7797,
      "bias_m": -0.054,
-     "rmse_m": 0.229,
-     "mae_m": 0.156,
-     "r": 0.812,
-     "big_hours": 656,
-     "big_bias_m": -0.159,
-     "big_rmse_m": 0.512
+     "rmse_m": 0.23,
+     "mae_m": 0.157,
+     "r": 0.811,
+     "big_hours": 679,
+     "big_bias_m": -0.166,
+     "big_rmse_m": 0.511
     },
     "learned": {
-     "hours": 7700,
+     "hours": 7797,
      "bias_m": 0.025,
      "rmse_m": 0.181,
      "mae_m": 0.13,
-     "r": 0.859,
-     "big_hours": 656,
-     "big_bias_m": -0.212,
-     "big_rmse_m": 0.384
+     "r": 0.858,
+     "big_hours": 679,
+     "big_bias_m": -0.214,
+     "big_rmse_m": 0.383
     }
    }
   },
@@ -550,24 +572,161 @@
   "lag_h": 2,
   "r": 0.787
  },
+ "era5_filled_hours": 33,
+ "era5": {
+  "45174": {
+   "years": [
+    1991,
+    2026
+   ],
+   "totals": {
+    "1m": {
+     "model_hours": 26297,
+     "buoy_saw": 2490,
+     "north_model_hours": 17238,
+     "north_buoy_saw": 1641
+    },
+    "2m": {
+     "model_hours": 2489,
+     "buoy_saw": 191,
+     "north_model_hours": 2208,
+     "north_buoy_saw": 136
+    }
+   },
+   "top_storms": [
+    {
+     "start": "2012-10-26T13:00:00+00:00",
+     "peak_hs": 4.61,
+     "hours": 109,
+     "observed_hours": 0,
+     "peak_t": "2012-10-30T15:00:00+00:00",
+     "peak_wind": 18.8,
+     "peak_dir": 353
+    },
+    {
+     "start": "1996-03-19T20:00:00+00:00",
+     "peak_hs": 4.49,
+     "hours": 54,
+     "observed_hours": 0,
+     "peak_t": "1996-03-21T00:00:00+00:00",
+     "peak_wind": 17.6,
+     "peak_dir": 0
+    },
+    {
+     "start": "2011-01-31T10:00:00+00:00",
+     "peak_hs": 4.31,
+     "hours": 65,
+     "observed_hours": 0,
+     "peak_t": "2011-02-02T18:00:00+00:00",
+     "peak_wind": 17.7,
+     "peak_dir": 356
+    },
+    {
+     "start": "2011-10-19T08:00:00+00:00",
+     "peak_hs": 3.82,
+     "hours": 41,
+     "observed_hours": 0,
+     "peak_t": "2011-10-20T13:00:00+00:00",
+     "peak_wind": 18.3,
+     "peak_dir": 346
+    },
+    {
+     "start": "1998-03-08T10:00:00+00:00",
+     "peak_hs": 3.76,
+     "hours": 65,
+     "observed_hours": 0,
+     "peak_t": "1998-03-09T18:00:00+00:00",
+     "peak_wind": 20.3,
+     "peak_dir": 346
+    }
+   ]
+  },
+  "45198": {
+   "years": [
+    1991,
+    2026
+   ],
+   "totals": {
+    "1m": {
+     "model_hours": 26917,
+     "buoy_saw": 1101,
+     "north_model_hours": 20324,
+     "north_buoy_saw": 854
+    },
+    "2m": {
+     "model_hours": 3502,
+     "buoy_saw": 63,
+     "north_model_hours": 3239,
+     "north_buoy_saw": 62
+    }
+   },
+   "top_storms": [
+    {
+     "start": "2012-10-26T11:00:00+00:00",
+     "peak_hs": 5.34,
+     "hours": 130,
+     "observed_hours": 0,
+     "peak_t": "2012-10-30T16:00:00+00:00",
+     "peak_wind": 21.0,
+     "peak_dir": 352
+    },
+    {
+     "start": "1996-03-19T18:00:00+00:00",
+     "peak_hs": 5.26,
+     "hours": 56,
+     "observed_hours": 0,
+     "peak_t": "1996-03-20T23:00:00+00:00",
+     "peak_wind": 21.2,
+     "peak_dir": 358
+    },
+    {
+     "start": "2011-01-31T21:00:00+00:00",
+     "peak_hs": 4.36,
+     "hours": 55,
+     "observed_hours": 0,
+     "peak_t": "2011-02-02T18:00:00+00:00",
+     "peak_wind": 19.5,
+     "peak_dir": 353
+    },
+    {
+     "start": "1998-03-08T08:00:00+00:00",
+     "peak_hs": 4.18,
+     "hours": 70,
+     "observed_hours": 0,
+     "peak_t": "1998-03-09T19:00:00+00:00",
+     "peak_wind": 20.7,
+     "peak_dir": 342
+    },
+    {
+     "start": "2011-10-19T09:00:00+00:00",
+     "peak_hs": 4.08,
+     "hours": 37,
+     "observed_hours": 0,
+     "peak_t": "2011-10-20T12:00:00+00:00",
+     "peak_wind": 20.7,
+     "peak_dir": 346
+    }
+   ]
+  }
+ },
  "in_sample": {
   "raw": {
-   "hours": 27758,
+   "hours": 27866,
    "bias_m": -0.101,
    "rmse_m": 0.243,
    "mae_m": 0.17,
    "r": 0.779,
-   "big_hours": 2234,
-   "big_bias_m": -0.239,
-   "big_rmse_m": 0.554
+   "big_hours": 2259,
+   "big_bias_m": -0.241,
+   "big_rmse_m": 0.553
   },
   "learned": {
-   "hours": 27758,
+   "hours": 27866,
    "bias_m": -0.006,
    "rmse_m": 0.173,
    "mae_m": 0.121,
-   "r": 0.849,
-   "big_hours": 2234,
+   "r": 0.85,
+   "big_hours": 2259,
    "big_bias_m": -0.223,
    "big_rmse_m": 0.37
   }

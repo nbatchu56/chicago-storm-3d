@@ -1,16 +1,26 @@
-hours 27758 {"45174": 7700, "45198": 20058} left out 41069 {"45174": "2025-01-01"} lag {"lag_h": 2, "r": 0.787}
-  buoy/model by year 45174 2015:1.54 2016:1.74 2017:1.53 2018:1.55 2019:1.74 2020:1.67 2021:1.60 2022:1.73 2023:1.65 2024:1.63 2025:1.09 2026:1.18
+hours 27866 {"45174": 7797, "45198": 20069} left out 41072 {"45174": "2025-01-01"} lag {"lag_h": 2, "r": 0.787}
+  buoy/model by year 45174 2015:1.54 2016:1.74 2017:1.53 2018:1.54 2019:1.74 2020:1.67 2021:1.60 2022:1.72 2023:1.64 2024:1.63 2025:1.09 2026:1.18
   buoy/model by year 45198 2021:1.40 2022:1.34 2023:1.29 2024:1.52 2025:1.30 2026:1.25
-held-out years: {"raw": {"hours": 27758, "bias_m": -0.101, "rmse_m": 0.243, "mae_m": 0.17, "r": 0.779, "big_hours": 2234, "big_bias_m": -0.239, "big_rmse_m": 0.554}, "learned": {"hours": 27758, "bias_m": -0.004, "rmse_m": 0.175, "mae_m": 0.123, "r": 0.844, "big_hours": 2234, "big_bias_m": -0.223, "big_rmse_m": 0.376}}
+held-out years: {"raw": {"hours": 27866, "bias_m": -0.101, "rmse_m": 0.243, "mae_m": 0.17, "r": 0.779, "big_hours": 2259, "big_bias_m": -0.241, "big_rmse_m": 0.553}, "learned": {"hours": 27866, "bias_m": -0.004, "rmse_m": 0.175, "mae_m": 0.123, "r": 0.844, "big_hours": 2259, "big_bias_m": -0.223, "big_rmse_m": 0.376}}
   2021 raw rmse 0.263 learned 0.23 big-wave bias -0.625 -> -0.493
-  2022 raw rmse 0.238 learned 0.154 big-wave bias -0.299 -> -0.233
-  2023 raw rmse 0.239 learned 0.164 big-wave bias -0.287 -> -0.217
-  2024 raw rmse 0.286 learned 0.198 big-wave bias -0.444 -> -0.346
-  2025 raw rmse 0.234 learned 0.172 big-wave bias -0.05 -> -0.109
-  2026 raw rmse 0.229 learned 0.169 big-wave bias -0.178 -> -0.218
-improves: True by buoy {"45198": {"raw": {"hours": 20058, "bias_m": -0.12, "rmse_m": 0.248, "mae_m": 0.175, "r": 0.767, "big_hours": 1578, "big_bias_m": -0.273, "big_rmse_m": 0.571}, "learned": {"hours": 20058, "bias_m": -0.016, "rmse_m": 0.173, "mae_m": 0.12, "r": 0.84, "big_hours": 1578, "big_bias_m": -0.228, "big_rmse_m": 0.373}}, "45174": {"raw": {"hours": 7700, "bias_m": -0.054, "rmse_m": 0.229, "mae_m": 0.156, "r": 0.812, "big_hours": 656, "big_bias_m": -0.159, "big_rmse_m": 0.512}, "learned": {"hours": 7700, "bias_m": 0.025, "rmse_m": 0.181, "mae_m": 0.13, "r": 0.859, "big_hours": 656, "big_bias_m": -0.212, "big_rmse_m": 0.384}}}
-height regression: 1 +0.1393 m +0.2962 m cos d +0.0878 m sin d +0.1123 cos d +0.0362 sin d +0.0274 u +0.0129 u^2/10 +0.0307 m swell +0.1635
-  factor at  3 m/s (model 0.5 m) 0:0.87 45:0.94 90:0.87 135:0.71 180:0.55 225:0.48 270:0.54 315:0.70
-  factor at  6 m/s (model 0.5 m) 0:1.11 45:1.18 90:1.12 135:0.96 180:0.79 225:0.72 270:0.78 315:0.95
-  factor at  9 m/s (model 0.5 m) 0:1.46 45:1.54 90:1.47 135:1.31 180:1.14 225:1.07 270:1.14 315:1.30
-  factor at 12 m/s (model 0.5 m) 0:1.93 45:2.00 90:1.93 135:1.77 180:1.61 225:1.54 270:1.60 315:1.76
+  2022 raw rmse 0.237 learned 0.154 big-wave bias -0.299 -> -0.233
+  2023 raw rmse 0.239 learned 0.164 big-wave bias -0.286 -> -0.215
+  2024 raw rmse 0.286 learned 0.198 big-wave bias -0.444 -> -0.345
+  2025 raw rmse 0.234 learned 0.172 big-wave bias -0.05 -> -0.107
+  2026 raw rmse 0.23 learned 0.169 big-wave bias -0.186 -> -0.222
+improves: True by buoy {"45198": {"raw": {"hours": 20069, "bias_m": -0.119, "rmse_m": 0.248, "mae_m": 0.175, "r": 0.768, "big_hours": 1580, "big_bias_m": -0.273, "big_rmse_m": 0.57}, "learned": {"hours": 20069, "bias_m": -0.016, "rmse_m": 0.173, "mae_m": 0.12, "r": 0.84, "big_hours": 1580, "big_bias_m": -0.227, "big_rmse_m": 0.373}}, "45174": {"raw": {"hours": 7797, "bias_m": -0.054, "rmse_m": 0.23, "mae_m": 0.157, "r": 0.811, "big_hours": 679, "big_bias_m": -0.166, "big_rmse_m": 0.511}, "learned": {"hours": 7797, "bias_m": 0.025, "rmse_m": 0.181, "mae_m": 0.13, "r": 0.858, "big_hours": 679, "big_bias_m": -0.214, "big_rmse_m": 0.383}}}
+north-wind hours with 1 m+ waves (held out): {"raw": {"hours": 1133, "bias_m": -0.193, "rmse_m": 0.554, "mae_m": 0.469, "r": 0.254, "big_hours": 1133, "big_bias_m": -0.193, "big_rmse_m": 0.554}, "learned": {"hours": 1133, "bias_m": -0.198, "rmse_m": 0.358, "mae_m": 0.296, "r": 0.53, "big_hours": 1133, "big_bias_m": -0.198, "big_rmse_m": 0.358}}
+hours with ERA5-filled wind in the fit: 33
+  ERA5 45174 [1991, 2026]: 1 m+ model hours 26297, buoy out for 2490 (9%); north-wind 1 m+ 17238, buoy saw 1641 (10%)
+    storm 2012-10-30T15 peak 4.6 m wind 18.8 m/s from 353 buoy saw 0/109 h
+    storm 1996-03-21T00 peak 4.5 m wind 17.6 m/s from 0 buoy saw 0/54 h
+    storm 2011-02-02T18 peak 4.3 m wind 17.7 m/s from 356 buoy saw 0/65 h
+  ERA5 45198 [1991, 2026]: 1 m+ model hours 26917, buoy out for 1101 (4%); north-wind 1 m+ 20324, buoy saw 854 (4%)
+    storm 2012-10-30T16 peak 5.3 m wind 21.0 m/s from 352 buoy saw 0/130 h
+    storm 1996-03-20T23 peak 5.3 m wind 21.2 m/s from 358 buoy saw 0/56 h
+    storm 2011-02-02T18 peak 4.4 m wind 19.5 m/s from 353 buoy saw 0/55 h
+height regression: 1 +0.1387 m +0.2953 m cos d +0.0881 m sin d +0.1150 cos d +0.0363 sin d +0.0268 u +0.0131 u^2/10 +0.0306 m swell +0.1644
+  factor at  3 m/s (model 0.5 m) 0:0.87 45:0.94 90:0.87 135:0.71 180:0.55 225:0.47 270:0.54 315:0.70
+  factor at  6 m/s (model 0.5 m) 0:1.11 45:1.18 90:1.12 135:0.96 180:0.79 225:0.72 270:0.78 315:0.94
+  factor at  9 m/s (model 0.5 m) 0:1.47 45:1.54 90:1.47 135:1.31 180:1.14 225:1.07 270:1.14 315:1.30
+  factor at 12 m/s (model 0.5 m) 0:1.93 45:2.00 90:1.94 135:1.77 180:1.61 225:1.54 270:1.60 315:1.76
