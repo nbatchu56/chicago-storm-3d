@@ -109,3 +109,17 @@ def test_cloud_top():
     m = earth.cloud_mask(bt, None, 288.0, False)
     assert list(m) == [1.0, 1.0, 0.0] and earth.cloud_top_km(bt, m, 288.0) == 4.0
     assert earth.cloud_top_km(bt, np.zeros(3), 288.0) is None
+
+
+def test_fuse_four_satellites_counts_and_labels():
+    import numpy as np
+    lats, lons = np.array([41.9, 41.91]), np.array([-87.6, -87.59])
+    now_h = 500000.0
+    nan = np.full((2, 2), np.nan)
+    eco_t, eco_h = np.array([[12.0, np.nan], [np.nan, np.nan]]), np.array([[now_h - 2, np.nan], [np.nan, np.nan]])
+    vi_t, vi_h = np.array([[11.0, 11.5], [np.nan, np.nan]]), np.array([[now_h - 20, now_h - 20], [np.nan, np.nan]])
+    sat = {"landsat": (nan, nan), "modis": (nan, nan), "viirs": (vi_t, vi_h), "ecostress": (eco_t, eco_h)}
+    out, src, counts = earth.fuse_temperature(lats, lons, sat, None, now_h)
+    assert out[0, 0] == 12.0 and out[0, 1] == 11.5 and np.isnan(out[1, 0])      # newest pass wins per cell
+    assert counts == {"glsea": 0, "landsat": 0, "modis": 0, "viirs": 1, "ecostress": 1}
+    assert earth.SAT_LABEL["ecostress"] == "ECOSTRESS" and earth.SAT_LABEL["viirs"] == "VIIRS"

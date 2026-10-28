@@ -1,9 +1,10 @@
 """
 Satellite and model layers from Google Earth Engine for the LakeView page (earth.json).
 
-  water     nearshore lake-surface temperature: the newest clear-sky MODIS (Terra + Aqua, day + night, 1 km) or
-            Landsat 8/9 thermal (100 m) pixel from the last 48 h, NOAA GLSEA (from lakefront.json) elsewhere,
-            on a 0.005 deg grid; plus an upwelling check (nearshore vs 8-15 km out along the Chicago shore)
+  water     nearshore lake-surface temperature: the newest clear-sky MODIS (Terra + Aqua, day + night, 1 km),
+            VIIRS (Suomi NPP, day + night, 1 km), Landsat 8/9 thermal (100 m) or ECOSTRESS (ISS, 70 m, day and
+            night at varying hours) pixel from the last 72 h, NOAA GLSEA (from lakefront.json) elsewhere, on a
+            0.005 deg grid; plus an upwelling check (nearshore vs 8-15 km out along the Chicago shore)
   s1        Sentinel-1 radar backscatter (VV, dB) over the map: rough water is bright, wind-sheltered water dark
   s2        Sentinel-2 water turbidity (Nechad 2009, red band, FNU) from the newest clear pass over the map
   goes      GOES-19 cloud cover now (10.3 um brightness vs the GFS surface temperature; visible reflectance by day)
@@ -214,6 +215,48 @@ def water_image(ee, now):
     return img
 
 
+# NASA thermal passes beyond MODIS and Landsat, fetched apart from them so a missing asset costs only its own source:
+#   VIIRS VNP21A1 (Suomi NPP, 1 km, day + night; the same TES algorithm as MODIS; View_Time is local solar hours)
+#   ECOSTRESS L2T LSTE V2 (ISS, 70 m, passes at varying local hours so it also catches afternoon and night water)
+def nasa_extra_image(ee, now):
+    start, end = ee.Date((now - dt.timedelta(days=4)).isoformat()), ee.Date((now + dt.timedelta(hours=1)).isoformat())
+    occ = ee.Image("JRC/GSW1_4/GlobalSurfaceWater").select("occurrence").unmask(0)
+    water = occ.gte(50)
+    water_1km = water.focalMin(1200, "circle", "meters")
+    lon_h = -87.6 / 15.0
+    blank = ee.ImageCollection([ee.Image.constant([0, 0]).rename(["t", "h"]).toFloat().updateMask(ee.Image.constant(0))])
+
+    def viirs(cid):
+        def f(img):
+            qc = img.select("QC")
+            good = qc.bitwiseAnd(3).eq(0).And(qc.rightShift(4).bitwiseAnd(3).eq(0))      # mandatory QA good, cloud-free
+            lst = img.select("LST_1KM").toFloat()
+            lst = lst.where(lst.gt(1000), lst.multiply(0.02))                            # stored x50 in some builds
+            t = lst.subtract(273.15)
+            when = ee.Image.constant(ee.Number(img.date().millis()).divide(3.6e6)).add(img.select("View_Time").toFloat()).subtract(lon_h)
+            return t.rename("t").addBands(when.rename("h").toFloat()).updateMask(good.And(water_1km).And(t.gt(-2)).And(t.lt(35))).toFloat()
+        return ee.ImageCollection(cid).filterDate(start, end).map(f)
+
+    vm = viirs("NASA/VIIRS/002/VNP21A1D").merge(viirs("NASA/VIIRS/002/VNP21A1N")).merge(blank).qualityMosaic("h")
+
+    s, w, n, e = TEMP_BBOX
+    box = ee.Geometry.Rectangle([w, s, e, n])
+
+    def eco(img):
+        qc = img.select("QC")
+        good = qc.bitwiseAnd(1).eq(0).And(qc.rightShift(3).bitwiseAnd(1).eq(0)).And(img.select("cloud").eq(0))
+        t = img.select("LST").toFloat().subtract(273.15)
+        h = ee.Image.constant(ee.Number(img.date().millis()).divide(3.6e6)).toFloat()
+        return t.rename("t").addBands(h.rename("h")).updateMask(good.And(water).And(t.gt(-2)).And(t.lt(35))).toFloat()
+
+    em = ee.ImageCollection("NASA/ECOSTRESS/L2T_LSTE/V2").filterBounds(box).filterDate(start, end).map(eco).merge(blank).qualityMosaic("h")
+    et = em.select("t").focalMean(250, "circle", "meters")                              # 70 m pixels -> the 500 m grid
+    return vm.select(["t", "h"], ["viirs_t", "viirs_h"]).addBands(et.rename("eco_t")).addBands(em.select("h").rename("eco_h"))
+
+
+SAT_LABEL = {"landsat": "Landsat", "modis": "MODIS", "viirs": "VIIRS", "ecostress": "ECOSTRESS"}
+
+
 def build_water(ee, now, glsea):
     lats, lons = grid_axes(TEMP_BBOX, TEMP_D)
     img = water_image(ee, now)
@@ -221,6 +264,15 @@ def build_water(ee, now, glsea):
     g = {k: np.where(v < -9000, np.nan, v) for k, v in g.items()}
     now_h = now.timestamp() / 3600.0
     sat = {"landsat": (g["ls_t"], g["ls_h"]), "modis": (g["modis_t"], g["modis_h"])}
+    notes = []
+    try:                                                           # the NASA extras ride along; without them nothing changes
+        x = compute_grid(ee, nasa_extra_image(ee, now).unmask(-9999), TEMP_BBOX, TEMP_D)
+        x = {k: np.where(v < -9000, np.nan, v) for k, v in x.items()}
+        sat["viirs"] = (x["viirs_t"], x["viirs_h"])
+        sat["ecostress"] = (x["eco_t"], x["eco_h"])
+    except Exception as e:  # noqa: BLE001
+        log.warning("water extras (VIIRS/ECOSTRESS): %s", e)
+        notes.append(f"VIIRS/ECOSTRESS: {str(e)[:200]}")
     for k in sat:                                                  # computePixels gives masked pixels as 0 or nan
         t, h = sat[k]
         bad = ~np.isfinite(h) | (h < 1e5)
@@ -229,7 +281,7 @@ def build_water(ee, now, glsea):
     fused, src, counts = fuse_temperature(lats, lons, sat, glsea, now_h)
     fused[~water] = np.nan                                         # GLSEA's 1.4 km cells reach over the shore
     src[~water] = 0
-    counts = {"glsea": int((src == 1).sum()), "landsat": int((src == 2).sum()), "modis": int((src == 3).sum())}
+    counts = {"glsea": int((src == 1).sum()), **{n: int((src == 2 + k).sum()) for k, n in enumerate(sat)}}
     times = {}
     for k, (t, h) in sat.items():
         hh = h[np.isfinite(h) & (now_h - h <= SAT_MAX_AGE_H)]
@@ -237,7 +289,7 @@ def build_water(ee, now, glsea):
             times[k] = dt.datetime.fromtimestamp(float(np.max(hh)) * 3600, UTC).isoformat(timespec="minutes")
     grid = page_grid(lats, lons, fused)
     times = {k: v for k, v in times.items() if counts.get(k)}              # passes GLSEA already holds aren't shown
-    lab = [f"{'Landsat' if k == 'landsat' else 'MODIS'} {v[5:10]}" for k, v in sorted(times.items(), key=lambda x: x[1], reverse=True)]
+    lab = [f"{SAT_LABEL.get(k, k)} {v[5:10]}" for k, v in sorted(times.items(), key=lambda x: x[1], reverse=True)]
     if counts.get("glsea"):
         lab.append(f"GLSEA {str((glsea or {}).get('time', ''))[5:10]}")
     grid.update(time=max(list(times.values()) + [str((glsea or {}).get("time") or "")]), source="satellite fusion", label=" + ".join(lab))
@@ -245,7 +297,10 @@ def build_water(ee, now, glsea):
     if up:
         near_src = src[(lats >= UPWELL_ROWS[0])[:, None] & (lats <= UPWELL_ROWS[1])[:, None] & np.isfinite(fused)]
         up["satellite_share"] = round(float(np.mean(near_src > 1)) if len(near_src) else 0.0, 2)
-    return {"temp": grid, "counts": counts, "times": times, "upwelling": up}
+    out = {"temp": grid, "counts": counts, "times": times, "upwelling": up}
+    if notes:
+        out["notes"] = notes
+    return out
 
 
 # ---------------------------------------------------------------------------- Sentinel-1 / Sentinel-2
@@ -507,7 +562,7 @@ def build(lakefront=None, era5_dir=None, era5_climate=None, prev=None, now=None)
     now = now or dt.datetime.now(UTC)
     ee = init_ee()
     out = {"version": 1, "generated": now.isoformat(timespec="seconds"), "notes": [],
-           "credits": "Earth Engine: MODIS (NASA LP DAAC), Landsat (USGS), Sentinel-1/2 (Copernicus, ESA), GOES-19 and GFS (NOAA), "
+           "credits": "Earth Engine: MODIS, VIIRS and ECOSTRESS (NASA LP DAAC), Landsat (USGS), Sentinel-1/2 (Copernicus, ESA), GOES-19 and GFS (NOAA), "
                       "ERA5 / ERA5-Land (Copernicus Climate Change Service, ECMWF), JRC Global Surface Water"}
     glsea = ((lakefront or {}).get("lake") or {}).get("temp")
 

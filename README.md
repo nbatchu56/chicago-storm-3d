@@ -82,7 +82,7 @@ With a service-account key in the repo secret `GEE_SERVICE_ACCOUNT_KEY` (a Cloud
 
 | Layer | Source | On the page |
 |---|---|---|
-| Water temperature | Newest clear-sky pixel from the last 48 h of MODIS LST (Terra + Aqua, day + night, 1 km) or Landsat 8/9 thermal (100 m), NOAA GLSEA elsewhere; JRC surface-water mask; 0.005° grid | Replaces GLSEA as the water-temperature layer (View → Water temp) and the water number |
+| Water temperature | Newest clear-sky pixel from the last 72 h of MODIS LST (Terra + Aqua, day + night, 1 km), VIIRS LST (Suomi NPP VNP21A1, day + night, 1 km), Landsat 8/9 thermal (100 m) or ECOSTRESS (ISS, 70 m, passes at varying hours), NOAA GLSEA elsewhere; JRC surface-water mask; 0.005° grid | Replaces GLSEA as the water-temperature layer (View → Water temp) and the water number |
 | Upwelling | That grid: water 0–2 km from shore vs 8–15 km out, rows 41.85–42.06° N | "Upwelling" pill when the shore water is 2.5 °C (≈4.5 °F) or more colder |
 | Wind on the water | Sentinel-1 VV backscatter (newest pass, ≤12 days), relative to the pass's median | View → *Wind on the water*: dark = sheltered/calm, bright = wind-roughened |
 | Water clarity | Sentinel-2 red-band turbidity (Nechad), water pixels from the newest clear pass (≤10 days) | View → *Water clarity*; FNU at the view point and the launches |
