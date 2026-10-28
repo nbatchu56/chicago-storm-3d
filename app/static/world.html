@@ -368,6 +368,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 <script id="learn-data" type="application/json"></script>
 <script id="levels-data" type="application/json"></script>
 <script id="earth-data" type="application/json"></script>
+<script id="wn3-data" type="application/json"></script>
 <script id="meta-data" type="application/json"></script>
 <script id="import-data" type="application/json"></script>
 <script>
@@ -500,7 +501,7 @@ function lunar(date, lat = 41.88, lon = -87.63) {
 const azElDir = (o, v) => { const a = o.az * Math.PI / 180, e = o.el * Math.PI / 180; return v.set(Math.sin(a) * Math.cos(e), Math.sin(e), -Math.cos(a) * Math.cos(e)).normalize(); };
 
 // ---------------------------------------------------------------- data
-const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), learn: parseJSON("learn-data"), levels: parseJSON("levels-data"), earth: parseJSON("earth-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
+const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), learn: parseJSON("learn-data"), levels: parseJSON("levels-data"), earth: parseJSON("earth-data"), wn3: parseJSON("wn3-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
 { const h = parseJSON("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
 const S = { mode: "live", t: 0, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, view: "overview", histIdx: 0,
   x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, hour: 14, seed: 7 } };
@@ -1351,6 +1352,10 @@ function satAt(L, xk, yk) { if (!L) return null; const g = L.g, fx = (xk - L.min
 // GFS: the hour nearest t at the lakefront; ERA5 normals
 function gfsAt(tMs) { const P = DATA.earth && DATA.earth.gfs && DATA.earth.gfs.points && DATA.earth.gfs.points.northave; if (!P) return null; let k = -1, bd = 1e15;
   P.t.forEach((t, i) => { const d = Math.abs(new Date(t).getTime() - tMs); if (d < bd) { bd = d; k = i; } }); return bd < 90 * 60e3 && P.wspd[k] != null ? { wspd: P.wspd[k], wdir: P.wdir[k], t2m: P.t2m_c[k], cloud: P.cloud[k] } : null; }
+// WeatherNext 3 (experimental ensemble): mean wind with the 10-90% spread, station-tuned air temperature
+function wn3At(tMs) { const P = DATA.wn3 && DATA.wn3.points && DATA.wn3.points.northave; if (!P || !P.t) return null; let k = -1, bd = 1e15;
+  P.t.forEach((t, i) => { const d = Math.abs(new Date(t).getTime() - tMs); if (d < bd) { bd = d; k = i; } }); if (bd > 90 * 60e3 || !P.wspd || P.wspd[k] == null) return null;
+  return { wspd: P.wspd[k], lo: P.wspd_p10 && P.wspd_p10[k], hi: P.wspd_p90 && P.wspd_p90[k], wdir: P.wdir && P.wdir[k] }; }
 const fnuWord = (f) => f < 2 ? "clear" : f < 5 ? "slightly cloudy" : f < 15 ? "murky" : "very murky";
 
 // ---------------------------------------------------------------- real lake bottom + SWAN wave library
@@ -2277,7 +2282,7 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
     // clouds right now from GOES-19 (within 45 min), instead of the forecast's sky cover
     const G = DATA.earth && DATA.earth.goes;
     if (S.mode === "live" && G && G.sky_local_pct != null && Math.abs(new Date(G.time).getTime() - tMs) < 45 * 60e3) { c.sky = G.sky_local_pct; c.src.push("clouds GOES-19"); }
-    c.gfs = gfsAt(tMs);
+    c.gfs = gfsAt(tMs); c.wn3 = wn3At(tMs);
   }
   if (FW.cur) { c.off = { hs: FW.cur.hs, tp: FW.cur.tp, dir: FW.cur.dir, src: "FUNWAVE case" }; c.src.unshift(`FUNWAVE: ${FW.cur.label}`); }
   // SWAN: inside a modelled domain, the local sea comes from the library for this offshore condition
@@ -2952,6 +2957,9 @@ function updateHud(rr, tp) {
   if (S.mode === "live") for (const m of W.metar || []) { if (nowMs - new Date(m.t).getTime() > 3 * 3600e3 || m.wspd_kt == null) continue;
     const k = (v) => Math.round(v * 1.15078); rows.push([m.name, `${m.wspd_kt < 1 ? "calm" : `${k(m.wspd_kt)} mph ${m.vrb ? "var" : compass(m.wdir)}${m.wgst_kt ? ` G${k(m.wgst_kt)}` : ""}`}${m.temp_c != null ? ` · ${Math.round(cToF(m.temp_c))}°` : ""}`]); }
   if (live && C.gfs) rows.push(["GFS model wind", `${mph(C.gfs.wspd)} mph ${compass(C.gfs.wdir)}`]);
+  if (live && C.wn3) rows.push(["WeatherNext 3 wind", `${mph(C.wn3.wspd)} mph ${C.wn3.wdir != null ? compass(C.wn3.wdir) : ""}${C.wn3.lo != null && C.wn3.hi != null ? ` (${mph(C.wn3.lo)}–${mph(C.wn3.hi)})` : ""}`]);
+  { const LE = DATA.learn && DATA.learn.correction && DATA.learn.correction.era5, M = LE && LE["45198"] && LE["45198"].monthly_hs_m && LE["45198"].monthly_hs_m[String(new Date(S.t).getMonth() + 1)];
+    if (live && M) rows.push(["Usual lake waves (ERA5)", `${ft(M.p50)} ft this month · 1 in 10 h over ${ft(M.p90)} ft`]); }
   if (live && NM.era5 && NM.era5.wind_ms) rows.push(["Usual lake wind (ERA5)", `${mph(NM.era5.wind_ms.p50)} mph (1 in 10 h over ${mph(NM.era5.wind_ms.p90)})`]);
   { const fnu = satAt(EARTH.s2, C.xk, C.yk); if (fnu != null && live) rows.push(["Water clarity", `${fnuWord(fnu)} · ${fnu.toFixed(1)} FNU (${E.s2.label})`]); }
   if (tp && tp.inside) rows.push(["Your paddle", `${(tp.v * MPH).toFixed(1)} mph ${compass(tp.hd)}${tp.hr ? ` · ${tp.hr} bpm` : ""}`]);
@@ -2993,7 +3001,12 @@ function renderLearn() {
     notes.push(`Learned from ${Math.round(C.hours / 1000)}k buoy-hours (45174 and 45198, ${y0}–${y1}) of how the wave model misses by wind direction and speed. On years it didn't see: typical error ${ft(r.rmse_m)} → ${ft(l.rmse_m)} ft, better in ${C.years_better} of ${C.years_scored} years` +
       (r.big_bias_m != null ? `; on 3 ft+ days the model was ${ft(Math.abs(r.big_bias_m))} ft ${r.big_bias_m > 0 ? "high" : "low"}, ${ft(Math.abs(l.big_bias_m))} ft after` : "") + "." +
       (C.lag && C.lag.lag_h ? ` The model's waves also run about ${Math.abs(C.lag.lag_h)} h ${C.lag.lag_h > 0 ? "late" : "early"}, which this correction can't fix.` : "") +
-      (C.improves ? "" : " It hasn't clearly beaten the plain model yet, so it stays off by default."));
+      (C.improves ? "" : " It hasn't clearly beaten the plain model yet, so it stays off by default.") +
+      (C.north_big && C.north_big.raw && C.north_big.learned ? ` On north-wind hours with 3 ft+ waves: ${ft(C.north_big.raw.rmse_m)} → ${ft(C.north_big.learned.rmse_m)} ft.` : ""));
+    const E5 = C.era5 && C.era5["45198"];
+    if (E5 && E5.totals && E5.totals["1m"]) { const t = E5.totals["1m"], st = (E5.top_storms || [])[0];
+      notes.push(`ERA5 since ${E5.years[0]}: the model's 3 ft+ hours at the Chicago buoy came ${Math.round(100 * t.north_model_hours / Math.max(t.model_hours, 1))}% with north winds, and the buoy was out for ${Math.round(100 * t.buoy_saw / Math.max(t.model_hours, 1))}% of them` +
+        (st ? `; the biggest, ${new Date(st.peak_t).toLocaleDateString("en-US", { month: "short", year: "numeric" })} (~${ft(st.peak_hs)} ft), it ${st.observed_hours ? `saw ${st.observed_hours} of ${st.hours} h of` : "never saw"}` : "") + ". So the correction is learned mostly on everyday seas."); }
   } else if (!has) notes.push("No learned correction yet: run the Learn waves workflow.");
   $("#learn-note").textContent = notes.join(" ");
   const K = L && L.scorecard;

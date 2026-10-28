@@ -55,9 +55,10 @@ CLIP = (0.5, 2.0)
 FIT_FROM = {"45174": "2025-01-01"}
 SWELL_FRAC = 0.5                             # share of wave energy in leftover/swell above this -> "swell" factor
 LEAD_BUCKETS = [(0, 0), (1, 3), (4, 6), (7, 12), (13, 24), (25, 48)]
-METHODS = ["raw", "learned", "product", "product_learned", "nws", "glwu"]
+METHODS = ["raw", "learned", "product", "product_learned", "nws", "glwu", "gfs", "wn3"]
 METHOD_LABELS = {"raw": "model", "learned": "model + learned", "product": "forecast (buoy-nudged)",
-                 "product_learned": "forecast + learned", "nws": "NWS wave grid", "glwu": "NOAA GLWU"}
+                 "product_learned": "forecast + learned", "nws": "NWS wave grid", "glwu": "NOAA GLWU",
+                 "gfs": "model on GFS wind", "wn3": "model on WeatherNext 3 wind"}
 
 
 # ---------------------------------------------------------------------------- data
@@ -289,11 +290,13 @@ def era5_climate(era_cal, observed, big=(1.0, 2.0), storm_gap_h=24):
         sea, hours = sw.SeaState(), sorted(ser)
         tot = {f"{m:g}m": {"all": [0, 0], "north": [0, 0]} for m in big}
         storms, cur, last_big = [], None, None
+        monthly = {m: [] for m in range(1, 13)}
         by_sector = [[0, 0] for _ in range(8)]
         for h in hours:
             o = ser[h]
             sea.step(o["wspd"], o["wdir"], fetch)
             hs, obs = sea.total_hs(), h in observed.get(b, ())
+            monthly[h.month].append(hs)
             for m in big:
                 if hs >= m:
                     k = f"{m:g}m"
@@ -320,7 +323,9 @@ def era5_climate(era_cal, observed, big=(1.0, 2.0), storm_gap_h=24):
             "totals": {k: {"model_hours": v["all"][0], "buoy_saw": v["all"][1], "north_model_hours": v["north"][0], "north_buoy_saw": v["north"][1]}
                        for k, v in tot.items()},
             "big_hours_by_dir": {d: {"model_hours": a, "buoy_saw": c} for d, (a, c) in zip(["N", "NE", "E", "SE", "S", "SW", "W", "NW"], by_sector)},
-            "top_storms": storms[:25]}
+            "top_storms": storms[:25],
+            "monthly_hs_m": {str(m): {"p50": round(float(np.percentile(v, 50)), 2), "p90": round(float(np.percentile(v, 90)), 2),
+                                      "p99": round(float(np.percentile(v, 99)), 2)} for m, v in monthly.items() if v}}
     return out
 
 
@@ -516,7 +521,8 @@ def fit_dir(d):
     cp = os.path.join(d, "era5_climate.json")
     if os.path.exists(cp):
         clim = json.load(open(cp))
-        corr["era5"] = {b: {"years": v["years"], "totals": v["totals"], "top_storms": v["top_storms"][:5]} for b, v in clim["buoys"].items()}
+        corr["era5"] = {b: {"years": v["years"], "totals": v["totals"], "top_storms": v["top_storms"][:5], "monthly_hs_m": v.get("monthly_hs_m")}
+                        for b, v in clim["buoys"].items()}
     corr["in_sample"] = {"raw": skill([p["obs_hs"] for p in pairs], [p["pred_hs"] for p in pairs]),
                          "learned": skill([p["obs_hs"] for p in pairs], apply_pairs(corr, pairs))}
     with open(os.path.join(d, "correction.json"), "w") as fh:
@@ -538,8 +544,33 @@ def load_correction(path=None):
 
 
 # ---------------------------------------------------------------------------- 3. scorecard
-def log_forecast(sup, out_dir, glwu=None):
-    """Append what this run forecast at the buoys to scorecard/forecasts-YYYY-MM.jsonl."""
+def wind_driven(buoy, series, t0, n):
+    """The open-lake wave model run on another model's 10 m wind at a buoy: spun up from the first hour of the
+    series (the run's start, usually 6-12 h before t0), then n hours from t0. series: {"t", "wspd", "wdir"}."""
+    if not series or not series.get("t"):
+        return None
+    lat, lon = BUOYS[buoy]
+    table = sw.fetch_table(lat, lon, 90)
+    fetch = lambda d: sw.interp_dir(table, d) * 1000  # noqa: E731
+    by = {dt.datetime.fromisoformat(t): (u, d) for t, u, d in zip(series["t"], series["wspd"], series["wdir"]) if u is not None and d is not None}
+    if not by:
+        return None
+    t, t1 = min(by), t0 + dt.timedelta(hours=n - 1)
+    if t > t0:
+        return None                                      # the run starts after the forecast: no spin-up
+    sea, out = sw.SeaState(), []
+    while t <= t1:
+        u, d = by.get(t, (None, None))
+        sea.step(u, d, fetch)
+        if t >= t0:
+            out.append(round(sea.total_hs(), 2) if t in by else None)
+        t += dt.timedelta(hours=1)
+    return out if any(v is not None for v in out) else None
+
+
+def log_forecast(sup, out_dir, glwu=None, winds=None):
+    """Append what this run forecast at the buoys to scorecard/forecasts-YYYY-MM.jsonl. winds: other models' wind at
+    the buoys ({"gfs": {buoy: series}, "wn3": ...}), run through the same wave model."""
     bf = (sup or {}).get("buoy_fc") or {}
     if not bf:
         return None
@@ -553,6 +584,14 @@ def log_forecast(sup, out_dir, glwu=None):
             e["glwu"] = [None if gt.get(t0 + dt.timedelta(hours=k)) is None else round(gt[t0 + dt.timedelta(hours=k)], 2)
                          for k in range(len(d.get("raw") or []))]
             e["glwu_cycle"] = glwu.get("cycle")
+        for m, pts in (winds or {}).items():
+            try:
+                v = wind_driven(b, (pts or {}).get(b), dt.datetime.fromisoformat(d["t0"]), len(d.get("raw") or []))
+            except Exception as ex:  # noqa: BLE001
+                log.warning("%s at %s: %s", m, b, ex)
+                v = None
+            if v:
+                e[m] = v
         entry["buoys"][b] = e
     os.makedirs(os.path.join(out_dir, "scorecard"), exist_ok=True)
     path = os.path.join(out_dir, "scorecard", "forecasts-%s.jsonl" % sup["start"][:7])
@@ -618,7 +657,8 @@ def summarize(corr, card):
         cv = corr.get("cv") or {}
         out["correction"] = {k: corr.get(k) for k in ("generated", "method", "hours", "data", "hours_by_buoy", "lag")}
         out["correction"].update(cv_overall=cv.get("overall"), years_better=cv.get("years_better"), years_scored=cv.get("years_scored"),
-                                 improves=cv.get("improves"), by_buoy=cv.get("by_buoy"), fit_from=corr.get("fit_from"))
+                                 improves=cv.get("improves"), by_buoy=cv.get("by_buoy"), fit_from=corr.get("fit_from"),
+                                 north_big=cv.get("north_big"), era5=corr.get("era5"), era5_filled_hours=corr.get("era5_filled_hours"))
     if card:
         out["scorecard"] = card
     return out
@@ -643,6 +683,7 @@ if __name__ == "__main__":
     p.add_argument("--era5", help="cached ERA5 (app.era5) directory: fills missing wind, 35-year storm climate")
     p = sub.add_parser("fit"); p.add_argument("--dir", required=True)
     p = sub.add_parser("log"); p.add_argument("--sup", required=True); p.add_argument("--glwu"); p.add_argument("--dir", required=True)
+    p.add_argument("--earth", help="earth.json (GFS wind at the buoys)"); p.add_argument("--wn3", help="wn3.json (WeatherNext 3 wind at the buoys)")
     p = sub.add_parser("score"); p.add_argument("--dir", required=True); p.add_argument("--days", type=int, default=45)
     a = ap.parse_args()
     if a.cmd == "backfill":
@@ -672,8 +713,14 @@ if __name__ == "__main__":
             print("  factor at %2d m/s (model 0.5 m)" % u_, " ".join("%d:%.2f" % (d_, factor(c, d_, u_, 0.0, m=0.5)) for d_ in range(0, 360, 45)))
     elif a.cmd == "log":
         sup = json.load(open(a.sup))
-        g = json.load(open(a.glwu)) if a.glwu and os.path.exists(a.glwu) else None
-        print(log_forecast(sup, a.dir, g) or "no buoy forecasts in sup.json")
+        rd = lambda p: json.load(open(p)) if p and os.path.exists(p) and os.path.getsize(p) else None  # noqa: E731
+        g, ea, wn = rd(a.glwu), rd(a.earth), rd(a.wn3)
+        winds = {}
+        if ea and (ea.get("gfs") or {}).get("points"):
+            winds["gfs"] = ea["gfs"]["points"]
+        if wn and wn.get("points") and wn.get("init"):
+            winds["wn3"] = {b: {"t": p["t"], "wspd": p.get("wspd"), "wdir": p.get("wdir")} for b, p in wn["points"].items() if p.get("wspd")}
+        print(log_forecast(sup, a.dir, g, winds) or "no buoy forecasts in sup.json")
     elif a.cmd == "score":
         card = score(a.dir, days=a.days)
         with open(os.path.join(a.dir, "scorecard.json"), "w") as fh:

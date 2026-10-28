@@ -94,3 +94,11 @@ def test_newest_complete_and_gfs_series():
                              "temperature_2m_above_ground": 12.34, "total_cloud_cover_entire_atmosphere": 55.5}} for h in (1, 0)]
     s = earth.gfs_series(feats, 1761609600000)["northave"]
     assert s["wspd"] == [4.0, 4.0] and s["wdir"] == [0.0, 0.0] and s["t"][0].startswith("2025-10-28T00:00") and s["cloud"] == [56, 56]
+
+
+def test_log_passes_dedupes(tmp_path):
+    e = {"s1": {"time": "2026-10-23T23:39Z", "orbit": "ASCENDING", "median_db": -15.1, "launches": {"Montrose": -20.0}},
+         "s2": {"time": "2026-10-26T16:51", "median_fnu": 3.0, "launches": {"North Ave": 0.7}}}
+    assert sorted(earth.log_passes(e, str(tmp_path))) == ["s1", "s2"]
+    assert earth.log_passes(e, str(tmp_path)) == []
+    assert open(tmp_path / "sat" / "s1_passes.jsonl").read().count("\n") == 1

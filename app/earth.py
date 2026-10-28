@@ -271,7 +271,8 @@ def build_s1(ee, now, days=12):
     a = np.where(g["vv"] < -60, np.nan, g["vv"])
     out = byte_grid(lats, lons, a, -30.0, 0.0)
     out.update(time=info["t"], orbit=info.get("orbit"), angle_deg=round(float(np.nanmean(np.where(g["angle"] > 0, g["angle"], np.nan))), 1),
-               median_db=round(float(np.nanmedian(a)), 2) if np.isfinite(a).any() else None, label=f"Sentinel-1 {info['t'][5:10]}")
+               median_db=round(float(np.nanmedian(a)), 2) if np.isfinite(a).any() else None, label=f"Sentinel-1 {info['t'][5:10]}",
+               launches={k: _near(lats, lons, a, la, lo, 400) for k, (la, lo) in LAUNCHES.items()})
     return out
 
 
@@ -458,6 +459,33 @@ def lake_normal(ee, today, days=10, years=(1991, 2020)):
     return None if len(v) < 30 else {"mean_c": round(float(v.mean()), 2), "sd_c": round(float(v.std()), 2), "days": int(len(v))}
 
 
+# ---------------------------------------------------------------------------- pass log (learn branch)
+def log_passes(earth, d):
+    """Append each new Sentinel-1 / Sentinel-2 pass's launch values to sat/<s1|s2>_passes.jsonl: over months this
+    pairs radar roughness at the launches with the wind at the time (from the buoy archive), i.e. how sheltered each
+    launch really is, and clarity with storms and river outflow."""
+    os.makedirs(os.path.join(d, "sat"), exist_ok=True)
+    wrote = []
+    for k, keys in (("s1", ("time", "orbit", "angle_deg", "median_db", "launches")), ("s2", ("time", "median_fnu", "launches"))):
+        x = (earth or {}).get(k)
+        if not x or not x.get("time"):
+            continue
+        path = os.path.join(d, "sat", f"{k}_passes.jsonl")
+        seen = set()
+        if os.path.exists(path):
+            for line in open(path):
+                try:
+                    seen.add(json.loads(line)["time"])
+                except (ValueError, KeyError):
+                    pass
+        if x["time"] in seen:
+            continue
+        with open(path, "a") as fh:
+            fh.write(json.dumps({q: x.get(q) for q in keys}, separators=(",", ":")) + "\n")
+        wrote.append(k)
+    return wrote
+
+
 # ---------------------------------------------------------------------------- main
 def build(lakefront=None, era5_dir=None, era5_climate=None, prev=None, now=None):
     from .weathernext import init_ee
@@ -513,7 +541,15 @@ def build(lakefront=None, era5_dir=None, era5_climate=None, prev=None, now=None)
 
 
 if __name__ == "__main__":
+    import sys
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    if len(sys.argv) > 1 and sys.argv[1] == "log-pass":
+        lp = argparse.ArgumentParser()
+        lp.add_argument("cmd"); lp.add_argument("--earth", required=True); lp.add_argument("--dir", required=True)
+        b = lp.parse_args()
+        e = json.load(open(b.earth)) if os.path.exists(b.earth) and os.path.getsize(b.earth) else None
+        print("logged passes:", log_passes(e, b.dir))
+        sys.exit(0)
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default="earth.json")
     ap.add_argument("--lakefront")

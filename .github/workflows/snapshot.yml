@@ -45,16 +45,11 @@ jobs:
         run: |
           if [ -z "$GEE_SERVICE_ACCOUNT_KEY" ]; then echo "no GEE_SERVICE_ACCOUNT_KEY secret; skipping"; exit 0; fi
           pip install -q earthengine-api && python -m app.weathernext --out "$RUNNER_TEMP/storm/wn3.json"
-      - name: Scorecard (log this forecast at the buoys, score past ones)
+      - name: Check out the learn branch (scorecard, learned correction, ERA5 cache)
         continue-on-error: true
-        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          tools/learn_branch.sh checkout "$RUNNER_TEMP/L"
-          python -m app.learn log --sup "$RUNNER_TEMP/storm/sup.json" --glwu "$RUNNER_TEMP/glwu.json" --dir "$RUNNER_TEMP/L"
-          python -m app.learn score --dir "$RUNNER_TEMP/L"
-          tools/learn_branch.sh push "$RUNNER_TEMP/L" "scorecard $(date -u +%Y-%m-%dT%H:%MZ)"
+        run: tools/learn_branch.sh checkout "$RUNNER_TEMP/L"
       - name: Lakefront map, lake temperature and stations
         continue-on-error: true
         env:
@@ -73,6 +68,18 @@ jobs:
           git show origin/snapshot:earth.json > "$RUNNER_TEMP/prev_earth.json" 2>/dev/null || true
           python -m app.earth --out "$RUNNER_TEMP/storm/earth.json" --lakefront "$RUNNER_TEMP/storm/lakefront.json" \
             --era5 "$RUNNER_TEMP/L/era5" --era5-climate "$RUNNER_TEMP/L/era5_climate.json" --prev "$RUNNER_TEMP/prev_earth.json"
+      - name: Scorecard (log this forecast at the buoys, score past ones)
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -d "$RUNNER_TEMP/L" ] || tools/learn_branch.sh checkout "$RUNNER_TEMP/L"
+          python -m app.learn log --sup "$RUNNER_TEMP/storm/sup.json" --glwu "$RUNNER_TEMP/glwu.json" --dir "$RUNNER_TEMP/L" \
+            --earth "$RUNNER_TEMP/storm/earth.json" --wn3 "$RUNNER_TEMP/storm/wn3.json"
+          python -m app.earth log-pass --earth "$RUNNER_TEMP/storm/earth.json" --dir "$RUNNER_TEMP/L" || true
+          python -m app.learn score --dir "$RUNNER_TEMP/L"
+          tools/learn_branch.sh push "$RUNNER_TEMP/L" "scorecard $(date -u +%Y-%m-%dT%H:%MZ)"
       - name: Build scene from the newest KLOT scans
         continue-on-error: true
         env:
@@ -94,7 +101,7 @@ jobs:
           python -m app.levels --days 800 --out "$M/levels.json" || echo "no water levels"
           ls -la "$M"
           python tools/build_world.py --out "$OUT/world.html" --scene "$OUT/scene.json" --sup "$OUT/sup.json" --lakefront "$OUT/lakefront.json" \
-            --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M"/funwave_*.json --validate "$M/validate.json" --levels "$M/levels.json" --earth "$OUT/earth.json" \
+            --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M"/funwave_*.json --validate "$M/validate.json" --levels "$M/levels.json" --earth "$OUT/earth.json" --wn3 "$OUT/wn3.json" \
             --history "$M"/history-*.json --sessions sessions/*.json --imports examples/*.json --split \
             --learn "$RUNNER_TEMP/correction.json" --scorecard "$RUNNER_TEMP/L/scorecard.json" \
             --start '{"mode":"live","view":[41.9203,-87.6195,1.58,284,34]}'

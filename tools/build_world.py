@@ -240,7 +240,7 @@ def merge_earth(lakefront, earth):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
-    for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track", "levels", "earth"):
+    for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track", "levels", "earth", "wn3"):
         ap.add_argument("--" + k)
     ap.add_argument("--learn", help="correction.json from the learn branch (experimental learned wave correction)")
     ap.add_argument("--scorecard", help="scorecard.json from the learn branch (forecast vs buoy by lead time)")
@@ -260,7 +260,7 @@ def main():
     if earth:
         lakefront, earth = merge_earth(lakefront, earth)
     blocks = {
-        "scene-data": load(a.scene), "sup-data": load(a.sup), "lakefront-data": lakefront, "earth-data": earth, "track-data": load(a.track),
+        "scene-data": load(a.scene), "sup-data": load(a.sup), "lakefront-data": lakefront, "earth-data": earth, "wn3-data": load(a.wn3), "track-data": load(a.track),
         "bathy-data": thin_bathy(load(a.bathy)), "swan-data": coarsen_swan(load(a.swan)),
         "funwave-data": quantize_funwave([load(p) for p in a.funwave]) or None, "validate-data": summarize_validation(load(a.validate)),
         "import-data": [d for d in (load(p) for p in a.imports) if d] or None,

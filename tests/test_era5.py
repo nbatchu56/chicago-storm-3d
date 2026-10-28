@@ -86,3 +86,22 @@ def test_cv_reports_north_big():
         p["obs_hs"] = max(p["obs_hs"], 1.2) if p["wdir"] in (30, 300) else p["obs_hs"]
     nb = learn.cross_validate(ps)["north_big"]
     assert nb["raw"]["hours"] > 100 and nb["learned"]["hours"] == nb["raw"]["hours"]
+
+
+def test_wind_driven_spins_up_and_aligns():
+    t0 = T0 + dt.timedelta(hours=9)
+    ser = {"t": [(T0 + dt.timedelta(hours=k)).isoformat() for k in range(55)], "wspd": [12.0] * 55, "wdir": [0.0] * 55}
+    v = learn.wind_driven("45198", ser, t0, 49)
+    assert len(v) == 49 and v[0] > 0.5 and v[-1] is None and v[45] >= v[0]       # the series ends 46 h after t0
+    assert learn.wind_driven("45198", {"t": [(t0 + dt.timedelta(hours=2)).isoformat()], "wspd": [5], "wdir": [0]}, t0, 5) is None
+    assert learn.wind_driven("45198", None, t0, 5) is None
+
+
+def test_log_forecast_with_gfs(tmp_path):
+    t0 = T0 + dt.timedelta(hours=6)
+    sup = {"start": t0.isoformat(), "buoy_fc": {"45198": {"t0": t0.isoformat(), "raw": [0.5] * 10}}}
+    ser = {"t": [(T0 + dt.timedelta(hours=k)).isoformat() for k in range(20)], "wspd": [8.0] * 20, "wdir": [200.0] * 20}
+    import json
+    path = learn.log_forecast(sup, str(tmp_path), winds={"gfs": {"45198": ser}, "wn3": {}})
+    e = json.loads(open(path).read().strip())
+    assert len(e["buoys"]["45198"]["gfs"]) == 10 and "wn3" not in e["buoys"]["45198"]
