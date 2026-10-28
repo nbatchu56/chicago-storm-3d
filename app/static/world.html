@@ -3105,20 +3105,20 @@ function updateHud(rr, tp) {
   const sky = rr > 0.2 ? (C.snow ? "snow" : "rain") : U.uOvercast.value > 0.6 ? "cloud" : U.uOvercast.value > 0.25 ? "partly" : C.sun && C.sun.el < -6 ? "night" : "sun";
   const wx = rr > 0.2 ? `${C.snow ? "Snow" : "Rain"} ${rr.toFixed(1)} mm/h` : { cloud: "Overcast", partly: "Partly cloudy", night: "Clear night", sun: "Clear" }[sky];
   const hs = C.fwHs != null ? C.fwHs : tot, live = S.mode === "live" || S.mode === "forecast", W = (DATA.lake && DATA.lake.wx) || {};
+  const wdirW = C.systems[0] ? C.systems[0].dir : C.off ? C.off.dir : C.dir;   // where the main waves come from
   // the two numbers that matter on the water
   $("#hero").innerHTML = `<div class="tile"><div class="k">Wind<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${(C.dir + 180) % 360}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg></div>
       <div class="v"><span class="n">${mph(C.wind)}</span><span class="u">mph</span></div><div class="s">from <em>${compass(C.dir)}</em>${C.gust ? ` · G <em>${mph(C.gust)}</em>` : ""}</div></div>
-    <div class="tile"><div class="k">Waves${C.fwHs != null ? " · FUNWAVE" : ""}</div>
+    <div class="tile"><div class="k">Waves${C.fwHs != null ? " · FUNWAVE" : ""}${hs > 0.01 ? `<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${(wdirW + 180) % 360}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg>` : ""}</div>
       <div class="v">${hs > 0.01 ? `<span class="n">${ft(hs)}</span><span class="u">ft</span>` : `<span class="n" style="font-size:22px">Calm</span>`}</div>
-      <div class="s">${hs > 0.01 ? `<em>${tpk.toFixed(1)} s</em> · ${Math.round(613 * hs ** 2)} J/m²` : "under 0.1 ft"}</div></div>`;
+      <div class="s">${hs > 0.01 ? `from <em>${compass(wdirW)}</em> · <em>${tpk.toFixed(1)} s</em>` : "under 0.1 ft"}</div></div>`;
   const pill = (icon, html, cls = "", st = "") => `<span class="p ${cls}"${st ? ` style="${st}"` : ""}>${icon ? WXI[icon] : ""}${html}</span>`;
-  let wl = pill(sky, wx) + (C.airC != null ? pill("", `<i>Air</i> ${Math.round(cToF(C.airC))}°`) : "") + (C.waterC != null ? pill("", `<i>Water</i> ${Math.round(cToF(C.waterC))}°`) : "");
+  let wl = pill(sky, wx) + (C.airC != null ? pill("", `<i>Air</i> ${Math.round(cToF(C.airC))}°`) : "");
   if (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) wl += pill("", `<i>Ice</i> ${S.mode === "exp" ? Math.round(S.x.ice * 100) + "%" : "NOAA"}`);
   const E = DATA.earth || {}, UP = E.water && E.water.upwelling, NM = E.normals || {};
   if (live && UP && UP.upwelling) wl += pill("", `Upwelling: shore water ${Math.round(UP.delta_c * 1.8)}° colder than offshore`, "spc", "background:#8fd0ff;color:#0b2540");
   if (live && NM.era5 && NM.era5.wind_ms && C.wind > NM.era5.wind_ms.p90) wl += pill("", "Windier than 9 in 10 hours this time of year", "spc", "background:#ffd38a;color:#3a2400");
   if (live && NM.era5 && NM.era5.air_c && C.airC != null) { const d = (C.airC - NM.era5.air_c.p50) * 1.8; if (Math.abs(d) >= 5) wl += pill("", `<i>Air</i> ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° vs usual`); }
-  if (live && NM.lake && NM.lake.mean_c != null && C.waterC != null) { const d = (C.waterC - NM.lake.mean_c) * 1.8; if (Math.abs(d) >= 3) wl += pill("", `<i>Water</i> ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° vs usual`); }
   const spc = W.spc, nowMs = Date.now();
   if (live && spc && spc.cat && (!spc.expire || new Date(spc.expire).getTime() > nowMs))
     wl += pill("", spc.cat === "TSTM" ? "Thunder possible" : `Severe: ${spc.label.replace(/ risk$/i, "")} ${spc.level}/5`, "spc", `background:${spc.color || "#f6f67f"}`);
@@ -3127,19 +3127,24 @@ function updateHud(rr, tp) {
   // the readouts, by topic: wind (other stations and models), waves, water, your paddle
   const wind = [], waves = [], water = [], you = [];
   if (S.mode === "live") for (const m of W.metar || []) { if (nowMs - new Date(m.t).getTime() > 3 * 3600e3 || m.wspd_kt == null) continue;
-    const k = (v) => Math.round(v * 1.15078); wind.push([m.name, `${m.wspd_kt < 1 ? "calm" : `${k(m.wspd_kt)} mph ${m.vrb ? "var" : compass(m.wdir)}${m.wgst_kt ? ` G${k(m.wgst_kt)}` : ""}`}${m.temp_c != null ? ` · ${Math.round(cToF(m.temp_c))}°` : ""}`]); }
+    const k = (v) => Math.round(v * 1.15078); wind.push([m.name, `${m.wspd_kt < 1 ? "calm" : `${k(m.wspd_kt)} mph ${m.vrb ? "var" : compass(m.wdir)}${m.wgst_kt ? ` · G ${k(m.wgst_kt)}` : ""}`}`]); }
   if (live && C.gfs) wind.push(["GFS model", `${mph(C.gfs.wspd)} mph ${compass(C.gfs.wdir)}`]);
-  if (live && C.wn3) wind.push(["WeatherNext 3", `${mph(C.wn3.wspd)} mph ${C.wn3.wdir != null ? compass(C.wn3.wdir) : ""}${C.wn3.lo != null && C.wn3.hi != null ? ` (${mph(C.wn3.lo)}–${mph(C.wn3.hi)})` : ""}`]);
-  if (live && NM.era5 && NM.era5.wind_ms) wind.push(["Usual (ERA5)", `${mph(NM.era5.wind_ms.p50)} mph · 1 in 10 h over ${mph(NM.era5.wind_ms.p90)}`]);
+  if (live && C.wn3) wind.push(["WeatherNext 3", `${mph(C.wn3.wspd)} mph ${C.wn3.wdir != null ? compass(C.wn3.wdir) : ""}${C.wn3.lo != null && C.wn3.hi != null ? ` · ${mph(C.wn3.lo)}–${mph(C.wn3.hi)} likely` : ""}`]);
+  if (live && NM.era5 && NM.era5.wind_ms) wind.push(["Usual (ERA5)", `${mph(NM.era5.wind_ms.p50)} mph · 1 in 10 h over ${mph(NM.era5.wind_ms.p90)} mph`]);
   if (tp && tp.inside && C.wind > 0.5) { const rel = Math.abs(angd(tp.hd, C.dir)); wind.push(["Your heading", rel < 60 ? "into the wind" : rel > 120 ? "with the wind" : "cross-wind"]); }
-  if (C.swan && C.off) waves.push(["Offshore", `${ft(C.off.hs)} ft · ${C.off.tp.toFixed(1)} s from ${compass(C.off.dir)}`]);
+  if (hs > 0.01) waves.push(["Energy", `${Math.round(613 * hs ** 2)} J/m²`]);
+  if (C.swan && C.off) waves.push(["Offshore", `${ft(C.off.hs)} ft ${compass(C.off.dir)} · ${C.off.tp.toFixed(1)} s`]);
   if (C.fwHs != null && tot > 0.01) waves.push(["Model (SWAN)", `${ft(tot)} ft`]);
-  if (C.fwCross != null) waves.push(["Crossing seas", `${Math.round(C.fwCross * 100)}%${C.fwCross >= 0.5 ? " (confused)" : ""}`]);
+  if (C.fwCross != null) waves.push(["Crossing seas", `${Math.round(C.fwCross * 100)}%${C.fwCross >= 0.5 ? " · confused" : ""}`]);
   { const LE = DATA.learn && DATA.learn.correction && DATA.learn.correction.era5, M = LE && LE["45198"] && LE["45198"].monthly_hs_m && LE["45198"].monthly_hs_m[String(new Date(S.t).getMonth() + 1)];
-    if (live && M) waves.push(["Usual (ERA5)", `${ft(M.p50)} ft this month · 1 in 10 h over ${ft(M.p90)} ft`]); }
+    if (live && M) waves.push(["Usual (ERA5)", `${ft(M.p50)} ft · 1 in 10 h over ${ft(M.p90)} ft`]); }
+  if (C.waterC != null) { const d = live && NM.lake && NM.lake.mean_c != null ? (C.waterC - NM.lake.mean_c) * 1.8 : null;
+    water.push(["Temperature", `${Math.round(cToF(C.waterC))}°${d != null && Math.abs(d) >= 3 ? ` · ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° vs usual` : ""}`]); }
   if (C.depth != null) water.push(["Depth here", C.depth > 0 ? `${(C.depth * FT).toFixed(C.depth * FT < 10 ? 1 : 0)} ft` : "dry"]);
-  { const fnu = satAt(EARTH.s2, C.xk, C.yk); if (fnu != null && live) water.push(["Clarity", `${fnuWord(fnu)} · ${fnu.toFixed(1)} FNU (${E.s2.label})`]); }
+  { const fnu = satAt(EARTH.s2, C.xk, C.yk); if (fnu != null && live) water.push(["Clarity", `${fnuWord(fnu)} · ${fnu.toFixed(1)} FNU · ${E.s2.label}`]); }
   if (tp && tp.inside) you.push(["Speed", `${(tp.v * MPH).toFixed(1)} mph ${compass(tp.hd)}${tp.hr ? ` · ${tp.hr} bpm` : ""}`]);
+  // presentation rules for all of the above: speeds "N mph DIR · G N"; waves "N.N ft DIR · N.N s"; temperatures "N°" (F);
+  // ranges "N–N"; a middle dot separates the parts of one reading
   const grp = (name, rs) => rs.length ? `<dt class="grp">${name}</dt><dd class="grp"></dd>` + rs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("") : "";
   $("#readouts").innerHTML = grp("Wind", wind) + grp("Waves", waves) + grp("Water", water) + grp("Your paddle", you);
   $("#source").textContent = [RS ? RS.label + lead : S.mode === "forecast" ? "Clouds from forecast sky cover" : "No radar for this time", ...C.src].join(" · ");
