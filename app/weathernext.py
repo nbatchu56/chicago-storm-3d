@@ -9,9 +9,9 @@ fully ingested for the first 48 h and sample the points. Earth Engine gets a run
 
 Two ways in, same output. Earth Engine: a service-account key (JSON) registered for Earth Engine with WeatherNext
 access, in the GEE_SERVICE_ACCOUNT_KEY environment variable (or a path to it in GEE_SERVICE_ACCOUNT_FILE);
-GEE_PROJECT overrides the key's project. BigQuery (tried first when WN3_BQ_TABLE is set): the WeatherNext 3 Analytics
-Hub listing linked into your project, e.g. WN3_BQ_TABLE=my-project.weathernext.weathernext_3_0_0_0p1deg (the 0.05
-station table is taken from the same dataset); the same key must be able to run query jobs in that project
+GEE_PROJECT overrides the key's project. BigQuery (used when WN3_BQ_TABLE is set): the WeatherNext 3 Analytics
+Hub listing linked into your project, e.g. WN3_BQ_TABLE=my-project.weathernext_3.weathernext_3_0_0_0p1deg (~100 MB
+a run; WN3_BQ_STATION=1 adds the 0.05 station table from the same dataset, which a free-tier project can't query); the same key must be able to run query jobs in that project
 (BigQuery Job User) and read the linked dataset. Either way WeatherNext access is granted on request by Google
 (developers.google.com/weathernext). Data is experimental (DeepMind terms), not for real-world decisions.
 
@@ -42,6 +42,7 @@ BANDS_10 = ["wind_speed_10m_mean", "wind_speed_10m_p10", "wind_speed_10m_p50", "
 BANDS_05 = ["station_head_temperature_2m_mean", "station_head_temperature_2m_p10", "station_head_temperature_2m_p90",
             "station_head_dewpoint_temperature_2m_mean"]
 SCALE = {COL_10: 11132, COL_05: 5566}
+BANDS_10_BQ = BANDS_10 + ["dewpoint_temperature_2m_mean"]   # the BigQuery table also has dewpoint at 0.1 deg
 
 
 def parse_time(s):
@@ -98,6 +99,8 @@ def to_series(features, init):
                      precip_mm_p90=g("total_precipitation_1hr_p90", lambda v: _round(None if v is None else v * 1000.0, 2)),
                      t2m_c=g("temperature_2m_mean", k2c),
                      mslp_hpa=g("mean_sea_level_pressure_mean", lambda v: _round(None if v is None else v / 100.0, 1)))
+            if any("dewpoint_temperature_2m_mean" in by_h[h] for h in hs):
+                s["td2m_c"] = g("dewpoint_temperature_2m_mean", k2c)
         if any("station_head_temperature_2m_mean" in by_h[h] for h in hs):
             s.update(st_t2m_c=g("station_head_temperature_2m_mean", k2c), st_t2m_c_p10=g("station_head_temperature_2m_p10", k2c),
                      st_t2m_c_p90=g("station_head_temperature_2m_p90", k2c), st_td2m_c=g("station_head_dewpoint_temperature_2m_mean", k2c))
@@ -109,15 +112,22 @@ def _round(v, n):
     return None if v is None or (isinstance(v, float) and not math.isfinite(v)) else round(float(v), n)
 
 
+BQ_MAX_BYTES = 5 * 1024 ** 3     # a guard: a run reads ~25 MB when the geography clustering prunes as it should
+
+
 def bq_query(table, bands, now, hours=HOURS):
-    """GoogleSQL for the point samples from a WeatherNext 3 BigQuery table (one row per point x init x lead hour)."""
+    """GoogleSQL for the point samples from a WeatherNext 3 BigQuery table (one row per point x init x lead hour).
+    The cells are picked with a constant MULTIPOINT so the table's geography clustering prunes the scan (a join
+    predicate alone doesn't); then each point takes its own cell (two points can share one: North Ave and 45198)."""
     pts = ", ".join(f"STRUCT('{k}' AS id, ST_GEOGPOINT({lo}, {la}) AS g)" for k, (la, lo) in POINTS.items())
+    multi = ", ".join(f"({lo} {la})" for la, lo in POINTS.values())
     cols = ", ".join(f"f.{b}" for b in bands)
-    since = (now - dt.timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
+    since = (now - dt.timedelta(hours=30)).strftime("%Y-%m-%d %H:%M:%S")   # runs land ~7.5 h after init
     return (f"SELECT p.id, t.init_time, f.hours AS forecast_hour, {cols}\n"
             f"FROM `{table}` AS t, UNNEST(t.forecast) AS f, UNNEST([{pts}]) AS p\n"
-            f"WHERE t.init_time >= TIMESTAMP('{since} UTC') AND ST_INTERSECTS(t.geography_polygon, p.g)\n"
-            f"  AND f.hours BETWEEN 1 AND {hours}")
+            f"WHERE t.init_time >= TIMESTAMP('{since} UTC')\n"
+            f"  AND ST_INTERSECTS(t.geography_polygon, ST_GEOGFROMTEXT('MULTIPOINT({multi})'))\n"
+            f"  AND ST_INTERSECTS(t.geography_polygon, p.g) AND f.hours BETWEEN 1 AND {hours}")
 
 
 def bq_series(rows, hours=HOURS):
@@ -146,7 +156,9 @@ def init_bq():
 
 
 def sample_bq(client, table, bands, now, hours=HOURS):
-    rows = [dict(r) for r in client.query(bq_query(table, bands, now, hours)).result()]
+    from google.cloud import bigquery
+    cfg = bigquery.QueryJobConfig(maximum_bytes_billed=BQ_MAX_BYTES, labels={"app": "lakeview"})
+    rows = [dict(r) for r in client.query(bq_query(table, bands, now, hours), job_config=cfg).result()]
     init, ser = bq_series(rows, hours)
     if not init:
         raise RuntimeError(f"{table}: no init with all {hours} hours at every point ({len(rows)} rows)")
@@ -202,7 +214,11 @@ def fetch(out_path, now=None):
     if bq_table:                                     # BigQuery: the linked listing; the station table sits beside the 0.1 one
         client = init_bq()
         base = bq_table.rsplit(".", 1)[0]
-        products = (("init", f"{base}.{COL_10.rsplit('/', 1)[-1]}", BANDS_10), ("init_station", f"{base}.{COL_05.rsplit('/', 1)[-1]}", BANDS_05))
+        products = (("init", bq_table, BANDS_10_BQ),)
+        # the 0.05 station table has no geography clustering worth the name for a free-tier (sandbox) project: its
+        # worst-case estimate (~1.3 TB a run) is refused there, so it's opt-in for a billed project
+        if os.environ.get("WN3_BQ_STATION") == "1":
+            products += (("init_station", f"{base}.{COL_05.rsplit('/', 1)[-1]}", BANDS_05),)
         out["source"] = "bigquery"
     else:
         ee = init_ee()

@@ -42,7 +42,7 @@ jobs:
         timeout-minutes: 6
         env:
           GEE_SERVICE_ACCOUNT_KEY: ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
-          WN3_BQ_TABLE: ${{ vars.WN3_BQ_TABLE }}   # the linked WeatherNext 3 listing, e.g. my-project.weathernext.weathernext_3_0_0_0p1deg
+          WN3_BQ_TABLE: ${{ vars.WN3_BQ_TABLE }}   # the linked WeatherNext 3 listing, e.g. my-project.weathernext_3.weathernext_3_0_0_0p1deg
         run: |
           if [ -z "$GEE_SERVICE_ACCOUNT_KEY" ]; then echo "no GEE_SERVICE_ACCOUNT_KEY secret; skipping"; exit 0; fi
           pip install -q earthengine-api google-cloud-bigquery && python -m app.weathernext --out "$RUNNER_TEMP/storm/wn3.json"

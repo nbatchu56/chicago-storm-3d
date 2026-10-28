@@ -41,7 +41,8 @@ def test_bq_query_shape():
     q = wn.bq_query("p.d.weathernext_3_0_0_0p1deg", wn.BANDS_10, dt.datetime(2026, 10, 28, 20, tzinfo=dt.timezone.utc))
     assert "FROM `p.d.weathernext_3_0_0_0p1deg` AS t, UNNEST(t.forecast) AS f" in q
     assert "ST_GEOGPOINT(-87.622, 41.915)" in q and "'northave' AS id" in q      # lon first
-    assert "t.init_time >= TIMESTAMP('2026-10-26 20:00:00 UTC')" in q and "f.hours BETWEEN 1 AND 48" in q
+    assert "t.init_time >= TIMESTAMP('2026-10-27 14:00:00 UTC')" in q and "f.hours BETWEEN 1 AND 48" in q
+    assert "ST_GEOGFROMTEXT('MULTIPOINT((-87.655 42.135), (-87.563 41.892), (-87.622 41.915))')" in q   # constant: prunes
     assert all(f"f.{b}" in q for b in wn.BANDS_10)
 
 
@@ -54,3 +55,8 @@ def test_bq_series_newest_complete_init():
     assert init == "2026-10-28T06:00:00+00:00"
     assert ser["northave"]["wspd"][0] == 4.0 and ser["northave"]["t"][0] == "2026-10-28T07:00:00+00:00"
     assert wn.bq_series(rows[-5:]) == (None, {})
+
+
+def test_to_series_dewpoint_from_bq():
+    feats = [{"id": "northave", "forecast_hour": 1, "wind_speed_10m_mean": 3.0, "dewpoint_temperature_2m_mean": 278.15}]
+    assert wn.to_series(feats, "2026-10-28T13:00:00Z")["northave"]["td2m_c"] == [5.0]
