@@ -236,6 +236,7 @@ def build_water(ee, now, glsea):
         if len(hh):
             times[k] = dt.datetime.fromtimestamp(float(np.max(hh)) * 3600, UTC).isoformat(timespec="minutes")
     grid = page_grid(lats, lons, fused)
+    times = {k: v for k, v in times.items() if counts.get(k)}              # passes GLSEA already holds aren't shown
     lab = [f"{'Landsat' if k == 'landsat' else 'MODIS'} {v[5:10]}" for k, v in sorted(times.items(), key=lambda x: x[1], reverse=True)]
     if counts.get("glsea"):
         lab.append(f"GLSEA {str((glsea or {}).get('time', ''))[5:10]}")
