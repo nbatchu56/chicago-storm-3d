@@ -34,3 +34,23 @@ def test_to_series_units_and_order():
     assert p["wspd"] == [6.0, 7.0] and p["wdir"] == [0.0, 0.0]
     assert p["precip_mm"] == [1.2, 1.2] and p["t2m_c"] == [10.0, 10.0] and p["mslp_hpa"] == [1013.2, 1013.2]
     assert "st_t2m_c" not in p and s["45198"]["st_t2m_c"] == [0.0] and "wspd" not in s["45198"]
+
+
+def test_bq_query_shape():
+    import datetime as dt
+    q = wn.bq_query("p.d.weathernext_3_0_0_0p1deg", wn.BANDS_10, dt.datetime(2026, 10, 28, 20, tzinfo=dt.timezone.utc))
+    assert "FROM `p.d.weathernext_3_0_0_0p1deg` AS t, UNNEST(t.forecast) AS f" in q
+    assert "ST_GEOGPOINT(-87.622, 41.915)" in q and "'northave' AS id" in q      # lon first
+    assert "t.init_time >= TIMESTAMP('2026-10-26 20:00:00 UTC')" in q and "f.hours BETWEEN 1 AND 48" in q
+    assert all(f"f.{b}" in q for b in wn.BANDS_10)
+
+
+def test_bq_series_newest_complete_init():
+    import datetime as dt
+    t0, t1 = dt.datetime(2026, 10, 28, 6, tzinfo=dt.timezone.utc), dt.datetime(2026, 10, 28, 12, tzinfo=dt.timezone.utc)
+    rows = [{"id": k, "init_time": t0, "forecast_hour": h, "wind_speed_10m_mean": 4.0} for k in wn.POINTS for h in range(1, 49)]
+    rows += [{"id": k, "init_time": t1, "forecast_hour": h, "wind_speed_10m_mean": 6.0} for k in wn.POINTS for h in range(1, 20)]
+    init, ser = wn.bq_series(rows)                  # the 12Z init is newer but only 19 h in: the 06Z one is used
+    assert init == "2026-10-28T06:00:00+00:00"
+    assert ser["northave"]["wspd"][0] == 4.0 and ser["northave"]["t"][0] == "2026-10-28T07:00:00+00:00"
+    assert wn.bq_series(rows[-5:]) == (None, {})

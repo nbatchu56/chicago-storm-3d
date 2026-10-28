@@ -7,11 +7,15 @@ Google DeepMind WeatherNext 3 (experimental ensemble) at a few lakefront points,
 Each collection holds ensemble statistics (mean, p10..p90) per forecast hour; we take the newest init that is
 fully ingested for the first 48 h and sample the points. Earth Engine gets a run ~7.5 h after its init time.
 
-Credentials: a service-account key (JSON) registered for Earth Engine with WeatherNext access, in the
-GEE_SERVICE_ACCOUNT_KEY environment variable (or a path to it in GEE_SERVICE_ACCOUNT_FILE). GEE_PROJECT
-overrides the key's project. Data is experimental (DeepMind terms), not for real-world decisions.
+Two ways in, same output. Earth Engine: a service-account key (JSON) registered for Earth Engine with WeatherNext
+access, in the GEE_SERVICE_ACCOUNT_KEY environment variable (or a path to it in GEE_SERVICE_ACCOUNT_FILE);
+GEE_PROJECT overrides the key's project. BigQuery (tried first when WN3_BQ_TABLE is set): the WeatherNext 3 Analytics
+Hub listing linked into your project, e.g. WN3_BQ_TABLE=my-project.weathernext.weathernext_3_0_0_0p1deg (the 0.05
+station table is taken from the same dataset); the same key must be able to run query jobs in that project
+(BigQuery Job User) and read the linked dataset. Either way WeatherNext access is granted on request by Google
+(developers.google.com/weathernext). Data is experimental (DeepMind terms), not for real-world decisions.
 
-    python -m app.weathernext --out wn3.json        (needs: pip install earthengine-api)
+    python -m app.weathernext --out wn3.json        (needs: pip install earthengine-api, or google-cloud-bigquery)
 """
 
 import argparse
@@ -105,13 +109,63 @@ def _round(v, n):
     return None if v is None or (isinstance(v, float) and not math.isfinite(v)) else round(float(v), n)
 
 
-def init_ee():
-    import ee
+def bq_query(table, bands, now, hours=HOURS):
+    """GoogleSQL for the point samples from a WeatherNext 3 BigQuery table (one row per point x init x lead hour)."""
+    pts = ", ".join(f"STRUCT('{k}' AS id, ST_GEOGPOINT({lo}, {la}) AS g)" for k, (la, lo) in POINTS.items())
+    cols = ", ".join(f"f.{b}" for b in bands)
+    since = (now - dt.timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
+    return (f"SELECT p.id, t.init_time, f.hours AS forecast_hour, {cols}\n"
+            f"FROM `{table}` AS t, UNNEST(t.forecast) AS f, UNNEST([{pts}]) AS p\n"
+            f"WHERE t.init_time >= TIMESTAMP('{since} UTC') AND ST_INTERSECTS(t.geography_polygon, p.g)\n"
+            f"  AND f.hours BETWEEN 1 AND {hours}")
+
+
+def bq_series(rows, hours=HOURS):
+    """Query rows (dicts with id, init_time, forecast_hour, bands) -> (init ISO string, series) for the newest init
+    that has every lead hour 1..hours at every point; None, {} when no init is complete yet."""
+    by_init = {}
+    for r in rows:
+        t = r["init_time"]
+        t = t if isinstance(t, dt.datetime) else parse_time(t)
+        by_init.setdefault(t.astimezone(UTC), []).append(r)
+    for init in sorted(by_init, reverse=True):
+        rs = by_init[init]
+        if all(len({r["forecast_hour"] for r in rs if r["id"] == k}) >= hours for k in POINTS):
+            key = init.isoformat()
+            return key, to_series(rs, key)
+    return None, {}
+
+
+def init_bq():
+    from google.cloud import bigquery
+    from google.oauth2 import service_account
+    info = json.loads(_key())
+    creds = service_account.Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    project = os.environ.get("WN3_BQ_PROJECT") or os.environ.get("GEE_PROJECT") or info.get("project_id")
+    return bigquery.Client(project=project, credentials=creds)
+
+
+def sample_bq(client, table, bands, now, hours=HOURS):
+    rows = [dict(r) for r in client.query(bq_query(table, bands, now, hours)).result()]
+    init, ser = bq_series(rows, hours)
+    if not init:
+        raise RuntimeError(f"{table}: no init with all {hours} hours at every point ({len(rows)} rows)")
+    log.info("%s init %s: %d rows", table.rsplit(".", 1)[-1], init, len(rows))
+    return init, ser
+
+
+def _key():
     key = os.environ.get("GEE_SERVICE_ACCOUNT_KEY")
     if not key and os.environ.get("GEE_SERVICE_ACCOUNT_FILE"):
         key = open(os.environ["GEE_SERVICE_ACCOUNT_FILE"]).read()
     if not key:
         raise RuntimeError("no GEE_SERVICE_ACCOUNT_KEY / GEE_SERVICE_ACCOUNT_FILE")
+    return key
+
+
+def init_ee():
+    import ee
+    key = _key()
     info = json.loads(key)
     creds = ee.ServiceAccountCredentials(info["client_email"], key_data=key)
     ee.Initialize(creds, project=os.environ.get("GEE_PROJECT") or info.get("project_id"))
@@ -141,13 +195,22 @@ def sample(ee, col_id, bands, now, hours=HOURS):
 
 def fetch(out_path, now=None):
     now = now or dt.datetime.now(UTC)
-    ee = init_ee()
     out = {"version": 1, "model": "Google DeepMind WeatherNext 3 (experimental)", "generated": now.isoformat(timespec="seconds"),
            "terms": "Experimental data, (c) DeepMind Technologies Limited; not intended, validated, or approved for real world use.",
            "points": {k: {"lat": la, "lon": lo} for k, (la, lo) in POINTS.items()}, "notes": []}
-    for key, col, bands in (("init", COL_10, BANDS_10), ("init_station", COL_05, BANDS_05)):
+    bq_table = os.environ.get("WN3_BQ_TABLE")
+    if bq_table:                                     # BigQuery: the linked listing; the station table sits beside the 0.1 one
+        client = init_bq()
+        base = bq_table.rsplit(".", 1)[0]
+        products = (("init", f"{base}.{COL_10.rsplit('/', 1)[-1]}", BANDS_10), ("init_station", f"{base}.{COL_05.rsplit('/', 1)[-1]}", BANDS_05))
+        out["source"] = "bigquery"
+    else:
+        ee = init_ee()
+        products = (("init", COL_10, BANDS_10), ("init_station", COL_05, BANDS_05))
+        out["source"] = "earthengine"
+    for key, col, bands in products:
         try:
-            init, ser = sample(ee, col, bands, now)
+            init, ser = sample_bq(client, col, bands, now) if bq_table else sample(ee, col, bands, now)
         except Exception as e:                       # one product failing keeps the other
             log.warning("%s: %s", col, e)
             out["notes"].append(f"{col.rsplit('/', 1)[-1]}: {e}")
