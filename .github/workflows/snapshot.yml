@@ -37,6 +37,14 @@ jobs:
         continue-on-error: true
         timeout-minutes: 6
         run: pip install -q eccodes && python -m app.glwu --out "$RUNNER_TEMP/glwu.json"
+      - name: Google DeepMind WeatherNext 3 at the lakefront (experimental; skipped without the key)
+        continue-on-error: true
+        timeout-minutes: 6
+        env:
+          GEE_SERVICE_ACCOUNT_KEY: ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          if [ -z "$GEE_SERVICE_ACCOUNT_KEY" ]; then echo "no GEE_SERVICE_ACCOUNT_KEY secret; skipping"; exit 0; fi
+          pip install -q earthengine-api && python -m app.weathernext --out "$RUNNER_TEMP/storm/wn3.json"
       - name: Scorecard (log this forecast at the buoys, score past ones)
         continue-on-error: true
         timeout-minutes: 5
@@ -84,7 +92,7 @@ jobs:
           OUT: ${{ runner.temp }}/storm
         run: |
           mkdir -p "$RUNNER_TEMP/pub" && cd "$RUNNER_TEMP/pub"
-          for f in scene.json status.json sup.json lakefront.json probe.json world.html; do [ -f "$OUT/$f" ] && cp "$OUT/$f" .; done
+          for f in scene.json status.json sup.json lakefront.json probe.json wn3.json world.html; do [ -f "$OUT/$f" ] && cp "$OUT/$f" .; done
           [ -d "$OUT/data" ] && cp -r "$OUT/data" .   # the page's side files (lake bottom, SWAN, FUNWAVE, history)
           ls -la
           git init -q -b snapshot
