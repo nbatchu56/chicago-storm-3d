@@ -158,6 +158,10 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #minimap canvas { display: block; width: 150px; height: 222px; border-radius: 3px; cursor: crosshair; }
 #minimap .cap { font: 10.5px var(--font-ui); color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 #minimap { width: 162px; box-sizing: border-box; } #minimap .cap span { text-align: right; }
+#minimap:not(.ready) { visibility: hidden; }   /* an empty box until the map is drawn */
+/* the conditions box stops above the mini map (it scrolls inside when it's taller); on short screens the mini map goes */
+@media (min-width: 761px) { #hud { max-height: calc(100dvh - 2 * var(--gut) - 360px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); overflow-y: auto; overscroll-behavior: contain; } }
+@media (min-width: 761px) and (max-height: 700px) { #minimap { display: none; } #hud { max-height: calc(100dvh - 2 * var(--gut) - 96px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); } }
 #mmview { white-space: nowrap; flex: none; font: 600 10.5px var(--font-ui); color: var(--fg); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 3px; padding: 2px 6px; cursor: pointer; }
 #mmview:hover { border-color: var(--muted); }
 .mmstat { position: absolute; left: 12px; top: 12px; font: 600 10.5px var(--font-data); padding: 2px 6px; border-radius: 3px; background: rgba(9,15,21,.78); color: var(--obs); border: 1px solid rgba(92,200,232,.4); }
@@ -510,6 +514,9 @@ try { const q = localStorage.getItem("lakeworld-q"); if (q !== null) S.quality =
 // ---------------------------------------------------------------- renderer
 const canvas = $("#gl");
 function fail(title, text) { const m = $("#msg"); m.hidden = false; m.innerHTML = `<strong>${title}</strong><p>${text}</p>`; }
+// hand the main thread back between the heavy start-up steps, so frames draw and the controls answer while the map is
+// built and the models load (a message-channel task: unlike setTimeout or rAF it isn't held back in a background tab)
+const yieldUI = () => (window.scheduler && scheduler.yield) ? scheduler.yield() : new Promise((r) => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
 if (!window.THREE || !THREE.OrbitControls) { fail("3D library didn't load", "Check your connection and reload the page."); return; }
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance", logarithmicDepthBuffer: true }); }
@@ -890,7 +897,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600, 1, 1).rotateX(
 
 // ---------------------------------------------------------------- lakefront map (OSM): colour texture + water mask, buildings
 const MAP = { ok: false };
-function buildMap(LF) {
+async function buildMap(LF) {
   const feats = LF.osm || []; if (!feats.length) return;
   const [Sb, Wb, Nb, Eb] = LF.map_bbox, [x0, y0] = ll(Sb, Wb), [x1, y1] = ll(Nb, Eb), m2k = (pt) => [pt[0] / 1000, pt[1] / 1000];
   // ~2.4 m pixels (3.4 m on low-memory devices) over the whole map; SC scales drawn widths kept from the 3.4 m version
@@ -903,17 +910,24 @@ function buildMap(LF) {
   const mk = document.createElement("canvas"); mk.width = WPX; mk.height = HPX; const m = mk.getContext("2d", { willReadFrequently: true });
   m.fillStyle = "#000"; m.fillRect(0, 0, WPX, HPX); m.strokeStyle = "#fff"; m.lineWidth = 2.5; feats.filter((f) => f.kind === "coastline").forEach((f) => { path(m, f.pts, false); m.stroke(); });
   const md = m.getImageData(0, 0, WPX, HPX).data, mask = new Uint8Array(WPX * HPX), barrier = (i) => md[i * 4] > 100;
-  const flood = (sx, sy, val) => { const st = [sy * WPX + sx]; while (st.length) { const i = st.pop(); if (mask[i] || barrier(i)) continue; mask[i] = val; const x = i % WPX, y = (i / WPX) | 0;
-    if (x > 0) st.push(i - 1); if (x < WPX - 1) st.push(i + 1); if (y > 0) st.push(i - WPX); if (y < HPX - 1) st.push(i + WPX); } };
+  // (a typed stack, each pixel marked as it's pushed: the same pixels as a plain array stack, several times faster)
+  let FST = null; const flood = (sx, sy, val) => { const s0 = sy * WPX + sx; if (mask[s0] || barrier(s0)) return; FST = FST || new Int32Array(WPX * HPX); let sp = 0; FST[sp++] = s0; mask[s0] = val;
+    while (sp) { const i = FST[--sp], x = i % WPX, y = (i / WPX) | 0;
+      if (x > 0 && !mask[i - 1] && !barrier(i - 1)) { mask[i - 1] = val; FST[sp++] = i - 1; }
+      if (x < WPX - 1 && !mask[i + 1] && !barrier(i + 1)) { mask[i + 1] = val; FST[sp++] = i + 1; }
+      if (y > 0 && !mask[i - WPX] && !barrier(i - WPX)) { mask[i - WPX] = val; FST[sp++] = i - WPX; }
+      if (y < HPX - 1 && !mask[i + WPX] && !barrier(i + WPX)) { mask[i + WPX] = val; FST[sp++] = i + WPX; } } };
   const hasCoast = feats.some((f) => f.kind === "coastline");
   if (hasCoast) for (let y = 0; y < HPX; y += 23) if (!barrier(y * WPX + WPX - 1) && !mask[y * WPX + WPX - 1]) flood(WPX - 1, y, 1);
   let frac = 0; for (let i = 0; i < mask.length; i += 97) frac += mask[i] === 1; frac /= mask.length / 97;
+  FST = null; await yieldUI();
   MAP.coarse = !hasCoast || frac > 0.85 || frac < 0.08;
   if (MAP.coarse) { mask.fill(0); for (let py = 0; py < HPX; py++) for (let px = 0; px < WPX; px++) { const x = x0 + (px + .5) / WPX * (x1 - x0), y = y1 - (py + .5) / HPX * (y1 - y0); if (inLakeCoarse(x, y)) mask[py * WPX + px] = 1; } }
   const wc = document.createElement("canvas"); wc.width = WPX; wc.height = HPX; const w = wc.getContext("2d", { willReadFrequently: true });
   feats.filter((f) => f.kind === "water" && f.closed).forEach((f) => { w.fillStyle = f.harbour || /harbou?r|marina|lagoon|slip/i.test(f.name || "") ? "#f00" : "#0f0"; path(w, f.pts, true); w.fill(); });
   const wd = w.getImageData(0, 0, WPX, HPX).data;
   for (let i = 0; i < mask.length; i++) if (!mask[i]) { if (wd[i * 4] > 128) mask[i] = 2; else if (wd[i * 4 + 1] > 128) mask[i] = 3; }
+  await yieldUI();
   // colour map (land only matters; water is shaded live)
   const cv = document.createElement("canvas"); cv.width = WPX; cv.height = HPX; const c = cv.getContext("2d");
   c.fillStyle = "#b9b4a4"; c.fillRect(0, 0, WPX, HPX);
@@ -924,6 +938,7 @@ function buildMap(LF) {
   ["pier", "breakwater", "groyne"].forEach((kind) => feats.filter((f) => f.kind === kind).forEach((f) => { c.fillStyle = c.strokeStyle = kind === "pier" ? "#d0ccc2" : kind === "groyne" ? "#5a4e44" : "#aaa598";
     if (f.closed) { path(c, f.pts, true); c.fill(); } else { c.lineWidth = (kind === "groyne" ? 1.2 : 4 * SC); path(c, f.pts, false); c.stroke(); } }));
   c.fillStyle = "#5f5d59"; feats.filter((f) => f.kind === "building" && f.closed).forEach((f) => { path(c, f.pts, true); c.fill(); });
+  await yieldUI();
   // piers/breakwaters are land in the mask too (so waves stop at them)
   const pc = document.createElement("canvas"); pc.width = WPX; pc.height = HPX; const pcx = pc.getContext("2d", { willReadFrequently: true }); pcx.fillStyle = pcx.strokeStyle = "#fff"; pcx.lineWidth = 3 * SC;
   // solid structures only: breakwaters and groynes, big piers (Navy Pier); marina docks float over open water
@@ -971,6 +986,7 @@ function buildMap(LF) {
       walls3d.push({ pts: f.pts, closed: false, w: 2.5, top: 1.4 }); }
     else if (f.closed) { path(pcx, f.pts, true); pcx.fill(); walls3d.push({ pts: f.pts, closed: true, top: 1.6 }); }
     else { pcx.lineWidth = (kind === "pier" ? 2 : 3) * SC; path(pcx, f.pts, false); pcx.stroke(); walls3d.push({ pts: f.pts, closed: false, w: (kind === "pier" ? 2 : 3) * SC * MPP, top: 1.6 }); } }));
+  await yieldUI();
   // the 1 m lidar knows where the water is better than the map: surveyed water that the map calls land
   // (Diversey Harbor's basins, lagoons) becomes sheltered water; surveyed dry land stays land
   if (BATHY.ok && BATHY.src) { const G = BATHY.g; let fixed = 0;
@@ -988,6 +1004,7 @@ function buildMap(LF) {
         }
       }
     }
+    await yieldUI();
     // 2) near the open lake the survey and map shorelines differ by a few metres, which would leave a ribbon of
     // "harbour" along every beach: keep near-lake pixels only where they continue water that reaches inland
     // (Diversey Harbor's entrance channel), at most ~45 m from it -- and only on the 4 m survey: the 10 m grid would
@@ -997,11 +1014,11 @@ function buildMap(LF) {
     // cover at least ~1500 m2 of connected survey water
     const minPx = Math.round(1500 / (MPP * MPP));   // cand: 1 = unvisited, 2 = small region, 3 = big region
     for (let i0 = 0; i0 < cand.length; i0++) { if (cand[i0] !== 1) continue; let h = 0, t = 0; q[t++] = i0; cand[i0] = 2;
-      while (h < t) { const i = q[h++], x = i % WPX; for (const n of [x > 0 ? i - 1 : -1, x < WPX - 1 ? i + 1 : -1, i - WPX, i + WPX]) if (n >= 0 && n < cand.length && cand[n] === 1) { cand[n] = 2; q[t++] = n; } }
+      while (h < t) { const i = q[h++], x = i % WPX; for (let d = 0; d < 4; d++) { const n = d === 0 ? (x > 0 ? i - 1 : -1) : d === 1 ? (x < WPX - 1 ? i + 1 : -1) : d === 2 ? i - WPX : i + WPX; if (n >= 0 && n < cand.length && cand[n] === 1) { cand[n] = 2; q[t++] = n; } } }
       if (t >= minPx) for (let k = 0; k < t; k++) cand[q[k]] = 3; }
     for (let i = 0; i < cand.length; i++) if (cand[i] === 3 && !near[i]) { dist[i] = 0; q[qt++] = i; }
     while (qh < qt) { const i = q[qh++], x = i % WPX, d1 = dist[i] + 1; if (d1 > REACH) continue;
-      for (const n of [x > 0 ? i - 1 : -1, x < WPX - 1 ? i + 1 : -1, i - WPX, i + WPX]) if (n >= 0 && n < cand.length && cand[n] && near[n] && cfine[n] && dist[n] === 255) { dist[n] = d1; q[qt++] = n; } }
+      for (let d = 0; d < 4; d++) { const n = d === 0 ? (x > 0 ? i - 1 : -1) : d === 1 ? (x < WPX - 1 ? i + 1 : -1) : d === 2 ? i - WPX : i + WPX; if (n >= 0 && n < cand.length && cand[n] && near[n] && cfine[n] && dist[n] === 255) { dist[n] = d1; q[qt++] = n; } } }
     let deepened = 0;
     for (let i = 0; i < cand.length; i++) {
       if (dist[i] === 255) continue;
@@ -1014,7 +1031,7 @@ function buildMap(LF) {
     }
     if (deepened) BATHY.assumed = (BATHY.assumed || 0) + deepened;
     if (BATHY.assumed) { const half = U.uBathy.value.image.data; for (let q = 0; q < half.length; q++) half[q] = THREE.DataUtils.toHalfFloat(BATHY.dep[q]); U.uBathy.value.needsUpdate = true; }
-    MAP.lidarWater = fixed; }
+    MAP.lidarWater = fixed; await yieldUI(); }
   const pd = pcx.getImageData(0, 0, WPX, HPX).data; for (let i = 0; i < mask.length; i++) if (pd[i * 4] > 128) mask[i] = 0;
   // marinas: boats moored at the docks read as dry land in the lidar, which cut Diversey Harbor's west half off. Docks only
   // float on water, so the water runs under and ~7 m around every floating dock (where the survey is less than ~3.5 m above
@@ -1035,6 +1052,7 @@ function buildMap(LF) {
     if (fineHit) { const t = U.uBathyF.value, hd = t.image.data; for (let i = 0; i < hd.length; i++) hd[i] = THREE.DataUtils.toHalfFloat(D.dep[i] === D.dep[i] ? D.dep[i] : -999); t.needsUpdate = true; }
     if (coarseHit) { const hd = U.uBathy.value.image.data; for (let q = 0; q < hd.length; q++) hd[q] = THREE.DataUtils.toHalfFloat(BATHY.dep[q]); U.uBathy.value.needsUpdate = true; }
     MAP.marina = carved; }
+  await yieldUI();
   // waterways known from paddle tracks: water along them, with a nominal depth where the survey reads dry
   { let n = 0, wwFine = false, wwCoarse = false; for (const [, wM, dM, path, wcl] of WATERWAYS) { const cl = wcl || 2; const R = Math.max(1, Math.round(wM / 2 / MPP)), Q = path.map(([la, lo]) => P(...ll(la, lo)));
       for (let s2 = 1; s2 < Q.length; s2++) { const [ax, ay] = Q[s2 - 1], [bx, by] = Q[s2], m = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay)));
@@ -1067,19 +1085,21 @@ function buildMap(LF) {
     if (aFine) { const t = U.uBathyF.value, hd = t.image.data, D = BATHY.det.dep; for (let i = 0; i < hd.length; i++) hd[i] = THREE.DataUtils.toHalfFloat(D[i] === D[i] ? D[i] : -999); t.needsUpdate = true; }
     if (aCoarse) { const hd = U.uBathy.value.image.data; for (let q = 0; q < hd.length; q++) hd[q] = THREE.DataUtils.toHalfFloat(BATHY.dep[q]); U.uBathy.value.needsUpdate = true; }
     MAP.waterAreas = n; }
+  await yieldUI();
   // specks of "land" inside water (boats and docks the lidar saw, survey noise) become water: any land patch under ~1500 m2
   // that touches no map edge and no pier or breakwater
-  { const lim = Math.round(1500 / (MPP * MPP)), seen = new Uint8Array(WPX * HPX), q = new Int32Array(lim + 8); const ov = []; let filled = 0;
+  { const lim = Math.round(1500 / (MPP * MPP)), seen = new Uint8Array(WPX * HPX), q = new Int32Array(lim + 8); const ov = []; let filled = 0; const NB = [-1, 1, -WPX, WPX];
     for (let i0 = 0; i0 < mask.length; i0++) { if (mask[i0] !== 0 || seen[i0]) continue;
       let h = 0, t = 0, edge = false, solid = false, wcls = 0, big = false; q[t++] = i0; seen[i0] = 1;
       while (h < t) { const i = q[h++], x = i % WPX, y = (i / WPX) | 0; if (x === 0 || y === 0 || x === WPX - 1 || y === HPX - 1) edge = true; if (pd[i * 4] > 128) solid = true;
-        for (const n of [i - 1, i + 1, i - WPX, i + WPX]) { if (n < 0 || n >= mask.length) continue; const m = mask[n];
+        for (let d = 0; d < 4; d++) { const n = i + NB[d]; if (n < 0 || n >= mask.length) continue; const m = mask[n];
           if (m) { if (!wcls || m === 2) wcls = m; continue; } if (seen[n]) continue; seen[n] = 1; if (t < lim) q[t++] = n; else { big = true; ov.push(n); } } }
       // a region too big to be a speck is still flooded to its end (marked seen), or its unexplored rest would later look like
       // small enclosed pockets and be filled (the park north of Diversey Harbor's outer basin came out as water)
-      while (ov.length) { const i = ov.pop(); for (const n of [i - 1, i + 1, i - WPX, i + WPX]) if (n >= 0 && n < mask.length && !mask[n] && !seen[n]) { seen[n] = 1; ov.push(n); } }
+      while (ov.length) { const i = ov.pop(); for (let d = 0; d < 4; d++) { const n = i + NB[d]; if (n >= 0 && n < mask.length && !mask[n] && !seen[n]) { seen[n] = 1; ov.push(n); } } }
       if (!big && !edge && !solid && wcls) { for (let k = 0; k < t; k++) mask[q[k]] = wcls; filled += t; } }
     MAP.specks = filled; }
+  await yieldUI();
   // one byte per pixel (class * 85); DataTexture rows run south->north, canvas rows north->south
   const flipped = new Uint8Array(WPX * HPX); for (let y = 0; y < HPX; y++) { const src = (HPX - 1 - y) * WPX, dst = y * WPX; for (let x = 0; x < WPX; x++) flipped[dst + x] = mask[src + x] * 85; }
   const maskTex = new THREE.DataTexture(flipped, WPX, HPX, THREE.RedFormat); maskTex.unpackAlignment = 1; maskTex.minFilter = maskTex.magFilter = THREE.NearestFilter; maskTex.needsUpdate = true;
@@ -1087,23 +1107,27 @@ function buildMap(LF) {
   //  R = water fraction, slightly blurred and read with linear filtering: the shader takes its 0.5 contour as a rounded shoreline
   //      (no pixel or survey-grid stair steps) and draws a foam line on the water side and wet sand on the land side
   //  G = street light: roads and building footprints, blurred into pools of light for the night
-  const blur = (a, r, n) => { const b = new Uint8Array(a.length), k = 2 * r + 1;
+  // (box blur; the vertical pass runs a row at a time over per-column sums: same sums and rounding as column by column,
+  // without striding through memory a row apart)
+  const blur = async (a, r, n) => { const b = new Uint8Array(a.length), k = 2 * r + 1, cs = new Int32Array(WPX);
     for (let it = 0; it < n; it++) {
-      for (let y = 0; y < HPX; y++) { const o = y * WPX; let s = 0; for (let x = -r; x <= r; x++) s += a[o + clamp(x, 0, WPX - 1)];
+      for (let y = 0; y < HPX; y++) { const o = y * WPX; let s = 0; for (let x = -r; x <= r; x++) s += a[o + (x < 0 ? 0 : x > WPX - 1 ? WPX - 1 : x)];
         for (let x = 0; x < WPX; x++) { b[o + x] = s / k; s += a[o + Math.min(x + r + 1, WPX - 1)] - a[o + Math.max(x - r, 0)]; } }
-      for (let x = 0; x < WPX; x++) { let s = 0; for (let y = -r; y <= r; y++) s += b[clamp(y, 0, HPX - 1) * WPX + x];
-        for (let y = 0; y < HPX; y++) { a[y * WPX + x] = s / k; s += b[Math.min(y + r + 1, HPX - 1) * WPX + x] - b[Math.max(y - r, 0) * WPX + x]; } } }
+      cs.fill(0); for (let y = -r; y <= r; y++) { const o = (y < 0 ? 0 : y > HPX - 1 ? HPX - 1 : y) * WPX; for (let x = 0; x < WPX; x++) cs[x] += b[o + x]; }
+      for (let y = 0; y < HPX; y++) { const o = y * WPX, ad = Math.min(y + r + 1, HPX - 1) * WPX, sb = Math.max(y - r, 0) * WPX;
+        for (let x = 0; x < WPX; x++) { a[o + x] = cs[x] / k; cs[x] += b[ad + x] - b[sb + x]; } }
+      await yieldUI(); }
     return a; };
   const sd = scx.getImageData(0, 0, WPX, HPX).data;   // steel breakers: the water is drawn right up to (and over) them; the 3-D wall stands out of it
   const wet = new Uint8Array(WPX * HPX); for (let i = 0; i < wet.length; i++) wet[i] = mask[i] || sd[i * 4] > 64 ? 255 : 0;
-  blur(wet, Math.max(1, Math.round(4.5 / MPP)), 2);   // ~5 m: rounds pixel and survey-grid steps
+  await blur(wet, Math.max(1, Math.round(4.5 / MPP)), 2);   // ~5 m: rounds pixel and survey-grid steps
   for (let i = 0; i < wet.length; i++) if (pd[i * 4] > 128 && sd[i * 4] <= 64) wet[i] = Math.min(wet[i], 70);   // but piers and breakwaters stay solid (steel breakers: water to the wall)
   const lc = document.createElement("canvas"); lc.width = WPX; lc.height = HPX; const lx = lc.getContext("2d", { willReadFrequently: true });
   lx.fillStyle = "#000"; lx.fillRect(0, 0, WPX, HPX); lx.lineCap = "round"; lx.strokeStyle = "#fff";
   feats.filter((f) => f.kind === "road").forEach((f) => { lx.lineWidth = 4 * SC; path(lx, f.pts, false); lx.stroke(); });
   lx.strokeStyle = "#999"; lx.lineWidth = 3 * SC; feats.filter((f) => f.kind === "building" && f.closed).forEach((f) => { path(lx, f.pts, true); lx.stroke(); });
   const ld = lx.getImageData(0, 0, WPX, HPX).data, light = new Uint8Array(WPX * HPX); for (let i = 0; i < light.length; i++) light[i] = ld[i * 4];
-  blur(light, Math.max(2, Math.round(5 / MPP)), 2);
+  await blur(light, Math.max(2, Math.round(5 / MPP)), 2);
   const looks = new Uint8Array(WPX * HPX * 2);
   for (let y = 0; y < HPX; y++) { const src = (HPX - 1 - y) * WPX, dst = y * WPX; for (let x = 0; x < WPX; x++) { looks[(dst + x) * 2] = wet[src + x]; looks[(dst + x) * 2 + 1] = Math.min(255, light[src + x] * 1.6); } }
   const looksTex = new THREE.DataTexture(looks, WPX, HPX, THREE.RGFormat); looksTex.unpackAlignment = 1; looksTex.minFilter = looksTex.magFilter = THREE.LinearFilter; looksTex.needsUpdate = true;
@@ -1414,6 +1438,8 @@ function profileFor(xk, yk, shore, dShoreM) {   // depths along the normal, from
   return got > TABW * 0.5 ? P : null; }
 async function setSwan(sw) {
   if (!sw || !sw.domains) return;
+  // (it can arrive after the page is up: the domains go in together, finest first, once all are read)
+  const doms = [];
   for (const [name, d] of Object.entries(sw.domains)) {
     const g = d.grid, n = g.nx * g.ny, nc = d.cases.length;
     let ratio, dir;
@@ -1426,10 +1452,11 @@ async function setSwan(sw) {
     // the heights run for each (direction, period): storm heights only with the longer periods
     const hsBy = new Map(); for (const c of d.cases) { const k = `${c.dir}|${c.tp}`; if (!hsBy.has(k)) hsBy.set(k, []); hsBy.get(k).push(c.hs); }
     for (const v of hsBy.values()) v.sort((a, b) => a - b);
-    SWAN.domains.push({ name, g, cases: d.cases, ratio, dir, n, hsBy, x0: g.x0 / 1000, y0: g.y0 / 1000, w: (g.nx - 1) * g.dx / 1000, h: (g.ny - 1) * g.dx / 1000, obstacles: (d.obstacles || []).length });
+    await yieldUI();
+    doms.push({ name, g, cases: d.cases, ratio, dir, n, hsBy, x0: g.x0 / 1000, y0: g.y0 / 1000, w: (g.nx - 1) * g.dx / 1000, h: (g.ny - 1) * g.dx / 1000, obstacles: (d.obstacles || []).length });
   }
-  SWAN.domains.sort((a, b) => a.g.dx - b.g.dx);   // finest first: the 8 m trail inside the 20 m lane to the crib
-  SWAN.model = sw.model;
+  SWAN.domains = SWAN.domains.concat(doms).sort((a, b) => a.g.dx - b.g.dx);   // finest first: the 8 m trail inside the 20 m lane to the crib
+  SWAN.model = sw.model; SWAN.key = null;
 }
 function swanDomainAt(xk, yk) { return SWAN.domains.find((d) => xk >= d.x0 && yk >= d.y0 && xk <= d.x0 + d.w && yk <= d.y0 + d.h) || null; }
 // blend the library for an offshore condition: linear in direction (circular) and period, and in height between the
@@ -2124,7 +2151,10 @@ const compMat = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false, 
 const compScene = new THREE.Scene(); { const q = new THREE.Mesh(quadGeo, compMat); q.frustumCulled = false; compScene.add(q); }
 
 // ---------------------------------------------------------------- radar frames: decode a scene file
-async function gunzipB64(b64) { const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); return new Uint8Array(await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer()); }
+// base64 -> bytes: the built-in decoder where there is one, else a plain loop (Uint8Array.from with a per-character
+// callback took ~2.5 s over the page's ~20 MB of packed grids)
+function b64Bytes(b64) { if (Uint8Array.fromBase64) return Uint8Array.fromBase64(b64); const s = atob(b64), n = s.length, u = new Uint8Array(n); for (let i = 0; i < n; i++) u[i] = s.charCodeAt(i); return u; }
+async function gunzipB64(b64) { const bin = b64Bytes(b64); return new Uint8Array(await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer()); }
 function tex3(data, g) { const t = new THREE.Data3DTexture(data, g.nx, g.ny, g.nz); t.format = THREE.RedFormat; t.minFilter = t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = t.wrapR = THREE.ClampToEdgeWrapping; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
 function candidates(dbz, g) { const cand = [], k0 = Math.round(2 / g.dz_km), k1 = Math.min(g.nz - 1, Math.round(8 / g.dz_km));
   for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) { let mx = 0; for (let k = k0; k <= k1; k++) { const b = dbz[(k * g.ny + j) * g.nx + i]; if (b > mx) mx = b; } if (mx / 3 - 10 >= 50) cand.push([g.x0_km + i * g.dx_km, g.y0_km + j * g.dx_km]); } return cand; }
@@ -2526,6 +2556,7 @@ function buildMinimap() {
   g.fillStyle = "rgba(220,230,238,.9)"; g.font = "600 17px IBM Plex Sans Condensed, sans-serif";
   for (const [n, la, lo] of [["North Ave", 41.9145, -87.6235], ["Diversey Hbr", 41.9310, -87.6385], ["Fullerton", 41.9255, -87.6400]]) { const [x, y] = mmXY(...ll(la, lo)); g.fillText(n, x - 70, y); }
   MM.base = c; const km = (LB.x1 - LB.x0); $("#mmscale").textContent = `${(km * 0.621).toFixed(1)} mi across`;
+  $("#minimap").classList.add("ready");
 }
 // ---------------------------------------------------------------- mini map, radar view: the region around Chicago (~120 x 180 km)
 // with the radar reflectivity for the timeline's time (scans, then the nowcast), where the echoes are heading, and the local area
@@ -3147,33 +3178,52 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
       [DATA.scene, DATA.sup, DATA.lake] = await Promise.all([get("api/scene.json"), get("api/sup.json"), get("api/lakefront.json")]);
       SERVED = true; $("#hist-build").hidden = false; $("#hist-start").value = localInput(new Date(Date.now() - 86400e3));
     }
-    if (live) { const get2 = async (u) => { try { const r = await fetch(u, { cache: "no-store" }); return r.ok ? await r.json() : null; } catch (e) { return null; } };
-      [DATA.bathy, DATA.swan, DATA.funwave] = await Promise.all([DATA.bathy || get2("api/bathy.json"), DATA.swan || get2("api/swan.json"), DATA.funwave || get2("api/funwave.json")]); }
+    const get2 = async (u) => { try { const r = await fetch(u, { cache: "no-store" }); return r.ok ? await r.json() : null; } catch (e) { return null; } };
     // big, slow-changing data can sit beside the page as files (build_world --split): <script id=... data-src="data/x.json">
     const split = async (id) => { const el = document.getElementById(id); if (!el || !el.dataset.src) return null;
       try { const r = await fetch(el.dataset.src); return r.ok ? await r.json() : null; } catch (e) { return null; } };
-    [DATA.bathy, DATA.swan, DATA.funwave] = await Promise.all([DATA.bathy || split("bathy-data"), DATA.swan || split("swan-data"), DATA.funwave || split("funwave-data")]);
-    if (!DATA.hist.length) { const h = await split("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
-    await setBathy(DATA.bathy); await setSwan(DATA.swan); await setFunwave(DATA.funwave); renderModels();
-    setChopSpots(parseJSON("chopspots-data") || await split("chopspots-data")).then(() => { if (S.ov === "spots") renderLegend(); });
-    if (DATA.lake) { buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
-    await setEarth(DATA.earth);
-    buildMinimap(); showHintOnce(); initRefresh(); await initImport();
+    const side = async (have, api, id) => have || (live ? await get2(api) : null) || await split(id);
+    // Two stages. First what's on screen: the lake bottom (it shapes the map's water), the map, the radar and today's
+    // readouts. The wave model libraries (SWAN, FUNWAVE), chop spots and past periods aren't needed for the first view:
+    // they download while the map is built and fold in once the page is up (the readouts pick them up within a second).
+    DATA.bathy = await side(DATA.bathy, "api/bathy.json", "bathy-data");
+    const swanP = side(DATA.swan, "api/swan.json", "swan-data"), fwP = side(DATA.funwave, "api/funwave.json", "funwave-data");
+    const spotsP = (async () => parseJSON("chopspots-data") || await split("chopspots-data"))();
+    // (past periods download last, after the wave models, unless the first view needs them)
+    let histDone = false; const loadHist = async () => { if (histDone) return; histDone = true;
+      if (!DATA.hist.length) { const h = await split("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
+      const ph = $("#hist-wait"); if (ph) ph.remove();
+      for (const h of DATA.hist) await addHistory(h);
+      if (!SRC.hist.length) { const o = document.createElement("option"); o.textContent = "No historical periods in this page"; $("#hist-pick").appendChild(o); } };
+    { const o = document.createElement("option"); o.id = "hist-wait"; o.disabled = true; o.textContent = "Loading historical periods…"; $("#hist-pick").appendChild(o); }
+    const about = () => { $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""}`; };
+    await setBathy(DATA.bathy); await yieldUI();
+    if (DATA.lake) { await buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
+    buildMinimap(); await yieldUI();
+    await setEarth(DATA.earth); await yieldUI();
+    showHintOnce(); initRefresh(); await initImport();
     SRC.live = await decodeScene(DATA.scene);
-    for (const h of DATA.hist) await addHistory(h);
-    if (!SRC.hist.length) { const o = document.createElement("option"); o.textContent = "No historical periods in this page"; $("#hist-pick").appendChild(o); }
     if (!DATA.track) { try { const t = JSON.parse(localStorage.getItem("lakelocal-track") || "null"); if (t && t.pts && t.pts.length) DATA.track = t; } catch (e) {} }   // your last GPX, in this browser only
     setTrack(DATA.track);
-    $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""}`;
-    setMode(SRC.live ? "live" : SRC.hist.length ? "history" : "exp");
-    if (SRC.hist.length) { S.histIdx = 0; $("#hist-pick").value = "0"; }
     // a page can be built to open on a featured period (e.g. a storm): meta.start = {label, t, view: [lat, lon, km, heading, pitch]}
     const st = (parseJSON("meta-data") || {}).start;
+    // without live radar, or when the page opens on a past period, the past periods are part of the first view
+    if (!SRC.live || (st && st.mode !== "live" && st.mode !== "import")) await loadHist();
+    about(); renderModels();
+    setMode(SRC.live ? "live" : SRC.hist.length ? "history" : "exp");
+    if (SRC.hist.length) { S.histIdx = 0; $("#hist-pick").value = "0"; }
     if (st && st.mode === "import" && IMP.list.length) { setMode("import"); if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }
     else if (st && st.mode === "live") { if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }   // live is set above (when there's radar); the mini map shows the radar in live mode
     else if (st) { const i = SRC.hist.findIndex((h) => h.raw.label === st.label || (h.raw.window && h.raw.window.start.startsWith(st.label || "~")));
       if (i >= 0) { S.histIdx = i; $("#hist-pick").value = String(i); setMode("history"); if (st.t) S.t = new Date(st.t).getTime(); }
       if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }
+    // second stage, in the background
+    try {
+      await setSwan(await swanP); await setFunwave(await fwP); renderModels();
+      await setChopSpots(await spotsP); if (S.ov === "spots") renderLegend();
+      const hadHist = SRC.hist.length; await loadHist(); if (!hadHist && SRC.hist.length && S.mode !== "history") { S.histIdx = 0; $("#hist-pick").value = "0"; }
+      about();
+    } catch (e) { console.warn("background load", e); }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
 window.__world = { conditions, chopRating, NAV, setMove, gotoPreset, viewState, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
