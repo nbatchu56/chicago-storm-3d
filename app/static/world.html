@@ -319,13 +319,17 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
       <h2>View</h2>
       <div class="seg" role="group" aria-label="Overlay"><button data-ov="natural" aria-pressed="true">Natural</button><button data-ov="temp" aria-pressed="false">Water temp</button><button data-ov="radar" aria-pressed="false">Radar</button></div>
       <div class="seg" role="group" aria-label="Lake overlay"><button data-ov="depth" aria-pressed="false">Depth</button><button data-ov="hs" aria-pressed="false">Wave height</button><button data-ov="chop" aria-pressed="false">Chop</button><button data-ov="spots" aria-pressed="false">Chop spots</button></div>
-      <div class="seg" role="group" aria-label="Satellite overlay" id="sat-seg" hidden><button data-ov="s1" aria-pressed="false">Wind on the water (radar sat)</button><button data-ov="s2" aria-pressed="false">Water clarity</button></div>
       <div class="seg" role="group" aria-label="Chop spots" id="spots-seg" hidden><button data-spots="usual" aria-pressed="true">Usual</button><button data-spots="now" aria-pressed="false">Right now</button></div>
       <div class="row" hidden><label for="exag">Cloud height scale</label><output id="exag-o">×1</output></div>
       <input type="range" id="exag" min="1" max="5" step="0.5" value="1" hidden>
       <label class="check"><input type="checkbox" id="bolts" checked> Lightning flashes</label>
-      <label class="check" title="Live mode: the cloud field seen by the GOES-19 satellite (within 45 min of its image) drawn beyond the radar's rain. Off: only the radar's clouds and the forecast sky cover."><input type="checkbox" id="goes" checked> GOES-19 satellite clouds</label>
       <label class="check" title="Moored buoys that ride the modelled waves, each beside a fixed pile painted in 1 ft bands from the still-water line (red). Zoom in near the water to see them."><input type="checkbox" id="buoys" checked> Buoys and wave gauges on the water</label>
+    </section>
+    <section id="sec-sat">
+      <h2>Satellite</h2>
+      <div class="seg" role="group" aria-label="Satellite overlay" id="sat-seg" hidden><button data-ov="natural" aria-pressed="true">None</button><button data-ov="s1" aria-pressed="false">Wind on the water</button><button data-ov="s2" aria-pressed="false">Water clarity</button></div>
+      <label class="check" title="Live mode: the cloud field seen by the GOES-19 satellite (within 45 min of its image) drawn beyond the radar's rain. Off: only the radar's clouds and the forecast sky cover."><input type="checkbox" id="goes" checked> GOES-19 clouds (live)</label>
+      <p class="note" id="sat-note">One image at a time: each is a snapshot from that satellite's pass, and today's clouds, rain and lightning are hidden while it is shown.</p>
     </section>
     <section>
       <h2>Your paddle (optional)</h2>
@@ -1384,6 +1388,8 @@ async function setEarth(E) {
         U.uGoesTex.value = t; U.uGoesMin.value.set(ax, ay); U.uGoesSize.value.set(bx - ax, by - ay); } } } catch (e) { console.warn("goes", e); }
   $("#sat-seg").hidden = !EARTH.s1 && !EARTH.s2;
   for (const k of ["s1", "s2"]) { const b = document.querySelector(`[data-ov="${k}"]`); if (b) b.disabled = !EARTH[k]; }
+  { const parts = []; if (E.s1) parts.push(`${E.s1.label} radar roughness`); if (E.s2) parts.push(`${E.s2.label} clarity`); if (E.goes && E.goes.time) parts.push(`GOES-19 clouds ${E.goes.time.slice(5, 16).replace("T", " ")} UTC`);
+    $("#sat-note").textContent = (parts.length ? `Passes: ${parts.join(" · ")}. ` : "") + "One image at a time: each is a snapshot from that satellite's pass, and today's clouds, rain and lightning are hidden while it is shown."; }
   setSat();
 }
 function setSat() { const L = (S.ov === "s1" || S.ov === "s2") && EARTH[S.ov]; U.uSatOn.value = L ? 1 : 0;
@@ -2823,7 +2829,7 @@ function setMode(m) { S.mode = m; document.querySelectorAll("[data-mode]").forEa
   S.t = m === "import" ? clamp(Date.now(), t0, t1) : m === "live" ? Date.now() : m === "forecast" ? t0 : m === "history" ? (DATA.track && DATA.track.start ? new Date(DATA.track.start).getTime() : t0 + 10 * 60e3) : t0;
   buildTicks(); WAVES.key = null; }
 document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode));
-document.querySelectorAll("[data-ov]").forEach((b) => b.onclick = () => { S.ov = b.dataset.ov; document.querySelectorAll("[data-ov]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+document.querySelectorAll("[data-ov]").forEach((b) => b.onclick = () => { S.ov = b.dataset.ov; document.querySelectorAll("[data-ov]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.ov === S.ov)));
   U.uMode.value = S.ov === "radar" ? 1 : 0; U.uTempOn.value = S.ov === "temp" ? 1 : 0; U.uDepthOn.value = S.ov === "depth" ? 1 : 0; U.uHsOn.value = S.ov === "hs" ? 1 : 0; U.uChopOn.value = S.ov === "chop" ? 1 : 0; setSat(); setSpots(); renderLegend(); });
 document.querySelectorAll("[data-spots]").forEach((b) => b.onclick = () => { S.spotsNow = b.dataset.spots === "now"; document.querySelectorAll("[data-spots]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); setSpots(); renderLegend(); });
 document.querySelectorAll("[data-cam]").forEach((b) => b.onclick = () => goCam(b.dataset.cam));
