@@ -62,6 +62,17 @@ jobs:
         run: |
           git fetch -q --depth 1 origin snapshot 2>/dev/null && git show origin/snapshot:lakefront.json > "$RUNNER_TEMP/prev_lakefront.json" || true
           python -m app.lakefront --out "$RUNNER_TEMP/storm/lakefront.json" --probe "$RUNNER_TEMP/storm/probe.json" --reuse "$RUNNER_TEMP/prev_lakefront.json"
+      - name: Satellite and model layers from Earth Engine (skipped without the key)
+        continue-on-error: true
+        timeout-minutes: 8
+        env:
+          GEE_SERVICE_ACCOUNT_KEY: ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          if [ -z "$GEE_SERVICE_ACCOUNT_KEY" ]; then echo "no GEE_SERVICE_ACCOUNT_KEY secret; skipping"; exit 0; fi
+          pip install -q earthengine-api
+          git show origin/snapshot:earth.json > "$RUNNER_TEMP/prev_earth.json" 2>/dev/null || true
+          python -m app.earth --out "$RUNNER_TEMP/storm/earth.json" --lakefront "$RUNNER_TEMP/storm/lakefront.json" \
+            --era5 "$RUNNER_TEMP/L/era5" --era5-climate "$RUNNER_TEMP/L/era5_climate.json" --prev "$RUNNER_TEMP/prev_earth.json"
       - name: Build scene from the newest KLOT scans
         continue-on-error: true
         env:
@@ -92,7 +103,7 @@ jobs:
           OUT: ${{ runner.temp }}/storm
         run: |
           mkdir -p "$RUNNER_TEMP/pub" && cd "$RUNNER_TEMP/pub"
-          for f in scene.json status.json sup.json lakefront.json probe.json wn3.json world.html; do [ -f "$OUT/$f" ] && cp "$OUT/$f" .; done
+          for f in scene.json status.json sup.json lakefront.json probe.json wn3.json earth.json world.html; do [ -f "$OUT/$f" ] && cp "$OUT/$f" .; done
           [ -d "$OUT/data" ] && cp -r "$OUT/data" .   # the page's side files (lake bottom, SWAN, FUNWAVE, history)
           ls -la
           git init -q -b snapshot
