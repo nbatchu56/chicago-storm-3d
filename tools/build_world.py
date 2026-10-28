@@ -113,9 +113,17 @@ def coarsen_swan(d, k=2):
 
 def quantize_funwave(runs, frames=32):
     out = []
+    try:                                                   # a case's label can be reworded after its runs were published
+        import sys
+        sys.path.insert(0, ROOT)
+        from app.funwave_case import CASES
+    except Exception:  # noqa: BLE001
+        CASES = {}
     for d in runs:
         if not d:
             continue
+        if d.get("case") in CASES and CASES[d["case"]].get("label"):
+            d["label"] = CASES[d["case"]]["label"]
         e = d["eta"]
         if e.get("format") != "i8":
             eta = np.frombuffer(gzip.decompress(base64.b64decode(e["data"])), "<f2").reshape(e["frames"], e["ny"], e["nx"]).astype(np.float32)[-frames:]

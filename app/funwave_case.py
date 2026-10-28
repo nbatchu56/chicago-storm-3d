@@ -48,8 +48,11 @@ CASES = {
     "race": {"hs": 0.75, "tp": 4.0, "dir": 85.0, "label": "Oct 3, 2026 race: 2.5 ft at 4 s from the east"},
     # the glass sunrises of Oct 21 and Oct 28, 2026 (Diversey to North Ave): wind 1-4 m/s S-SSW (offshore), only the
     # leftover swell of the days before, 0.1-0.2 m at buoy 45174 from the ESE-SE (mean dir ~100-160; 45198 was out
-    # for the season, no period reported at that height). 4 s keeps the run at the race case's resolution.
-    "glass": {"hs": 0.15, "tp": 4.0, "dir": 120.0, "label": "Glass mornings, Oct 21 & 28, 2026: 0.5 ft leftover swell at 4 s from the ESE"},
+    # for the season). NDBC's archive (2019-2025, fall mornings, wind <= 2 m/s, 0.1-0.2 m from the E-SE) puts the
+    # dominant period of such mornings at 2.3-2.4 s (90% under 2.8 s): ~9 m waves, 6 cells at 1.5 m, below what the
+    # model resolves. 4 s is the long, faint end of that leftover swell (the "long low undulations" of Oct 21), the
+    # part that rebounds off the walls; the 2.4 s texture is the page's spectral short-wave layer.
+    "glass": {"hs": 0.15, "tp": 4.0, "dir": 120.0, "label": "Glass mornings, Oct 21 & 28, 2026: the long leftover undulations, 0.5 ft at 4 s from the ESE (the 2.4 s ripple is drawn, not modelled)"},
 }
 TOTAL, STEADY, SNAP = 420.0, 240.0, 0.5         # s: run time, start of averaging, snapshot interval
 
