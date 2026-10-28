@@ -154,12 +154,15 @@ def bq_series(rows, hours=HOURS):
     return None, {}
 
 
-def init_bq():
+def init_bq(table=None):
+    """A client whose jobs run (and count against the free quota) in the project that holds the linked listing,
+    not the key's own project; WN3_BQ_PROJECT overrides."""
     from google.cloud import bigquery
     from google.oauth2 import service_account
     info = json.loads(_key())
     creds = service_account.Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/cloud-platform"])
-    project = os.environ.get("WN3_BQ_PROJECT") or os.environ.get("GEE_PROJECT") or info.get("project_id")
+    project = os.environ.get("WN3_BQ_PROJECT") or (table.split(".")[0] if table and table.count(".") == 2 else None) or info.get("project_id")
+    log.info("BigQuery jobs in project %s as %s", project, info.get("client_email"))
     return bigquery.Client(project=project, credentials=creds)
 
 
@@ -224,7 +227,7 @@ def fetch(out_path, now=None):
            "points": {k: {"lat": la, "lon": lo} for k, (la, lo) in POINTS.items()}, "notes": []}
     bq_table = os.environ.get("WN3_BQ_TABLE")
     if bq_table:                                     # BigQuery: the linked listing; the station table sits beside the 0.1 one
-        client = init_bq()
+        client = init_bq(bq_table)
         base = bq_table.rsplit(".", 1)[0]
         products = (("init", bq_table, BANDS_10_BQ),)
         # the 0.05 station table has no geography clustering worth the name for a free-tier (sandbox) project: its
