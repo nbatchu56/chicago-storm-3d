@@ -324,6 +324,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
       <div class="row" hidden><label for="exag">Cloud height scale</label><output id="exag-o">×1</output></div>
       <input type="range" id="exag" min="1" max="5" step="0.5" value="1" hidden>
       <label class="check"><input type="checkbox" id="bolts" checked> Lightning flashes</label>
+      <label class="check" title="Live mode: the cloud field seen by the GOES-19 satellite (within 45 min of its image) drawn beyond the radar's rain. Off: only the radar's clouds and the forecast sky cover."><input type="checkbox" id="goes" checked> GOES-19 satellite clouds</label>
       <label class="check" title="Moored buoys that ride the modelled waves, each beside a fixed pile painted in 1 ft bands from the still-water line (red). Zoom in near the water to see them."><input type="checkbox" id="buoys" checked> Buoys and wave gauges on the water</label>
     </section>
     <section>
@@ -516,7 +517,7 @@ const azElDir = (o, v) => { const a = o.az * Math.PI / 180, e = o.el * Math.PI /
 // ---------------------------------------------------------------- data
 const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), learn: parseJSON("learn-data"), levels: parseJSON("levels-data"), earth: parseJSON("earth-data"), wn3: parseJSON("wn3-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
 { const h = parseJSON("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
-const S = { mode: "live", t: 0, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, view: "overview", histIdx: 0,
+const S = { mode: "live", t: 0, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, goes: true, view: "overview", histIdx: 0,
   x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, hour: 14, seed: 7 } };
 try { const q = localStorage.getItem("lakeworld-q"); if (q !== null) S.quality = +q; } catch (e) {}
 
@@ -2831,6 +2832,8 @@ document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-presse
 $("#exag").oninput = (e) => setExag(+e.target.value);
 try { S.learned = localStorage.getItem("lakelocal-learned") === "1"; } catch (e) { S.learned = false; }
 $("#bolts").checked = S.bolts; $("#bolts").onchange = (e) => S.bolts = e.target.checked;
+try { S.goes = localStorage.getItem("lakelocal-goes") !== "0"; } catch (e) {}
+$("#goes").checked = S.goes; $("#goes").onchange = (e) => { S.goes = e.target.checked; try { localStorage.setItem("lakelocal-goes", S.goes ? "1" : "0"); } catch (err) {} };
 $("#spd").onchange = (e) => S.speed = +e.target.value;
 const XFMT = { int: (v) => `${Math.round(v * 100)}%`, cov: (v) => `${Math.round(v * 100)}%`, mspd: (v) => `${v} km/h`, mdir: (v) => `${v}° ${compass(v)}`, wspd: (v) => `${mph(v)} mph`, wdir: (v) => `${v}° ${compass(v)}`,
   dur: (v) => `${v} h`, air: (v) => `${Math.round(cToF(v))}°F`, water: (v) => `${Math.round(cToF(v))}°F`, ice: (v) => `${Math.round(v * 100)}%`, hour: (v) => { const h = Math.floor(v), m = Math.round((v - h) * 60); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; } };
@@ -2996,7 +2999,7 @@ function tick() {
     // clouds beyond radar: forecast sky cover, or the chosen fair-weather layer
     U.uExtra.value = (S.mode === "forecast" || S.mode === "live" || S.mode === "import") && !RS ? clamp((C.sky - 10) / 90, 0, 1) * 0.95 : S.mode === "exp" && S.x.type === "cumulus" ? 0.55 * S.x.cov : 0;
     // live, with a GOES image within 45 min: the satellite's cloud field (also over radar, which only sees clouds that rain)
-    { const G = DATA.earth && DATA.earth.goes, on = S.mode === "live" && EARTH.goes && G && Math.abs(new Date(G.time).getTime() - S.t) < 45 * 60e3;
+    { const G = DATA.earth && DATA.earth.goes, on = S.goes && S.mode === "live" && EARTH.goes && G && Math.abs(new Date(G.time).getTime() - S.t) < 45 * 60e3;
       U.uGoesOn.value = on ? 1 : 0;
       if (on) { U.uExtra.value = Math.max(U.uExtra.value, clamp((G.sky_area_pct ?? G.sky_local_pct ?? 0) / 100, 0.02, 1) * 0.95); if (G.top_km) U.uExtraBase.value = clamp(G.top_km - 1.6, 0.6, 7); }
       else U.uExtraBase.value = 1.3; }
@@ -3144,7 +3147,7 @@ function renderModels() {
   rows.push(["Nearshore", SWAN.domains.length ? `SWAN 41.51: ${SWAN.domains.map((d) => `${d.name} (${d.cases.length} cases, ${d.obstacles} walls)`).join(", ")}` : "1-D refraction/shoaling on the real profile"]);
   { const E = DATA.earth || {}, W = E.water || {};
     if (W.temp) rows.push(["Water temperature", `${W.temp.label || "satellite"}${W.upwelling ? ` · shore ${Math.round(cToF(W.upwelling.near_c))}°, 8-15 km out ${Math.round(cToF(W.upwelling.off_c))}°` : ""}`]);
-    if (E.goes) rows.push(["Clouds now", `GOES-19 ${E.goes.time.slice(11, 16)} UTC: ${E.goes.sky_local_pct}% within 15 km`]);
+    if (E.goes) rows.push(["Clouds now", `GOES-19 ${E.goes.time.slice(11, 16)} UTC: ${E.goes.sky_local_pct}% within 15 km${S.goes ? "" : " (not drawn: switched off under View)"}`]);
     if (E.gfs) rows.push(["Second-opinion wind", `NOAA GFS run ${E.gfs.init.slice(5, 13).replace("T", " ")}Z`]);
     if (E.credits) rows.push(["Satellite & reanalysis", E.credits]);
     if (E.normals && E.normals.era5) rows.push(["Normals", `ERA5 ${E.normals.era5.years.join("-")}, ±${E.normals.era5.window_days} days${E.normals.lake ? "; lake ERA5-Land" : ""}`]); }
