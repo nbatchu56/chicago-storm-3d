@@ -32,7 +32,7 @@ TEMP_BBOX = (41.60, -87.95, 42.40, -87.10)      # S, W, N, E (as app.lakefront)
 MAP_BBOX = (41.855, -87.665, 41.990, -87.560)
 TEMP_D = 0.005
 MAP_D = 0.0005
-SAT_MAX_AGE_H = 48.0
+SAT_MAX_AGE_H = 72.0              # and newer than the GLSEA analysis it would replace
 NORTH_AVE = (41.915, -87.610)                   # ~1 km off North Ave Beach
 POINTS = {"northave": (41.915, -87.610), "45198": (41.892, -87.563), "45174": (42.135, -87.655)}
 LAUNCHES = {"Montrose": (41.96741, -87.63436), "North Ave": (41.91426, -87.62252), "Diversey": (41.92649, -87.63272)}
@@ -117,16 +117,23 @@ def decode_byte_grid(g):
 
 # ---------------------------------------------------------------------------- water temperature
 def fuse_temperature(lats, lons, sat, glsea, now_h, max_age_h=SAT_MAX_AGE_H):
-    """Per cell: the newest satellite observation no older than max_age_h, else GLSEA; land stays empty.
+    """Per cell: the newest satellite observation no older than max_age_h and newer than the GLSEA analysis day
+    (GLSEA already holds the older passes), else GLSEA; land stays empty.
     sat: {name: (temp_c array, obs_hours array)} on the grid; glsea: page-format grid or None; water: bool array."""
     ny, nx = len(lats), len(lons)
     out = np.full((ny, nx), np.nan)
     src = np.zeros((ny, nx), np.int8)                  # 0 none, 1 GLSEA, 2.. satellites in order
     best_h = np.full((ny, nx), -np.inf)
+    floor_h = now_h - max_age_h
+    try:
+        gt = dt.datetime.fromisoformat(str((glsea or {}).get("time")).replace("Z", "+00:00"))
+        floor_h = max(floor_h, gt.timestamp() / 3600.0 + 12.0)      # GLSEA's day: the analysis is for ~12 UTC
+    except ValueError:
+        pass
     names = list(sat)
     for k, name in enumerate(names):
         t, h = sat[name]
-        ok = np.isfinite(t) & np.isfinite(h) & (now_h - h <= max_age_h) & (h > best_h)
+        ok = np.isfinite(t) & np.isfinite(h) & (h >= floor_h) & (h <= now_h + 1) & (h > best_h)
         out[ok], best_h[ok], src[ok] = t[ok], h[ok], 2 + k
     if glsea:
         for j in range(ny):
@@ -169,7 +176,7 @@ def upwelling(lats, lons, temp, rows=UPWELL_ROWS, near_km=(0.0, 2.0), off_km=(8.
 
 def water_image(ee, now):
     """MODIS + Landsat newest clear-sky water temperature (deg C) and observation time (hours since epoch)."""
-    start, end = ee.Date((now - dt.timedelta(days=3)).isoformat()), ee.Date((now + dt.timedelta(hours=1)).isoformat())
+    start, end = ee.Date((now - dt.timedelta(days=4)).isoformat()), ee.Date((now + dt.timedelta(hours=1)).isoformat())
     occ = ee.Image("JRC/GSW1_4/GlobalSurfaceWater").select("occurrence").unmask(0)
     water = occ.gte(50)
     water_modis = water.focalMin(1200, "circle", "meters")          # keep 1 km pixels clear of the shore
@@ -439,9 +446,12 @@ def era5_normals(series, today, days=10, years=(1991, 2020), calib=None):
 
 
 def lake_normal(ee, today, days=10, years=(1991, 2020)):
-    col = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR").filter(ee.Filter.calendarRange(years[0], years[1], "year")) \
-        .filter(ee.Filter.dayOfYear(max(1, today.timetuple().tm_yday - days), min(366, today.timetuple().tm_yday + days))) \
-        .select("lake_mix_layer_temperature")
+    base = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR").select("lake_mix_layer_temperature")
+    col = None
+    for y in range(years[0], years[1] + 1):                         # one short date range per year keeps the query small
+        c = dt.datetime(y, today.month, min(today.day, 28), tzinfo=UTC)
+        part = base.filterDate((c - dt.timedelta(days=days)).isoformat(), (c + dt.timedelta(days=days + 1)).isoformat())
+        col = part if col is None else col.merge(part)
     rows = col.getRegion(ee.Geometry.Point([-87.50, 41.95]), 11132).getInfo()
     i = rows[0].index("lake_mix_layer_temperature")
     v = np.array([r[i] for r in rows[1:] if r[i] is not None], float) - 273.15

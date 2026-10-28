@@ -2952,7 +2952,7 @@ function updateHud(rr, tp) {
   if (S.mode === "live") for (const m of W.metar || []) { if (nowMs - new Date(m.t).getTime() > 3 * 3600e3 || m.wspd_kt == null) continue;
     const k = (v) => Math.round(v * 1.15078); rows.push([m.name, `${m.wspd_kt < 1 ? "calm" : `${k(m.wspd_kt)} mph ${m.vrb ? "var" : compass(m.wdir)}${m.wgst_kt ? ` G${k(m.wgst_kt)}` : ""}`}${m.temp_c != null ? ` · ${Math.round(cToF(m.temp_c))}°` : ""}`]); }
   if (live && C.gfs) rows.push(["GFS model wind", `${mph(C.gfs.wspd)} mph ${compass(C.gfs.wdir)}`]);
-  if (live && NM.era5 && NM.era5.wind_ms) rows.push(["Usual wind now", `${mph(NM.era5.wind_ms.p50)} mph (1 in 10 h over ${mph(NM.era5.wind_ms.p90)})`]);
+  if (live && NM.era5 && NM.era5.wind_ms) rows.push(["Usual lake wind (ERA5)", `${mph(NM.era5.wind_ms.p50)} mph (1 in 10 h over ${mph(NM.era5.wind_ms.p90)})`]);
   { const fnu = satAt(EARTH.s2, C.xk, C.yk); if (fnu != null && live) rows.push(["Water clarity", `${fnuWord(fnu)} · ${fnu.toFixed(1)} FNU (${E.s2.label})`]); }
   if (tp && tp.inside) rows.push(["Your paddle", `${(tp.v * MPH).toFixed(1)} mph ${compass(tp.hd)}${tp.hr ? ` · ${tp.hr} bpm` : ""}`]);
   if (tp && tp.inside && C.wind > 0.5) { const rel = Math.abs(angd(tp.hd, C.dir)); rows.push(["Into wind?", rel < 60 ? "into the wind" : rel > 120 ? "with the wind" : "cross-wind"]); }

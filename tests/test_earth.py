@@ -9,8 +9,8 @@ from app import earth
 UTC = dt.timezone.utc
 
 
-def _glsea(val=15.0):
-    return {"lat0": 41.6, "lat1": 42.4, "lon0": -87.95, "lon1": -87.1, "nlat": 9, "nlon": 9, "v": [val] * 81, "time": "2026-10-26T12:00:00Z"}
+def _glsea(val=15.0, time="1970-01-01T00:00:00Z"):
+    return {"lat0": 41.6, "lat1": 42.4, "lon0": -87.95, "lon1": -87.1, "nlat": 9, "nlon": 9, "v": [val] * 81, "time": time}
 
 
 def test_sample_grid_bilinear_and_gaps():
@@ -24,13 +24,17 @@ def test_fusion_prefers_newest_recent_satellite():
     lats, lons = np.array([41.9, 41.905]), np.array([-87.6, -87.595, -87.59])
     now_h = 500000.0
     modis_t = np.array([[10.0, 10.0, np.nan], [10.0, np.nan, np.nan]])
-    modis_h = np.array([[now_h - 5, now_h - 60, np.nan], [now_h - 5, np.nan, np.nan]])     # one pixel too old
+    modis_h = np.array([[now_h - 5, now_h - 80, np.nan], [now_h - 5, np.nan, np.nan]])     # one pixel too old
     ls_t = np.array([[12.0, np.nan, np.nan], [np.nan, np.nan, np.nan]])
     ls_h = np.array([[now_h - 30, np.nan, np.nan], [np.nan, np.nan, np.nan]])           # older than MODIS there
     out, src, counts = earth.fuse_temperature(lats, lons, {"landsat": (ls_t, ls_h), "modis": (modis_t, modis_h)}, _glsea(15.0), now_h)
     assert out[0, 0] == 10.0 and src[0, 0] == 3          # newest wins
     assert abs(out[0, 1] - 15.0) < 1e-9 and src[0, 1] == 1          # 60 h old MODIS -> GLSEA
     assert counts == {"glsea": 4, "landsat": 0, "modis": 2}
+    # a satellite pass older than the GLSEA analysis day is already in GLSEA
+    gt = dt.datetime.fromtimestamp((now_h - 2) * 3600, UTC).isoformat()
+    out2, src2, _ = earth.fuse_temperature(lats, lons, {"landsat": (ls_t, ls_h), "modis": (modis_t, modis_h)}, _glsea(15.0, gt), now_h)
+    assert (src2 == 1).all()
 
 
 def test_upwelling_detects_cold_nearshore():
