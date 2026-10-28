@@ -183,8 +183,10 @@ def water_image(ee, now):
             return t.rename("t").addBands(when.rename("h").toFloat()).updateMask(good.And(water_modis)).toFloat()
         return ee.ImageCollection(cid).filterDate(start, end).map(f)
 
+    # an empty, fully masked image keeps the mosaics' bands when no pass is in the window
+    blank = ee.ImageCollection([ee.Image.constant([0, 0]).rename(["t", "h"]).toFloat().updateMask(ee.Image.constant(0))])
     md = modis("MODIS/061/MOD11A1", "Day").merge(modis("MODIS/061/MOD11A1", "Night")) \
-        .merge(modis("MODIS/061/MYD11A1", "Day")).merge(modis("MODIS/061/MYD11A1", "Night"))
+        .merge(modis("MODIS/061/MYD11A1", "Day")).merge(modis("MODIS/061/MYD11A1", "Night")).merge(blank)
     m = md.qualityMosaic("h")
 
     def landsat(img):
@@ -197,7 +199,7 @@ def water_image(ee, now):
     s, w, n, e = TEMP_BBOX
     box = ee.Geometry.Rectangle([w, s, e, n])
     ls = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2").merge(ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")) \
-        .filterBounds(box).filterDate(start, end).map(landsat)
+        .filterBounds(box).filterDate(start, end).map(landsat).merge(blank)
     lsm = ls.qualityMosaic("h")
     lst = lsm.select("t").focalMean(250, "circle", "meters")       # 30 m pixels -> the 500 m grid without aliasing
     img = m.select(["t", "h"], ["modis_t", "modis_h"]).addBands(lst.rename("ls_t")).addBands(lsm.select("h").rename("ls_h")) \
@@ -273,7 +275,10 @@ def build_s2(ee, now, days=10):
 
     def f(img):
         h = ee.Image.constant(ee.Number(img.date().millis()).divide(3.6e6)).toFloat()
-        return img.select("B4").divide(10000).rename("r").addBands(h.rename("h")).updateMask(img.select("SCL").eq(6)).toFloat()
+        # water leaves almost nothing at 1.6 um: what the SWIR band still sees over water is glint/haze the
+        # atmospheric correction left, taken off the red band too
+        r = img.select("B4").subtract(img.select("B11")).divide(10000).max(0)
+        return r.rename("r").addBands(h.rename("h")).updateMask(img.select("SCL").eq(6)).toFloat()
 
     n = col.size().getInfo()
     if not n:
@@ -402,7 +407,7 @@ def build_goes(ee, now, tref_c):
     near = dx ** 2 + dy ** 2 <= 15 ** 2
     loc = cloud_fraction(np.where(near, bt, np.nan), None if rf is None else np.where(near, rf, np.nan), tref, sun_up)
     area = cloud_fraction(bt, rf, tref, sun_up)
-    return {"time": t, "sky_local_pct": None if loc is None else round(100 * loc), "sky_area_pct": None if area is None else round(100 * area),
+    return {"time": t, "scale_c13": list(s13), "sky_local_pct": None if loc is None else round(100 * loc), "sky_area_pct": None if area is None else round(100 * area),
             "tref_c": round(tref_c, 1), "day": sun_up, "bt_median_c": round(float(np.nanmedian(bt)) - 273.15, 1) if np.isfinite(bt).any() else None}
 
 
@@ -437,10 +442,10 @@ def lake_normal(ee, today, days=10, years=(1991, 2020)):
     col = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR").filter(ee.Filter.calendarRange(years[0], years[1], "year")) \
         .filter(ee.Filter.dayOfYear(max(1, today.timetuple().tm_yday - days), min(366, today.timetuple().tm_yday + days))) \
         .select("lake_mix_layer_temperature")
-    r = col.reduce(ee.Reducer.mean().combine(ee.Reducer.stdDev(), sharedInputs=True)).reduceRegion(
-        ee.Reducer.first(), ee.Geometry.Point([-87.50, 41.95]), 11132).getInfo()
-    m, s = r.get("lake_mix_layer_temperature_mean"), r.get("lake_mix_layer_temperature_stdDev")
-    return None if m is None else {"mean_c": round(m - 273.15, 2), "sd_c": round(s, 2) if s is not None else None}
+    rows = col.getRegion(ee.Geometry.Point([-87.50, 41.95]), 11132).getInfo()
+    i = rows[0].index("lake_mix_layer_temperature")
+    v = np.array([r[i] for r in rows[1:] if r[i] is not None], float) - 273.15
+    return None if len(v) < 30 else {"mean_c": round(float(v.mean()), 2), "sd_c": round(float(v.std()), 2), "days": int(len(v))}
 
 
 # ---------------------------------------------------------------------------- main
@@ -477,19 +482,23 @@ def build(lakefront=None, era5_dir=None, era5_climate=None, prev=None, now=None)
         part("goes", lambda: build_goes(ee, now, tref))
     # normals change slowly: reuse last snapshot's for the same day
     pn = (prev or {}).get("normals")
-    if pn and pn.get("date") == now.date().isoformat():
+    if pn and pn.get("date") == now.date().isoformat() and pn.get("era5") and pn.get("lake"):
         out["normals"] = pn
     else:
-        def normals():
-            n = {"date": now.date().isoformat()}
+        n = {"date": now.date().isoformat()}
+        try:
             if era5_dir and os.path.isdir(era5_dir):
                 from . import era5
                 ser = era5.load(era5_dir).get("45198") or {}
                 cal = ((era5_climate or {}).get("calibration") or {}).get("45198")
                 n["era5"] = era5_normals(ser, now, calib=cal)
+        except Exception as e:  # noqa: BLE001
+            out["notes"].append(f"normals (ERA5): {str(e)[:200]}")
+        try:
             n["lake"] = lake_normal(ee, now)
-            return n
-        part("normals", normals)
+        except Exception as e:  # noqa: BLE001
+            out["notes"].append(f"normals (lake): {str(e)[:200]}")
+        out["normals"] = n
     return out
 
 
