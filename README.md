@@ -75,6 +75,24 @@ The wave model's misses are fairly consistent (too high in some winds, too low i
 
 The buoys are offshore (~9–15 m deep) and come out for the winter, so the correction is learned on open-lake waves only; the paddle-zone numbers downstream of it are still unverified.
 
+## Google Earth Engine layers
+
+With a service-account key in the repo secret `GEE_SERVICE_ACCOUNT_KEY` (a Cloud project registered for Earth Engine; the account needs the Earth Engine Resource Viewer and Service Usage Consumer roles), the snapshot adds `earth.json` (`app/earth.py`). Each part is optional, and without the key the step is skipped:
+
+| Layer | Source | On the page |
+|---|---|---|
+| Water temperature | Newest clear-sky pixel from the last 48 h of MODIS LST (Terra + Aqua, day + night, 1 km) or Landsat 8/9 thermal (100 m), NOAA GLSEA elsewhere; JRC surface-water mask; 0.005° grid | Replaces GLSEA as the water-temperature layer (View → Water temp) and the water number |
+| Upwelling | That grid: water 0–2 km from shore vs 8–15 km out, rows 41.85–42.06° N | "Upwelling" pill when the shore water is 2.5 °C (≈4.5 °F) or more colder |
+| Wind on the water | Sentinel-1 VV backscatter (newest pass, ≤12 days), relative to the pass's median | View → *Wind on the water*: dark = sheltered/calm, bright = wind-roughened |
+| Water clarity | Sentinel-2 red-band turbidity (Nechad), water pixels from the newest clear pass (≤10 days) | View → *Water clarity*; FNU at the view point and the launches |
+| Clouds now | GOES-19 10.3 µm vs the GFS surface temperature (plus visible reflectance by day), within 15 km | Live mode's sky within 45 min of the image |
+| Second-opinion wind | NOAA GFS 0.25°, newest complete run, 48 h at North Ave | "GFS model wind" in the readouts |
+| Normals | ERA5 hourly 1991–2020 (±10 days, cached on the `learn` branch), ERA5-Land lake temperature | "Windier than 9 in 10 hours", air/water "vs usual" pills, usual wind |
+
+The *Earth Engine probe* workflow lists which datasets the key can read and how fresh they are. `app/weathernext.py` (Google DeepMind WeatherNext 3, experimental) runs in the snapshot too but needs separate dataset access for the service account.
+
+**ERA5 in the learned correction**: the *Learn waves* workflow caches ERA5 hourly wind at the open-lake cells next to both buoys (1991 on, `era5/` on the `learn` branch). The backfill fills hours with buoy waves but no measured wind with ERA5 wind scaled to read like the buoy (ratio by direction sector over the overlap hours), and runs the wave model on 35 years of ERA5 wind alone (`era5_climate.json`): how many big-wave hours each wind direction brings and how few of them the buoys were out for, i.e. where the fit extrapolates. The fit report adds held-out skill on north-wind hours with 1 m+ waves. ERA5 adds wind, not wave observations, so it can't by itself teach the correction about storms the buoys missed.
+
 ## Stand-up paddling forecast (`/sup`)
 
 `/sup` is a paddling forecast for eight lakefront launches (Montrose, North Avenue, Oak Street, Ohio Street, 31st Street, 63rd Street, Rainbow, Calumet), rebuilt every 30 minutes (`SUP_INTERVAL_MIN`):

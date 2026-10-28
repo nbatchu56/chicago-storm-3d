@@ -307,6 +307,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
       <h2>View</h2>
       <div class="seg" role="group" aria-label="Overlay"><button data-ov="natural" aria-pressed="true">Natural</button><button data-ov="temp" aria-pressed="false">Water temp</button><button data-ov="radar" aria-pressed="false">Radar</button></div>
       <div class="seg" role="group" aria-label="Lake overlay"><button data-ov="depth" aria-pressed="false">Depth</button><button data-ov="hs" aria-pressed="false">Wave height</button><button data-ov="chop" aria-pressed="false">Chop</button><button data-ov="spots" aria-pressed="false">Chop spots</button></div>
+      <div class="seg" role="group" aria-label="Satellite overlay" id="sat-seg" hidden><button data-ov="s1" aria-pressed="false">Wind on the water (radar sat)</button><button data-ov="s2" aria-pressed="false">Water clarity</button></div>
       <div class="seg" role="group" aria-label="Chop spots" id="spots-seg" hidden><button data-spots="usual" aria-pressed="true">Usual</button><button data-spots="now" aria-pressed="false">Right now</button></div>
       <div class="row" hidden><label for="exag">Cloud height scale</label><output id="exag-o">×1</output></div>
       <input type="range" id="exag" min="1" max="5" step="0.5" value="1" hidden>
@@ -366,6 +367,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 <script id="validate-data" type="application/json"></script>
 <script id="learn-data" type="application/json"></script>
 <script id="levels-data" type="application/json"></script>
+<script id="earth-data" type="application/json"></script>
 <script id="meta-data" type="application/json"></script>
 <script id="import-data" type="application/json"></script>
 <script>
@@ -498,7 +500,7 @@ function lunar(date, lat = 41.88, lon = -87.63) {
 const azElDir = (o, v) => { const a = o.az * Math.PI / 180, e = o.el * Math.PI / 180; return v.set(Math.sin(a) * Math.cos(e), Math.sin(e), -Math.cos(a) * Math.cos(e)).normalize(); };
 
 // ---------------------------------------------------------------- data
-const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), learn: parseJSON("learn-data"), levels: parseJSON("levels-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
+const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), learn: parseJSON("learn-data"), levels: parseJSON("levels-data"), earth: parseJSON("earth-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
 { const h = parseJSON("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
 const S = { mode: "live", t: 0, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, view: "overview", histIdx: 0,
   x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, hour: 14, seed: 7 } };
@@ -579,6 +581,7 @@ const U = {
   uSwan: { value: blank2D }, uSwanMin: { value: new THREE.Vector2() }, uSwanSize: { value: new THREE.Vector2(1, 1) }, uSwanOn: { value: 0 }, uSwanRef: { value: 1 }, uHsOff: { value: 0 },
   uDepthOn: { value: 0 }, uHsOn: { value: 0 },
   // chop overlay: wave energy everywhere; inside a bound FUNWAVE tile also its crossing/rebound index (tex R = Hs m, G = crossing 0..1)
+  uSatOn: { value: 0 }, uSatTex: { value: blank2D }, uSatMin: { value: new THREE.Vector2() }, uSatSize: { value: new THREE.Vector2(1, 1) },
   uSpotsOn: { value: 0 }, uSpotHas: { value: 0 }, uSpotTex: { value: blank2D }, uSpotMin: { value: new THREE.Vector2() }, uSpotSize: { value: new THREE.Vector2(1, 1) },
   uChopOn: { value: 0 }, uChopTex: { value: blank2D }, uChopMin: { value: new THREE.Vector2() }, uChopSize: { value: new THREE.Vector2(1, 1) }, uChopCore: { value: new THREE.Vector4(1e6, 1e6, -1e6, -1e6) }, uChopHas: { value: 0 },
   uFw: { value: null }, uFwHs: { value: blank2D }, uFwMin: { value: new THREE.Vector2() }, uFwSize: { value: new THREE.Vector2(1, 1) }, uFwOn: { value: 0 }, uFwT: { value: 0 },
@@ -691,6 +694,10 @@ vec3 chopTint(vec2 hc, vec2 pk, float w) { float t = clamp(log(max(613.0 * hc.x 
 // chop spots heat map: usual = how often a spot is Choppy or worse (paddling-season daylight hours, buoy climate x SWAN);
 // right now = this hour's wave energy from Light chop (25 J/m2) up to Very rough (350+), rebound hatched as in Chop
 uniform sampler2D uSpotTex; uniform vec2 uSpotMin, uSpotSize; uniform float uSpotsOn, uSpotHas;
+// satellite overlays (Sentinel-1 roughness, Sentinel-2 clarity): colours made in JS, alpha 0 = no data
+uniform sampler2D uSatTex; uniform vec2 uSatMin, uSatSize; uniform float uSatOn;
+vec3 satTint(vec2 pk) { vec2 f = (pk - uSatMin) / uSatSize; vec3 none = pow(vec3(0.16, 0.18, 0.22), vec3(2.2));
+  if (f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0) return none; vec4 c = texture2D(uSatTex, f); return c.a < 0.5 ? none : pow(c.rgb, vec3(2.2)); }
 uniform sampler2D uOcFG, uOcF2; uniform float uOcLG, uOcOnG, uOcVarG, uOcL2;
 // the fine ripple tile at metres pm, sampled twice (rotated, rescaled) and blended so its 8 m repeat doesn't show as a grid
 vec2 fineSlope(vec2 pm) { vec2 a = texture2D(uOcF2, pm / uOcL2).xy, b = texture2D(uOcF2, mat2(0.574, 0.819, -0.819, 0.574) * pm / (uOcL2 * 1.37) + 0.31).xy;
@@ -823,19 +830,20 @@ void main(){
     if (uHsOn > 0.5) bodyTint = hsColor(kr >= 0.0 ? uHsOff * kr : uHs) * 0.5;
     if (uChopOn > 0.5) bodyTint = chopTint(chopAt(p, kr >= 0.0 ? uHsOff * kr : uHs), p, fwidth((p.x + p.y) * 1000.0 / 12.0)) * 0.5;
     if (uSpotsOn > 0.5) bodyTint = spotsTint(p, chopAt(p, kr >= 0.0 ? uHsOff * kr : uHs), fwidth((p.x + p.y) * 1000.0 / 12.0)) * 0.5;
+    if (uSatOn > 0.5) bodyTint = satTint(p) * 0.5;
     // little light gets into the water with the sun low (most of it glances off): at sunrise the lake reads dark slate and
     // green under the sky's reflection, not lit teal
-    vec3 body = bodyTint * (sunL + amb * 2.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn > 0.5 ? 1.0 : mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y))) + vec3(0.0, 0.01, 0.012) * uCity;
+    vec3 body = bodyTint * (sunL + amb * 2.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn + uSatOn > 0.5 ? 1.0 : mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y))) + vec3(0.0, 0.01, 0.012) * uCity;
     // light in the water comes through the surface: facets turned to the sun are brighter, those turned away darker, and a
     // low sun shines through the thin wave tops toward you (what makes waves read in daylight seen from above)
-    { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn;
+    { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn + uSatOn;
       body *= mix(clamp(1.0 + dot(N.xz, normalize(sl.xz + 1e-4)) * 3.2, 0.55, 1.6), 1.0, step(0.5, ov));
       body += vec3(0.008, 0.038, 0.040) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - N.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
     vec3 H = normalize(uSunDir + V); float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
     col = mix(body, refl, uTempOn > 0.5 ? F * 0.45 : F) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice);
     // light through the thin tops of the waves: a lighter green-blue on the crests, stronger as the waves grow
     float hsLook = (kr >= 0.0 ? uHsOff * kr : uHs) * calm * shel;
-    col += vec3(0.012, 0.040, 0.044) * (sunL + amb * 2.0) * smoothstep(0.9, 3.2, crest) * clamp(hsLook * 2.5, 0.15, 1.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn > 0.5 ? 0.0 : 1.0);
+    col += vec3(0.012, 0.040, 0.044) * (sunL + amb * 2.0) * smoothstep(0.9, 3.2, crest) * clamp(hsLook * 2.5, 0.15, 1.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn + uSatOn > 0.5 ? 0.0 : 1.0);
     float hsHere = (kr >= 0.0 ? uHsOff * kr : uHs) * calm * shel, brk = inBathy(p) && cls < 1.5 ? smoothstep(0.6, 1.0, hsHere / max(dep, 0.05)) * step(0.08, hsHere) : 0.0;
     float wc = vnoise(p * 900.0 + uTime * 0.6) * vnoise(p * 310.0 - uTime * 0.3), cover = max(clamp(uWhitecap, 0.0, 0.3) * calm, brk * 0.3 * (0.4 + 0.6 * vnoise(p * 400.0 - uTime * 0.4)));
     float foam = mix(smoothstep(1.0 - cover * 4.0, 1.0 - cover * 3.0, wc), cover, clamp(foot * 60.0, 0.0, 1.0));
@@ -1298,7 +1306,7 @@ function gridTexture(g) {
 }
 const GRIDS = { temp: null, ice: null };
 function setLakeGrids(lake) {
-  GRIDS.temp = gridTexture(lake && lake.temp); GRIDS.ice = gridTexture(lake && lake.ice); GRIDS.src = lake && lake.temp ? `NOAA GLSEA ${String(lake.temp.time || "").slice(0, 10)}` : null;
+  GRIDS.temp = gridTexture(lake && lake.temp); GRIDS.ice = gridTexture(lake && lake.ice); GRIDS.src = lake && lake.temp ? (lake.temp.label ? `Satellite: ${lake.temp.label}` : `NOAA GLSEA ${String(lake.temp.time || "").slice(0, 10)}`) : null;
   GRIDS.iceStatus = lake && lake.ice_status;
   if (GRIDS.temp) { U.uTempTex.value = GRIDS.temp.tex; U.uTempMin.value.set(...GRIDS.temp.min); U.uTempSize.value.set(...GRIDS.temp.size); U.uTempN.value.set(...GRIDS.temp.n); }
   if (GRIDS.ice) { U.uIceTex.value = GRIDS.ice.tex; U.uIceMin.value.set(...GRIDS.ice.min); U.uIceSize.value.set(...GRIDS.ice.size); U.uIceN.value.set(...GRIDS.ice.n); }
@@ -1306,6 +1314,44 @@ function setLakeGrids(lake) {
 function gridValue(G, xk, yk) { if (!G) return null; const fx = clamp((xk - G.min[0]) / G.size[0], 0, 1) * (G.n[0] - 1), fy = clamp((yk - G.min[1]) / G.size[1], 0, 1) * (G.n[1] - 1);
   const i0 = Math.min(Math.floor(fx), G.n[0] - 2), j0 = Math.min(Math.floor(fy), G.n[1] - 2), tx = fx - i0, ty = fy - j0, v = (j, i) => G.vals[j * G.n[0] + i];
   return (v(j0, i0) * (1 - tx) + v(j0, i0 + 1) * tx) * (1 - ty) + (v(j0 + 1, i0) * (1 - tx) + v(j0 + 1, i0 + 1) * tx) * ty; }
+
+// ---------------------------------------------------------------- Earth Engine layers (earth.json): Sentinel-1/2 overlays, GOES, GFS, normals
+const EARTH = { s1: null, s2: null };
+const hexRGB = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+const rampAt = (stops, f) => { f = clamp(f, 0, 1); for (let i = 1; i < stops.length; i++) if (f <= stops[i][0]) { const [a, ca] = stops[i - 1], [b, cb] = stops[i], t = (f - a) / Math.max(b - a, 1e-6);
+  return ca.map((v, k) => Math.round(v + (cb[k] - v) * t)); } return stops[stops.length - 1][1]; };
+// Sentinel-1: backscatter relative to this pass's median over the map water: dark = smoother than usual (sheltered), bright = rougher
+const S1_STOPS = [[0, "#0b1530"], [0.35, "#1f4f7a"], [0.5, "#3c8fa6"], [0.7, "#9fd8cf"], [1, "#fffbe8"]].map(([f, h]) => [f, hexRGB(h)]);
+// Sentinel-2 turbidity, log 0..60 FNU: clear blue, green, tan, brown
+const S2_STOPS = [[0, "#1d5fa8"], [0.3, "#2aa58c"], [0.55, "#b8b04c"], [0.78, "#a06d38"], [1, "#5e3b1c"]].map(([f, h]) => [f, hexRGB(h)]);
+const S1_SPAN_DB = 6;
+function byteValue(g, q) { if (!q) return null; const f = (q - 1) / 254; if (g.log) { const lo = Math.log10(g.lo + 1), hi = Math.log10(g.hi + 1); return 10 ** (lo + f * (hi - lo)) - 1; } return g.lo + f * (g.hi - g.lo); }
+async function satTexture(g, colorOf) {
+  const q = await gunzipB64(g.b64), n = g.nlat * g.nlon; if (q.length !== n) return null; const d = new Uint8Array(n * 4);
+  for (let i = 0; i < n; i++) { if (!q[i]) continue; const c = colorOf(byteValue(g, q[i]), q[i]); d[4 * i] = c[0]; d[4 * i + 1] = c[1]; d[4 * i + 2] = c[2]; d[4 * i + 3] = 255; }
+  const t = new THREE.DataTexture(d, g.nlon, g.nlat, THREE.RGBAFormat, THREE.UnsignedByteType); t.minFilter = t.magFilter = THREE.LinearFilter; t.needsUpdate = true;
+  const [ax, ay] = ll(g.lat0, g.lon0), [bx, by] = ll(g.lat1, g.lon1); return { tex: t, min: [ax, ay], size: [bx - ax, by - ay], q, g };
+}
+async function setEarth(E) {
+  if (!E) return;
+  try { if (E.s1 && E.s1.b64) { const med = E.s1.median_db ?? -18; EARTH.s1 = await satTexture(E.s1, (db) => rampAt(S1_STOPS, (db - med + S1_SPAN_DB) / (2 * S1_SPAN_DB))); } } catch (e) { console.warn("s1", e); }
+  try { if (E.s2 && E.s2.b64) { const lo = Math.log10(E.s2.lo + 1), hi = Math.log10(E.s2.hi + 1); EARTH.s2 = await satTexture(E.s2, (v) => rampAt(S2_STOPS, (Math.log10(v + 1) - lo) / (hi - lo))); } } catch (e) { console.warn("s2", e); }
+  $("#sat-seg").hidden = !EARTH.s1 && !EARTH.s2;
+  for (const k of ["s1", "s2"]) { const b = document.querySelector(`[data-ov="${k}"]`); if (b) b.disabled = !EARTH[k]; }
+  setSat();
+}
+function setSat() { const L = (S.ov === "s1" || S.ov === "s2") && EARTH[S.ov]; U.uSatOn.value = L ? 1 : 0;
+  if (L) { U.uSatTex.value = L.tex; U.uSatMin.value.set(...L.min); U.uSatSize.value.set(...L.size); } }
+function satAt(L, xk, yk) { if (!L) return null; const g = L.g, fx = (xk - L.min[0]) / L.size[0] * (g.nlon - 1), fy = (yk - L.min[1]) / L.size[1] * (g.nlat - 1);
+  const i = Math.round(fx), j = Math.round(fy); if (i < 0 || j < 0 || i >= g.nlon || j >= g.nlat) return null;
+  // nearest valid cell within ~150 m (the shore cells are masked)
+  let best = null; for (let r = 0; r <= 3 && best == null; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const ii = i + di, jj = j + dj;
+    if (ii < 0 || jj < 0 || ii >= g.nlon || jj >= g.nlat) continue; const q = L.q[jj * g.nlon + ii]; if (q) { best = byteValue(g, q); break; } }
+  return best; }
+// GFS: the hour nearest t at the lakefront; ERA5 normals
+function gfsAt(tMs) { const P = DATA.earth && DATA.earth.gfs && DATA.earth.gfs.points && DATA.earth.gfs.points.northave; if (!P) return null; let k = -1, bd = 1e15;
+  P.t.forEach((t, i) => { const d = Math.abs(new Date(t).getTime() - tMs); if (d < bd) { bd = d; k = i; } }); return bd < 90 * 60e3 && P.wspd[k] != null ? { wspd: P.wspd[k], wdir: P.wdir[k], t2m: P.t2m_c[k], cloud: P.cloud[k] } : null; }
+const fnuWord = (f) => f < 2 ? "clear" : f < 5 ? "slightly cloudy" : f < 15 ? "murky" : "very murky";
 
 // ---------------------------------------------------------------- real lake bottom + SWAN wave library
 const BATHY = { ok: false }, SWAN = { domains: [], key: null, cur: null };
@@ -1700,10 +1746,11 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       if (uHsOn > 0.5) tint = hsColor(vFw > 0.0 ? mix(uHsB * vGain, texture2D(uFwHs, clamp((pk - uFwMin) / uFwSize, 0.0, 1.0)).r, vFw) : uHsB * vGain) * 0.5;
       if (uChopOn > 0.5) tint = chopTint(chopAt(pk, uHsB * vGain), pk, fwidth((pk.x + pk.y) * 1000.0 / 12.0)) * 0.5;
       if (uSpotsOn > 0.5) tint = spotsTint(pk, chopAt(pk, uHsB * vGain), fwidth((pk.x + pk.y) * 1000.0 / 12.0)) * 0.5;
-      vec3 body = tint * (sunL + amb * 2.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn > 0.5 ? 1.0 : mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y))) + vec3(0.0, 0.01, 0.012) * uCity;
+      if (uSatOn > 0.5) tint = satTint(pk) * 0.5;
+      vec3 body = tint * (sunL + amb * 2.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn + uSatOn > 0.5 ? 1.0 : mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y))) + vec3(0.0, 0.01, 0.012) * uCity;
       // light in the water comes through the surface: facets turned to the sun are brighter, those turned away darker, and a
       // low sun shines through the thin wave tops toward you (what makes waves read in daylight seen from above)
-      { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn;
+      { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uSpotsOn + uSatOn;
         body *= mix(clamp(1.0 + dot(Nn.xz, normalize(sl.xz + 1e-4)) * 3.2, 0.55, 1.6), 1.0, step(0.5, ov));
         body += vec3(0.008, 0.038, 0.040) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - Nn.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
       vec3 c = mix(body, skyColor(R, false), uTempOn > 0.5 ? F * 0.45 : F);
@@ -2227,6 +2274,10 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
       if (h.hs_offshore > 0.01) c.off = { hs: h.hs_offshore, tp: h.tp, dir: h.wave_dir };
       withChop(c.systems, h.wind, h.dir); c.spot = sp; c.hour = h; c.src.push(`forecast model · ${sp.name}${h.raw ? ` · learned ×${h.factor.toFixed(2)}` : ""}`); }
     if (S.mode === "live" && DATA.lake && DATA.lake.stations) { const wd = stationAt(DATA.lake.stations, "wspd", tMs, xk, yk); if (wd) { c.wind = wd.h.wspd; c.dir = wd.h.wdir ?? c.dir; c.gust = wd.h.gst ?? c.gust; c.src.unshift(`wind ${wd.st.id}`); } }
+    // clouds right now from GOES-19 (within 45 min), instead of the forecast's sky cover
+    const G = DATA.earth && DATA.earth.goes;
+    if (S.mode === "live" && G && G.sky_local_pct != null && Math.abs(new Date(G.time).getTime() - tMs) < 45 * 60e3) { c.sky = G.sky_local_pct; c.src.push("clouds GOES-19"); }
+    c.gfs = gfsAt(tMs);
   }
   if (FW.cur) { c.off = { hs: FW.cur.hs, tp: FW.cur.tp, dir: FW.cur.dir, src: "FUNWAVE case" }; c.src.unshift(`FUNWAVE: ${FW.cur.label}`); }
   // SWAN: inside a modelled domain, the local sea comes from the library for this offshore condition
@@ -2241,7 +2292,7 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
   const fwh = funwaveHsKm(xk, yk); if (fwh != null) { c.fwHs = fwh; c.systems = c.systems.length ? c.systems : [{ hs: fwh, tp: FW.cur.tp, dir: FW.cur.dir, spread: 20 }]; }
   if (c.waterC == null && GRIDS.temp) c.waterC = gridValue(GRIDS.temp, xk, yk);
   c.snow = c.airC != null && c.airC < 1 || (S.mode === "exp" && S.x.type === "lakeeffect");
-  c.shore = shore; return c;
+  c.shore = shore; c.xk = xk; c.yk = yk; return c;
 }
 
 // ---------------------------------------------------------------- Chicago SUP launches: chop rating now and the next hours
@@ -2617,7 +2668,7 @@ function setMode(m) { S.mode = m; document.querySelectorAll("[data-mode]").forEa
   buildTicks(); WAVES.key = null; }
 document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode));
 document.querySelectorAll("[data-ov]").forEach((b) => b.onclick = () => { S.ov = b.dataset.ov; document.querySelectorAll("[data-ov]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-  U.uMode.value = S.ov === "radar" ? 1 : 0; U.uTempOn.value = S.ov === "temp" ? 1 : 0; U.uDepthOn.value = S.ov === "depth" ? 1 : 0; U.uHsOn.value = S.ov === "hs" ? 1 : 0; U.uChopOn.value = S.ov === "chop" ? 1 : 0; setSpots(); renderLegend(); });
+  U.uMode.value = S.ov === "radar" ? 1 : 0; U.uTempOn.value = S.ov === "temp" ? 1 : 0; U.uDepthOn.value = S.ov === "depth" ? 1 : 0; U.uHsOn.value = S.ov === "hs" ? 1 : 0; U.uChopOn.value = S.ov === "chop" ? 1 : 0; setSat(); setSpots(); renderLegend(); });
 document.querySelectorAll("[data-spots]").forEach((b) => b.onclick = () => { S.spotsNow = b.dataset.spots === "now"; document.querySelectorAll("[data-spots]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); setSpots(); renderLegend(); });
 document.querySelectorAll("[data-cam]").forEach((b) => b.onclick = () => goCam(b.dataset.cam));
 document.querySelectorAll("[data-q]").forEach((b) => b.onclick = () => { S.quality = +b.dataset.q; document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); try { localStorage.setItem("lakeworld-q", String(S.quality)); } catch (e) {} resize(); });
@@ -2705,6 +2756,12 @@ function renderLegend() {
       <span><i style="display:inline-block;width:22px;height:9px;vertical-align:-1px;background:repeating-linear-gradient(135deg,#f240d9 0 3px,transparent 3px 7px)"></i> rebound off walls, trains crossing (wall tiles, with a Walls condition picked)</span>${conf}`
       : `<b>Chop spots: suspected, how often</b>${bar}<div class="tk"><span>0</span><span>15%</span><span>30%</span><span>45%</span><span>60%+</span></div>
       <span>Share of daylight hours (6 AM-8 PM, May-Oct ${M ? M.seasons : ""}) a spot is Choppy or worse (70+ J/m²): ${M ? M.hours.toLocaleString() : "?"} buoy hours of offshore waves carried in by the SWAN model (sheltering, wall reflection, breaking). Wind chop raised inside the harbours isn't in it.</span>${conf}`; }
+  else if (S.ov === "s1") { const E1 = (DATA.earth || {}).s1, bar = S1_STOPS.map(([f, c]) => `rgb(${c}) ${Math.round(f * 100)}%`).join(",");
+    h = `<b>Wind on the water: radar roughness</b><div class="bar" style="background:linear-gradient(90deg,${bar})"></div><div class="tk"><span>smoother</span><span></span><span>usual</span><span></span><span>rougher</span></div>
+      <span>${E1 ? `${E1.label} ${E1.time.slice(11, 16)} UTC (${E1.orbit === "ASCENDING" ? "evening" : "morning"} pass): backscatter ±${S1_SPAN_DB} dB around this pass's median. Dark water is sheltered or calm (wind shadows, slicks); bright is wind-roughened.` : "No Sentinel-1 pass loaded"}</span><span>A snapshot from the satellite's pass, not live; passes come every few days.</span>`; }
+  else if (S.ov === "s2") { const E2 = (DATA.earth || {}).s2, bar = S2_STOPS.map(([f, c]) => `rgb(${c}) ${Math.round(f * 100)}%`).join(",");
+    h = `<b>Water clarity (turbidity)</b><div class="bar" style="background:linear-gradient(90deg,${bar})"></div><div class="tk"><span>0</span><span>2</span><span>8</span><span>25</span><span>60 FNU</span></div>
+      <span>${E2 ? `${E2.label} (clear-sky water pixels; Nechad red-band turbidity). ${Object.entries(E2.launches || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v} FNU`).join(" · ")}` : "No clear Sentinel-2 pass in the last 10 days"}</span><span>Murky water after storms and river outflow; under 2 FNU is clear.</span>`; }
   else if (S.ov === "radar") { h = `<b>Radar reflectivity</b><div class="bar" style="background:linear-gradient(90deg,${DBZ_STOPS.slice(0, 13).map(([, c]) => c).join(",")})"></div><div class="tk"><span>5</span><span>35</span><span>65 dBZ</span></div>`; }
   el.innerHTML = h; el.hidden = !h;
 }
@@ -2878,6 +2935,11 @@ function updateHud(rr, tp) {
   const pill = (icon, html, cls = "", st = "") => `<span class="p ${cls}"${st ? ` style="${st}"` : ""}>${icon ? WXI[icon] : ""}${html}</span>`;
   let wl = pill(sky, wx) + (C.airC != null ? pill("", `<i>Air</i> ${Math.round(cToF(C.airC))}°`) : "") + (C.waterC != null ? pill("", `<i>Water</i> ${Math.round(cToF(C.waterC))}°`) : "");
   if (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) wl += pill("", `<i>Ice</i> ${S.mode === "exp" ? Math.round(S.x.ice * 100) + "%" : "NOAA"}`);
+  const E = DATA.earth || {}, UP = E.water && E.water.upwelling, NM = E.normals || {};
+  if (live && UP && UP.upwelling) wl += pill("", `Upwelling: shore water ${Math.round(UP.delta_c * 1.8)}° colder than offshore`, "spc", "background:#8fd0ff;color:#0b2540");
+  if (live && NM.era5 && NM.era5.wind_ms && C.wind > NM.era5.wind_ms.p90) wl += pill("", "Windier than 9 in 10 hours this time of year", "spc", "background:#ffd38a;color:#3a2400");
+  if (live && NM.era5 && NM.era5.air_c && C.airC != null) { const d = (C.airC - NM.era5.air_c.p50) * 1.8; if (Math.abs(d) >= 5) wl += pill("", `<i>Air</i> ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° vs usual`); }
+  if (live && NM.lake && NM.lake.mean_c != null && C.waterC != null) { const d = (C.waterC - NM.lake.mean_c) * 1.8; if (Math.abs(d) >= 3) wl += pill("", `<i>Water</i> ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° vs usual`); }
   const spc = W.spc, nowMs = Date.now();
   if (live && spc && spc.cat && (!spc.expire || new Date(spc.expire).getTime() > nowMs))
     wl += pill("", spc.cat === "TSTM" ? "Thunder possible" : `Severe: ${spc.label.replace(/ risk$/i, "")} ${spc.level}/5`, "spc", `background:${spc.color || "#f6f67f"}`);
@@ -2889,6 +2951,9 @@ function updateHud(rr, tp) {
     ...(C.swan && C.off ? [["Offshore", `${ft(C.off.hs)} ft · ${C.off.tp.toFixed(1)} s from ${compass(C.off.dir)}`]] : [])];
   if (S.mode === "live") for (const m of W.metar || []) { if (nowMs - new Date(m.t).getTime() > 3 * 3600e3 || m.wspd_kt == null) continue;
     const k = (v) => Math.round(v * 1.15078); rows.push([m.name, `${m.wspd_kt < 1 ? "calm" : `${k(m.wspd_kt)} mph ${m.vrb ? "var" : compass(m.wdir)}${m.wgst_kt ? ` G${k(m.wgst_kt)}` : ""}`}${m.temp_c != null ? ` · ${Math.round(cToF(m.temp_c))}°` : ""}`]); }
+  if (live && C.gfs) rows.push(["GFS model wind", `${mph(C.gfs.wspd)} mph ${compass(C.gfs.wdir)}`]);
+  if (live && NM.era5 && NM.era5.wind_ms) rows.push(["Usual wind now", `${mph(NM.era5.wind_ms.p50)} mph (1 in 10 h over ${mph(NM.era5.wind_ms.p90)})`]);
+  { const fnu = satAt(EARTH.s2, C.xk, C.yk); if (fnu != null && live) rows.push(["Water clarity", `${fnuWord(fnu)} · ${fnu.toFixed(1)} FNU (${E.s2.label})`]); }
   if (tp && tp.inside) rows.push(["Your paddle", `${(tp.v * MPH).toFixed(1)} mph ${compass(tp.hd)}${tp.hr ? ` · ${tp.hr} bpm` : ""}`]);
   if (tp && tp.inside && C.wind > 0.5) { const rel = Math.abs(angd(tp.hd, C.dir)); rows.push(["Into wind?", rel < 60 ? "into the wind" : rel > 120 ? "with the wind" : "cross-wind"]); }
   $("#readouts").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
@@ -2901,6 +2966,12 @@ function renderModels() {
   rows.push(["Lake level", BATHY.ok ? `${(BATHY.level - LWD).toFixed(2)} m above low-water datum (survey)${DATA.levels ? `; measured hourly at Calumet Harbor for the time shown (${DATA.levels.station}), plus wave setup in the surf zone` : ""}` : "–"]);
   rows.push(["Open-lake waves", "CEM growth with memory, 10 m wind + stability"]);
   rows.push(["Nearshore", SWAN.domains.length ? `SWAN 41.51: ${SWAN.domains.map((d) => `${d.name} (${d.cases.length} cases, ${d.obstacles} walls)`).join(", ")}` : "1-D refraction/shoaling on the real profile"]);
+  { const E = DATA.earth || {}, W = E.water || {};
+    if (W.temp) rows.push(["Water temperature", `${W.temp.label || "satellite"}${W.upwelling ? ` · shore ${Math.round(cToF(W.upwelling.near_c))}°, 8-15 km out ${Math.round(cToF(W.upwelling.off_c))}°` : ""}`]);
+    if (E.goes) rows.push(["Clouds now", `GOES-19 ${E.goes.time.slice(11, 16)} UTC: ${E.goes.sky_local_pct}% within 15 km`]);
+    if (E.gfs) rows.push(["Second-opinion wind", `NOAA GFS run ${E.gfs.init.slice(5, 13).replace("T", " ")}Z`]);
+    if (E.credits) rows.push(["Satellite & reanalysis", E.credits]);
+    if (E.normals && E.normals.era5) rows.push(["Normals", `ERA5 ${E.normals.era5.years.join("-")}, ±${E.normals.era5.window_days} days${E.normals.lake ? "; lake ERA5-Land" : ""}`]); }
   rows.push(["Walls, wave by wave", FW.runs.length ? `FUNWAVE-TVD: ${[...new Set(FW.runs.map((r) => r.tile_label))].join(", ")} (${Object.keys(FW.byCase).length} conditions)` : "not run"]);
   $("#models").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd style="text-align:left">${v}</dd>`).join("");
   const V = DATA.validate;
@@ -3058,6 +3129,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
     await setBathy(DATA.bathy); await setSwan(DATA.swan); await setFunwave(DATA.funwave); renderModels();
     setChopSpots(parseJSON("chopspots-data") || await split("chopspots-data")).then(() => { if (S.ov === "spots") renderLegend(); });
     if (DATA.lake) { buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
+    await setEarth(DATA.earth);
     buildMinimap(); showHintOnce(); initRefresh(); await initImport();
     SRC.live = await decodeScene(DATA.scene);
     for (const h of DATA.hist) await addHistory(h);

@@ -225,10 +225,22 @@ def write_side(out, rel, obj):
 SPLIT = ("bathy-data", "swan-data", "funwave-data", "history-data", "chopspots-data")   # funwave: one file per run
 
 
+def merge_earth(lakefront, earth):
+    """The fused satellite water temperature replaces GLSEA as the page's lake grid (it already holds GLSEA where the
+    satellites saw nothing recent); the rest of earth.json goes to the page as is."""
+    w = earth.get("water") or {}
+    if lakefront is not None and w.get("temp") and any(v is not None for v in w["temp"].get("v", [])):
+        lake = dict(lakefront.get("lake") or {})
+        lake["temp"] = w["temp"]
+        lakefront = dict(lakefront, lake=lake)
+        earth = dict(earth, water={k: v for k, v in w.items() if k != "temp"} | {"temp": {"label": w["temp"].get("label"), "time": w["temp"].get("time")}})
+    return lakefront, earth
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
-    for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track", "levels"):
+    for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track", "levels", "earth"):
         ap.add_argument("--" + k)
     ap.add_argument("--learn", help="correction.json from the learn branch (experimental learned wave correction)")
     ap.add_argument("--scorecard", help="scorecard.json from the learn branch (forecast vs buoy by lead time)")
@@ -244,8 +256,11 @@ def main():
     ap.add_argument("--start", help='open on a history period: JSON {"label":..,"t":ISO,"view":[lat,lon,km,heading,pitch]}')
     a = ap.parse_args()
     html = open(TEMPLATE).read()
+    lakefront, earth = load(a.lakefront), load(a.earth)
+    if earth:
+        lakefront, earth = merge_earth(lakefront, earth)
     blocks = {
-        "scene-data": load(a.scene), "sup-data": load(a.sup), "lakefront-data": load(a.lakefront), "track-data": load(a.track),
+        "scene-data": load(a.scene), "sup-data": load(a.sup), "lakefront-data": lakefront, "earth-data": earth, "track-data": load(a.track),
         "bathy-data": thin_bathy(load(a.bathy)), "swan-data": coarsen_swan(load(a.swan)),
         "funwave-data": quantize_funwave([load(p) for p in a.funwave]) or None, "validate-data": summarize_validation(load(a.validate)),
         "import-data": [d for d in (load(p) for p in a.imports) if d] or None,

@@ -502,7 +502,11 @@ if __name__ == "__main__":
     ap.add_argument("--era5-climate")
     ap.add_argument("--prev")
     a = ap.parse_args()
-    rd = lambda p: json.load(open(p)) if p and os.path.exists(p) else None  # noqa: E731
+    def rd(p):
+        try:
+            return json.load(open(p)) if p and os.path.exists(p) and os.path.getsize(p) else None
+        except ValueError:
+            return None
     o = build(rd(a.lakefront), a.era5, rd(a.era5_climate), rd(a.prev))
     with open(a.out, "w") as fh:
         json.dump(o, fh, separators=(",", ":"))
