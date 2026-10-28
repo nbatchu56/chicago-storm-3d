@@ -112,21 +112,28 @@ def _round(v, n):
     return None if v is None or (isinstance(v, float) and not math.isfinite(v)) else round(float(v), n)
 
 
-# No maximum_bytes_billed: BigQuery enforces it on its up-front estimate, which for this clustered view is the whole
-# table (~2.7 TB) even though the run itself reads ~95 MB once the clustering prunes; the actual bill is logged.
+# One init per query, by equality on init_time (the partition key): BigQuery's up-front estimate for this clustered
+# view ignores the clustering, so a 30 h range is "2.7 TB" and a free-tier project refuses it, while one init is
+# ~180 GB estimated and a few MB read. Runs land in BigQuery ~7.5 h after their init time (6-hourly cycles ~8 h 10).
+BQ_LAG_H, BQ_TRIES = 7.0, 6
 
 
-def bq_query(table, bands, now, hours=HOURS):
-    """GoogleSQL for the point samples from a WeatherNext 3 BigQuery table (one row per point x init x lead hour).
+def bq_inits(now, lag_h=BQ_LAG_H, tries=BQ_TRIES):
+    """Init times to try, newest first: whole hours from now - lag back tries hours."""
+    t0 = (now - dt.timedelta(hours=lag_h)).replace(minute=0, second=0, microsecond=0)
+    return [t0 - dt.timedelta(hours=k) for k in range(tries)]
+
+
+def bq_query(table, bands, init, hours=HOURS):
+    """GoogleSQL for the point samples of one init from a WeatherNext 3 BigQuery table (one row per point x lead hour).
     The cells are picked with a constant MULTIPOINT so the table's geography clustering prunes the scan (a join
     predicate alone doesn't); then each point takes its own cell (two points can share one: North Ave and 45198)."""
     pts = ", ".join(f"STRUCT('{k}' AS id, ST_GEOGPOINT({lo}, {la}) AS g)" for k, (la, lo) in POINTS.items())
     multi = ", ".join(f"({lo} {la})" for la, lo in POINTS.values())
     cols = ", ".join(f"f.{b}" for b in bands)
-    since = (now - dt.timedelta(hours=30)).strftime("%Y-%m-%d %H:%M:%S")   # runs land ~7.5 h after init
     return (f"SELECT p.id, t.init_time, f.hours AS forecast_hour, {cols}\n"
             f"FROM `{table}` AS t, UNNEST(t.forecast) AS f, UNNEST([{pts}]) AS p\n"
-            f"WHERE t.init_time >= TIMESTAMP('{since} UTC')\n"
+            f"WHERE t.init_time = TIMESTAMP('{init.astimezone(UTC).strftime('%Y-%m-%d %H:%M:%S')} UTC')\n"
             f"  AND ST_INTERSECTS(t.geography_polygon, ST_GEOGFROMTEXT('MULTIPOINT({multi})'))\n"
             f"  AND ST_INTERSECTS(t.geography_polygon, p.g) AND f.hours BETWEEN 1 AND {hours}")
 
@@ -158,13 +165,17 @@ def init_bq():
 
 def sample_bq(client, table, bands, now, hours=HOURS):
     from google.cloud import bigquery
-    job = client.query(bq_query(table, bands, now, hours), job_config=bigquery.QueryJobConfig(labels={"app": "lakeview"}))
-    rows = [dict(r) for r in job.result()]
-    init, ser = bq_series(rows, hours)
-    if not init:
-        raise RuntimeError(f"{table}: no init with all {hours} hours at every point ({len(rows)} rows)")
-    log.info("%s init %s: %d rows, %.0f MB billed", table.rsplit(".", 1)[-1], init, len(rows), (job.total_bytes_billed or 0) / 1e6)
-    return init, ser
+    billed, seen = 0, []
+    for t in bq_inits(now):
+        job = client.query(bq_query(table, bands, t, hours), job_config=bigquery.QueryJobConfig(labels={"app": "lakeview"}))
+        rows = [dict(r) for r in job.result()]
+        billed += job.total_bytes_billed or 0
+        seen.append(f"{t:%H}Z:{len(rows)}")
+        init, ser = bq_series(rows, hours)
+        if init:
+            log.info("%s init %s: %d rows, %.0f MB billed (%s)", table.rsplit(".", 1)[-1], init, len(rows), billed / 1e6, " ".join(seen))
+            return init, ser
+    raise RuntimeError(f"{table}: no init with all {hours} hours at every point in the last {BQ_TRIES} tried ({' '.join(seen)})")
 
 
 def _key():

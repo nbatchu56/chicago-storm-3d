@@ -36,12 +36,15 @@ def test_to_series_units_and_order():
     assert "st_t2m_c" not in p and s["45198"]["st_t2m_c"] == [0.0] and "wspd" not in s["45198"]
 
 
-def test_bq_query_shape():
+def test_bq_query_one_init():
     import datetime as dt
-    q = wn.bq_query("p.d.weathernext_3_0_0_0p1deg", wn.BANDS_10, dt.datetime(2026, 10, 28, 20, tzinfo=dt.timezone.utc))
+    now = dt.datetime(2026, 10, 28, 20, 25, tzinfo=dt.timezone.utc)
+    inits = wn.bq_inits(now)
+    assert inits[0] == dt.datetime(2026, 10, 28, 13, tzinfo=dt.timezone.utc) and len(inits) == wn.BQ_TRIES and inits[1] == inits[0] - dt.timedelta(hours=1)
+    q = wn.bq_query("p.d.weathernext_3_0_0_0p1deg", wn.BANDS_10, inits[0])
     assert "FROM `p.d.weathernext_3_0_0_0p1deg` AS t, UNNEST(t.forecast) AS f" in q
     assert "ST_GEOGPOINT(-87.622, 41.915)" in q and "'northave' AS id" in q      # lon first
-    assert "t.init_time >= TIMESTAMP('2026-10-27 14:00:00 UTC')" in q and "f.hours BETWEEN 1 AND 48" in q
+    assert "t.init_time = TIMESTAMP('2026-10-28 13:00:00 UTC')" in q and "f.hours BETWEEN 1 AND 48" in q   # equality: one partition
     assert "ST_GEOGFROMTEXT('MULTIPOINT((-87.655 42.135), (-87.563 41.892), (-87.622 41.915))')" in q   # constant: prunes
     assert all(f"f.{b}" in q for b in wn.BANDS_10)
 
