@@ -590,7 +590,7 @@ const U = {
   uSwan: { value: blank2D }, uSwanMin: { value: new THREE.Vector2() }, uSwanSize: { value: new THREE.Vector2(1, 1) }, uSwanOn: { value: 0 }, uSwanRef: { value: 1 }, uHsOff: { value: 0 },
   uDepthOn: { value: 0 }, uHsOn: { value: 0 },
   // chop overlay: wave energy everywhere; inside a bound FUNWAVE tile also its crossing/rebound index (tex R = Hs m, G = crossing 0..1)
-  uSatOn: { value: 0 }, uSatTex: { value: blank2D }, uSatMin: { value: new THREE.Vector2() }, uSatSize: { value: new THREE.Vector2(1, 1) },
+  uSatOn: { value: 0 }, uSatMin: { value: new THREE.Vector2() }, uSatSize: { value: new THREE.Vector2(1, 1) },
   uSpotsOn: { value: 0 }, uSpotHas: { value: 0 }, uSpotTex: { value: blank2D }, uSpotMin: { value: new THREE.Vector2() }, uSpotSize: { value: new THREE.Vector2(1, 1) },
   uChopOn: { value: 0 }, uChopTex: { value: blank2D }, uChopMin: { value: new THREE.Vector2() }, uChopSize: { value: new THREE.Vector2(1, 1) }, uChopCore: { value: new THREE.Vector4(1e6, 1e6, -1e6, -1e6) }, uChopHas: { value: 0 },
   uFw: { value: null }, uFwHs: { value: blank2D }, uFwMin: { value: new THREE.Vector2() }, uFwSize: { value: new THREE.Vector2(1, 1) }, uFwOn: { value: 0 }, uFwT: { value: 0 },
@@ -707,10 +707,11 @@ vec3 chopTint(vec2 hc, vec2 pk, float w) { float t = clamp(log(max(613.0 * hc.x 
 // chop spots heat map: usual = how often a spot is Choppy or worse (paddling-season daylight hours, buoy climate x SWAN);
 // right now = this hour's wave energy from Light chop (25 J/m2) up to Very rough (350+), rebound hatched as in Chop
 uniform sampler2D uSpotTex; uniform vec2 uSpotMin, uSpotSize; uniform float uSpotsOn, uSpotHas;
-// satellite overlays (Sentinel-1 roughness, Sentinel-2 clarity): colours made in JS, alpha 0 = no data
-uniform sampler2D uSatTex; uniform vec2 uSatMin, uSatSize; uniform float uSatOn;
+// satellite overlays (Sentinel-1 roughness, Sentinel-2 clarity): colours made in JS, alpha 0 = no data. They're read through
+// uSpotTex (only one overlay shows at a time; setSat binds it): the ground shader is at 16 textures, the most phones allow
+uniform vec2 uSatMin, uSatSize; uniform float uSatOn;
 vec3 satTint(vec2 pk) { vec2 f = (pk - uSatMin) / uSatSize; vec3 none = pow(vec3(0.16, 0.18, 0.22), vec3(2.2));
-  if (f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0) return none; vec4 c = texture2D(uSatTex, f); return c.a < 0.5 ? none : pow(c.rgb, vec3(2.2)); }
+  if (f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0) return none; vec4 c = texture2D(uSpotTex, f); return c.a < 0.5 ? none : pow(c.rgb, vec3(2.2)); }
 uniform sampler2D uOcFG, uOcF2; uniform float uOcLG, uOcOnG, uOcVarG, uOcL2;
 // the fine ripple tile at metres pm, sampled twice (rotated, rescaled) and blended so its 8 m repeat doesn't show as a grid
 vec2 fineSlope(vec2 pm) { vec2 a = texture2D(uOcF2, pm / uOcL2).xy, b = texture2D(uOcF2, mat2(0.574, 0.819, -0.819, 0.574) * pm / (uOcL2 * 1.37) + 0.31).xy;
@@ -1376,7 +1377,8 @@ async function setEarth(E) {
   setSat();
 }
 function setSat() { const L = (S.ov === "s1" || S.ov === "s2") && EARTH[S.ov]; U.uSatOn.value = L ? 1 : 0;
-  if (L) { U.uSatTex.value = L.tex; U.uSatMin.value.set(...L.min); U.uSatSize.value.set(...L.size); } }
+  U.uSpotTex.value = L ? L.tex : (SPOTS.tex || blank2D);   // the satellite layers share the chop spots' texture slot
+  if (L) { U.uSatMin.value.set(...L.min); U.uSatSize.value.set(...L.size); } }
 function satAt(L, xk, yk) { if (!L) return null; const g = L.g, fx = (xk - L.min[0]) / L.size[0] * (g.nlon - 1), fy = (yk - L.min[1]) / L.size[1] * (g.nlat - 1);
   const i = Math.round(fx), j = Math.round(fy); if (i < 0 || j < 0 || i >= g.nlon || j >= g.nlat) return null;
   // nearest valid cell within ~150 m (the shore cells are masked)
@@ -2036,7 +2038,7 @@ async function setChopSpots(d) {
   if (!d || !d.choppy) return; const g = d.grid, a = await gunzipB64(d.choppy), b = await gunzipB64(d.rough), n = g.nx * g.ny, rg = new Uint8Array(n * 2);
   for (let i = 0; i < n; i++) { rg[2 * i] = a[i]; rg[2 * i + 1] = b[i]; }
   const t = new THREE.DataTexture(rg, g.nx, g.ny, THREE.RGFormat, THREE.UnsignedByteType); t.minFilter = t.magFilter = THREE.LinearFilter; t.unpackAlignment = 1; t.needsUpdate = true;
-  SPOTS.tex = t; SPOTS.meta = d; U.uSpotTex.value = t; U.uSpotMin.value.set(g.x0 / 1000, g.y0 / 1000); U.uSpotSize.value.set((g.nx - 1) * g.dx / 1000, (g.ny - 1) * g.dx / 1000); U.uSpotHas.value = 1;
+  SPOTS.tex = t; SPOTS.meta = d; U.uSpotMin.value.set(g.x0 / 1000, g.y0 / 1000); U.uSpotSize.value.set((g.nx - 1) * g.dx / 1000, (g.ny - 1) * g.dx / 1000); U.uSpotHas.value = 1; setSat();
 }
 // GPS roughness ("bump", tools/session.py) counts as chop where it's well above what your calm and glass sessions show:
 // twice their 95th percentile (0.3 until there's a calm session to learn from)
