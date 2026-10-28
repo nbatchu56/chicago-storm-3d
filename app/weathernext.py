@@ -163,20 +163,22 @@ def init_bq(table=None):
     creds = service_account.Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/cloud-platform"])
     project = os.environ.get("WN3_BQ_PROJECT") or (table.split(".")[0] if table and table.count(".") == 2 else None) or info.get("project_id")
     log.info("BigQuery jobs in project %s as %s", project, info.get("client_email"))
-    return bigquery.Client(project=project, credentials=creds)
+    # JOB_CREATION_OPTIONAL: the stateless jobs.query path. On a free-tier project a created job is refused on its
+    # up-front estimate ("exceeded quota for free query bytes scanned") while the same query runs stateless.
+    return bigquery.Client(project=project, credentials=creds, default_job_creation_mode="JOB_CREATION_OPTIONAL")
 
 
 def sample_bq(client, table, bands, now, hours=HOURS):
     from google.cloud import bigquery
     billed, seen = 0, []
     for t in bq_inits(now):
-        job = client.query(bq_query(table, bands, t, hours), job_config=bigquery.QueryJobConfig(labels={"app": "lakeview"}))
-        rows = [dict(r) for r in job.result()]
-        billed += job.total_bytes_billed or 0
+        it = client.query_and_wait(bq_query(table, bands, t, hours), job_config=bigquery.QueryJobConfig(labels={"app": "lakeview"}))
+        rows = [dict(r) for r in it]
+        billed += getattr(it, "total_bytes_processed", None) or 0
         seen.append(f"{t:%H}Z:{len(rows)}")
         init, ser = bq_series(rows, hours)
         if init:
-            log.info("%s init %s: %d rows, %.0f MB billed (%s)", table.rsplit(".", 1)[-1], init, len(rows), billed / 1e6, " ".join(seen))
+            log.info("%s init %s: %d rows, %.0f MB read (%s)", table.rsplit(".", 1)[-1], init, len(rows), billed / 1e6, " ".join(seen))
             return init, ser
     raise RuntimeError(f"{table}: no init with all {hours} hours at every point in the last {BQ_TRIES} tried ({' '.join(seen)})")
 
