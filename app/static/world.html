@@ -64,6 +64,8 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .wxline .p svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .wxline .p i { font-style: normal; color: var(--muted); } .wxline .p.spc { color: #10161c; font-weight: 600; }
 .readouts dt { color: var(--muted); }
+.readouts .grp { font: 600 10.5px var(--font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); opacity: .8; margin-top: 5px; border-top: 1px solid var(--line); padding-top: 5px; }
+.readouts dt.grp:first-child, .readouts dt.grp:first-child + dd.grp { margin-top: 0; border-top: 0; padding-top: 0; }
 .launches { border-top: 1px solid var(--line); padding-top: 8px; display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 4px 8px; align-items: center; font-size: 12px; }
 .launches b { grid-column: 1 / -1; font: 600 11px var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .launches button { all: unset; cursor: pointer; white-space: nowrap; text-decoration: underline dotted; text-underline-offset: 3px; }
@@ -2913,12 +2915,12 @@ function renderLegend() {
   else if (S.ov === "s1") { const E1 = (DATA.earth || {}).s1, bar = S1_STOPS.map(([f, c]) => `rgb(${c}) ${Math.round(f * 100)}%`).join(",");
     h = `<b>Wind on the water: radar roughness</b><div class="bar" style="background:linear-gradient(90deg,${bar})"></div><div class="tk"><span>calmer</span><span></span><span>usual</span><span></span><span>rougher</span></div>
       <span class="lead"><b style="font:inherit;text-transform:none;letter-spacing:0">Bright</b> = wind is roughening the surface (ripples and chop). <b style="font:inherit;text-transform:none;letter-spacing:0">Dark</b> = calm or sheltered water: wind shadows behind breakwaters and buildings, slicks. It compares spots with each other on that pass; it isn't a wind speed.</span>
-      <span>${E1 ? `${E1.label} ${E1.time.slice(11, 16)} UTC (${E1.orbit === "ASCENDING" ? "evening" : "morning"} pass), radar backscatter ±${S1_SPAN_DB} dB around the pass's median.` : "No Sentinel-1 pass loaded"}</span><span>A snapshot from the satellite's pass, not live; passes come every few days.</span>`; }
+      <span>${E1 ? `${E1.label} ${E1.time.slice(11, 16)} UTC (${E1.orbit === "ASCENDING" ? "evening" : "morning"} pass), radar backscatter ±${S1_SPAN_DB} dB around the pass's median.` : "No Sentinel-1 pass loaded"} Today's clouds, rain and lightning are hidden while this layer is shown.</span><span>A snapshot from the satellite's pass, not live; passes come every few days.</span>`; }
   else if (S.ov === "s2") { const E2 = (DATA.earth || {}).s2, bar = S2_STOPS.map(([f, c]) => `rgb(${c}) ${Math.round(f * 100)}%`).join(",");
     h = `<b>Water clarity (turbidity)</b><div class="bar" style="background:linear-gradient(90deg,${bar})"></div><div class="tk"><span>0</span><span>2</span><span>8</span><span>25</span><span>60 FNU</span></div>
       <div class="zones"><span style="width:27%">clear</span><span style="width:17%">slightly cloudy</span><span style="width:23%">murky</span><span style="width:33%">very murky</span></div>
       <span class="lead">How cloudy the water is (sediment stirred up by storms, river and outfall plumes). Under 2 FNU you can see well down; over 15 the water looks brown.</span>
-      <span>${E2 ? `${E2.label} (clear-sky water pixels; Nechad red-band turbidity). ${Object.entries(E2.launches || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v} FNU`).join(" · ")}` : "No clear Sentinel-2 pass in the last 10 days"}</span><span>A satellite snapshot from that pass, not live.</span>`; }
+      <span>${E2 ? `${E2.label} (clear-sky water pixels; Nechad red-band turbidity). ${Object.entries(E2.launches || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v} FNU`).join(" · ")}` : "No clear Sentinel-2 pass in the last 10 days"}</span><span>A satellite snapshot from that pass, not live; today's clouds, rain and lightning are hidden while it is shown.</span>`; }
   else if (S.ov === "radar") { h = `<b>Radar reflectivity</b><div class="bar" style="background:linear-gradient(90deg,${DBZ_STOPS.slice(0, 13).map(([, c]) => c).join(",")})"></div><div class="tk"><span>5</span><span>35</span><span>65 dBZ</span></div>`; }
   if (h) h += `<span class="more">${matchMedia("(hover: hover)").matches ? "Click" : "Tap"} for details</span>`;
   el.innerHTML = h; el.hidden = !h;
@@ -3032,22 +3034,25 @@ function tick() {
   stepBuoys(dt, patch.visible);
   // radar volume
   RS = radarState(S.t);
-  if (RS) { const g = RS.grid; U.uCloudA.value = RS.A.tc; U.uCloudB.value = RS.B.tc; U.uDbzA.value = RS.A.td; U.uDbzB.value = RS.B.td; U.uMix.value = RS.f;
+  // the satellite layers are one pass's snapshot: no radar clouds, rain, lightning or satellite cloud field over them
+  const satView = S.ov === "s1" || S.ov === "s2", RV = satView ? null : RS;
+  if (satView) { U.uExtra.value = 0; U.uGoesOn.value = 0; }
+  if (RV) { const g = RS.grid; U.uCloudA.value = RS.A.tc; U.uCloudB.value = RS.B.tc; U.uDbzA.value = RS.A.td; U.uDbzB.value = RS.B.td; U.uMix.value = RS.f;
     U.uShiftA.value.set(...RS.shiftA); U.uShiftB.value.set(...RS.shiftB); U.uGridMin.value.set(g.x0_km, g.y0_km, 0); U.uGridN.value.set(g.nx, g.ny, g.nz); U.uGridD.value.set(g.dx_km, g.dz_km); }
   else { U.uCloudA.value = U.uCloudB.value = U.uDbzA.value = U.uDbzB.value = emptyVol; }
   U.uCamPos.value.copy(camera.position); sky.position.copy(camera.position);
   // precipitation at the camera
-  let rr = 0; if (RS) { const g = RS.grid, xk = camera.position.x, yk = -camera.position.z, i = Math.round((xk - RS.shiftA[0] - g.x0_km) / g.dx_km), j = Math.round((yk - RS.shiftA[1] - g.y0_km) / g.dx_km);
+  let rr = 0; if (RV) { const g = RS.grid, xk = camera.position.x, yk = -camera.position.z, i = Math.round((xk - RS.shiftA[0] - g.x0_km) / g.dx_km), j = Math.round((yk - RS.shiftA[1] - g.y0_km) / g.dx_km);
     if (i >= 0 && j >= 0 && i < g.nx && j < g.ny) { const b = RS.A.dbz[(1 * g.ny + j) * g.nx + i] * (1 - RS.f) + RS.B.dbz[(1 * g.ny + j) * g.nx + i] * RS.f, dbz = b / 3 - 10; if (b > 1 && dbz > 5) rr = Math.pow(Math.pow(10, dbz / 10) / 200, 1 / 1.6); } }
   const lowCam = camera.position.y < 1.0; rainMat.uniforms.uRain.value = lowCam ? rr : 0; rain.visible = lowCam && rr > 0.2; rainMat.uniforms.uSnowP.value = COND && COND.snow ? 1 : 0;
   if (COND) { const wa = COND.dir * Math.PI / 180; rainMat.uniforms.uDrift.value.set(-Math.sin(wa) * COND.wind * 0.0004, Math.cos(wa) * COND.wind * 0.0004); }
   rainMat.uniforms.uAmb.value.copy(U.uAmbTop.value).addScalar(U.uCity.value * 0.6); U.uHaze.value = lowCam ? 1 / (1 + rr * 0.25) : 1;
-  if (now - lastHud > 150) { let cov = 0; if (RS) { const g = RS.grid, xk = camera.position.x, yk = -camera.position.z;
+  if (now - lastHud > 150) { let cov = 0; if (RV) { const g = RS.grid, xk = camera.position.x, yk = -camera.position.z;
       for (let dy = -16; dy <= 16; dy += 8) for (let dx = -16; dx <= 16; dx += 8) { const i = Math.round((xk + dx - g.x0_km) / g.dx_km), j = Math.round((yk + dy - g.y0_km) / g.dx_km); if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) continue;
         let c = 0; for (let k = 2; k < g.nz; k += 3) c = Math.max(c, RS.A.cloud[(k * g.ny + j) * g.nx + i]); cov += c / 255 / 25; } }
     U.uOvercast.value = Math.min(1, Math.max(cov * 1.6, U.uExtra.value * 0.9)); }
   // lightning near strong cores
-  let flash = 0; const cand = RS ? (RS.f < 0.5 ? RS.A : RS.B).cand : [];
+  let flash = 0; const cand = RV ? (RS.f < 0.5 ? RS.A : RS.B).cand : [];
   if (S.bolts && !RM && cand.length) { if (now > nextStrike) { const c = cand[Math.floor(Math.random() * cand.length)], x = c[0] + (Math.random() - 0.5) * 2, y = c[1] + (Math.random() - 0.5) * 2;
       flashPos = [x, y, 4.5 + Math.random() * 3]; flashT = now; if (Math.random() < 0.55) { makeBolt(x, y, 1.8 + Math.random()); bolt.visible = true; } else bolt.visible = false;
       nextStrike = now + (-Math.log(1 - Math.random()) / Math.min(0.6, 0.12 + cand.length * 0.002)) * 1000 + 250; }
@@ -3110,21 +3115,24 @@ function updateHud(rr, tp) {
     wl += pill("", spc.cat === "TSTM" ? "Thunder possible" : `Severe: ${spc.label.replace(/ risk$/i, "")} ${spc.level}/5`, "spc", `background:${spc.color || "#f6f67f"}`);
   $("#wxline").innerHTML = wl;
   renderAlerts(live ? (W.alerts || []) : [], nowMs);
-  const rows = [...(C.depth != null ? [["Depth here", C.depth > 0 ? `${(C.depth * FT).toFixed(C.depth * FT < 10 ? 1 : 0)} ft` : "dry"]] : []),
-    ...(C.fwCross != null ? [["Crossing seas", `${Math.round(C.fwCross * 100)}%${C.fwCross >= 0.5 ? " (confused)" : ""}`]] : []),
-    ...(C.fwHs != null && tot > 0.01 ? [["Model waves", `${ft(tot)} ft`]] : []),
-    ...(C.swan && C.off ? [["Offshore", `${ft(C.off.hs)} ft · ${C.off.tp.toFixed(1)} s from ${compass(C.off.dir)}`]] : [])];
+  // the readouts, by topic: wind (other stations and models), waves, water, your paddle
+  const wind = [], waves = [], water = [], you = [];
   if (S.mode === "live") for (const m of W.metar || []) { if (nowMs - new Date(m.t).getTime() > 3 * 3600e3 || m.wspd_kt == null) continue;
-    const k = (v) => Math.round(v * 1.15078); rows.push([m.name, `${m.wspd_kt < 1 ? "calm" : `${k(m.wspd_kt)} mph ${m.vrb ? "var" : compass(m.wdir)}${m.wgst_kt ? ` G${k(m.wgst_kt)}` : ""}`}${m.temp_c != null ? ` · ${Math.round(cToF(m.temp_c))}°` : ""}`]); }
-  if (live && C.gfs) rows.push(["GFS model wind", `${mph(C.gfs.wspd)} mph ${compass(C.gfs.wdir)}`]);
-  if (live && C.wn3) rows.push(["WeatherNext 3 wind", `${mph(C.wn3.wspd)} mph ${C.wn3.wdir != null ? compass(C.wn3.wdir) : ""}${C.wn3.lo != null && C.wn3.hi != null ? ` (${mph(C.wn3.lo)}–${mph(C.wn3.hi)})` : ""}`]);
+    const k = (v) => Math.round(v * 1.15078); wind.push([m.name, `${m.wspd_kt < 1 ? "calm" : `${k(m.wspd_kt)} mph ${m.vrb ? "var" : compass(m.wdir)}${m.wgst_kt ? ` G${k(m.wgst_kt)}` : ""}`}${m.temp_c != null ? ` · ${Math.round(cToF(m.temp_c))}°` : ""}`]); }
+  if (live && C.gfs) wind.push(["GFS model", `${mph(C.gfs.wspd)} mph ${compass(C.gfs.wdir)}`]);
+  if (live && C.wn3) wind.push(["WeatherNext 3", `${mph(C.wn3.wspd)} mph ${C.wn3.wdir != null ? compass(C.wn3.wdir) : ""}${C.wn3.lo != null && C.wn3.hi != null ? ` (${mph(C.wn3.lo)}–${mph(C.wn3.hi)})` : ""}`]);
+  if (live && NM.era5 && NM.era5.wind_ms) wind.push(["Usual (ERA5)", `${mph(NM.era5.wind_ms.p50)} mph · 1 in 10 h over ${mph(NM.era5.wind_ms.p90)}`]);
+  if (tp && tp.inside && C.wind > 0.5) { const rel = Math.abs(angd(tp.hd, C.dir)); wind.push(["Your heading", rel < 60 ? "into the wind" : rel > 120 ? "with the wind" : "cross-wind"]); }
+  if (C.swan && C.off) waves.push(["Offshore", `${ft(C.off.hs)} ft · ${C.off.tp.toFixed(1)} s from ${compass(C.off.dir)}`]);
+  if (C.fwHs != null && tot > 0.01) waves.push(["Model (SWAN)", `${ft(tot)} ft`]);
+  if (C.fwCross != null) waves.push(["Crossing seas", `${Math.round(C.fwCross * 100)}%${C.fwCross >= 0.5 ? " (confused)" : ""}`]);
   { const LE = DATA.learn && DATA.learn.correction && DATA.learn.correction.era5, M = LE && LE["45198"] && LE["45198"].monthly_hs_m && LE["45198"].monthly_hs_m[String(new Date(S.t).getMonth() + 1)];
-    if (live && M) rows.push(["Usual lake waves (ERA5)", `${ft(M.p50)} ft this month · 1 in 10 h over ${ft(M.p90)} ft`]); }
-  if (live && NM.era5 && NM.era5.wind_ms) rows.push(["Usual lake wind (ERA5)", `${mph(NM.era5.wind_ms.p50)} mph (1 in 10 h over ${mph(NM.era5.wind_ms.p90)})`]);
-  { const fnu = satAt(EARTH.s2, C.xk, C.yk); if (fnu != null && live) rows.push(["Water clarity", `${fnuWord(fnu)} · ${fnu.toFixed(1)} FNU (${E.s2.label})`]); }
-  if (tp && tp.inside) rows.push(["Your paddle", `${(tp.v * MPH).toFixed(1)} mph ${compass(tp.hd)}${tp.hr ? ` · ${tp.hr} bpm` : ""}`]);
-  if (tp && tp.inside && C.wind > 0.5) { const rel = Math.abs(angd(tp.hd, C.dir)); rows.push(["Into wind?", rel < 60 ? "into the wind" : rel > 120 ? "with the wind" : "cross-wind"]); }
-  $("#readouts").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    if (live && M) waves.push(["Usual (ERA5)", `${ft(M.p50)} ft this month · 1 in 10 h over ${ft(M.p90)} ft`]); }
+  if (C.depth != null) water.push(["Depth here", C.depth > 0 ? `${(C.depth * FT).toFixed(C.depth * FT < 10 ? 1 : 0)} ft` : "dry"]);
+  { const fnu = satAt(EARTH.s2, C.xk, C.yk); if (fnu != null && live) water.push(["Clarity", `${fnuWord(fnu)} · ${fnu.toFixed(1)} FNU (${E.s2.label})`]); }
+  if (tp && tp.inside) you.push(["Speed", `${(tp.v * MPH).toFixed(1)} mph ${compass(tp.hd)}${tp.hr ? ` · ${tp.hr} bpm` : ""}`]);
+  const grp = (name, rs) => rs.length ? `<dt class="grp">${name}</dt><dd class="grp"></dd>` + rs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("") : "";
+  $("#readouts").innerHTML = grp("Wind", wind) + grp("Waves", waves) + grp("Water", water) + grp("Your paddle", you);
   $("#source").textContent = [RS ? RS.label + lead : S.mode === "forecast" ? "Clouds from forecast sky cover" : "No radar for this time", ...C.src].join(" · ");
 }
 
