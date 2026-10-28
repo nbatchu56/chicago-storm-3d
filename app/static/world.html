@@ -125,7 +125,8 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #legend .tk { display: flex; justify-content: space-between; }
 #legend b { font: 600 11px var(--font-ui); letter-spacing: .06em; text-transform: uppercase; }
 #legend .zones { display: flex; font-size: 10px; opacity: .85; } #legend .zones span { text-align: center; border-left: 1px solid currentColor; padding: 0 2px; line-height: 1.15; } #legend .zones span:first-child { border-left: 0; }
-#legend .more { display: none; font-size: 10px; opacity: .7; }
+#legend .more { display: none; font-size: 10px; opacity: .7; } #legend { cursor: pointer; z-index: 4; }
+#legend.min > span:not(.more):not(.lead) { display: none; } #legend.min .more { display: block; }
 #attr { position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); font: 10px var(--font-ui); color: rgba(255,255,255,.75); text-shadow: 0 1px 2px #000; }
 #toggle { display: none; }
 #msg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: min(460px, calc(100vw - 32px)); padding: 16px 18px; text-align: center; }
@@ -173,7 +174,9 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 .segs b { position: absolute; top: -4px; width: 2px; height: 12px; margin-left: -1px; background: var(--fg); border-radius: 1px; }
 .ticks.abs { display: block; position: relative; height: 14px; } .ticks.abs span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .ticks.abs span.l { transform: none; } .ticks.abs span.r { transform: translateX(-100%); } .ticks span.now { color: var(--fg); } .ticks span.fct { color: var(--fc); }
-#legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; bottom: calc(var(--gut) + 300px + env(safe-area-inset-bottom, 0px)) !important; }
+/* beside the mini map (its right edge), above the "Go to a place" row; where the mini map is hidden, at the left edge */
+#legend { left: calc(var(--gut) + 172px + env(safe-area-inset-left, 0px)) !important; bottom: calc(var(--gut) + 128px + env(safe-area-inset-bottom, 0px)) !important; }
+@media (min-width: 761px) and (max-height: 700px) { #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; } }
 #help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 32px)); padding: 16px 18px; z-index: 5; }
 #help h2 { margin: 0 0 8px; font-size: 16px; }
 #help table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -204,7 +207,6 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
   #controls { top: auto; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); width: auto; bottom: calc(var(--gut) + 92px + env(safe-area-inset-bottom, 0px)); max-height: 58%; }
   #timeline { grid-template-columns: auto 1fr; } .speed { display: none; }
   #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 128px + env(safe-area-inset-bottom, 0px)) !important; width: auto; max-width: 420px; padding: 6px 9px; gap: 3px; cursor: pointer; }
-  #legend.min > span:not(.more) { display: none; } #legend.min .more { display: block; }
 }
 </style>
 
@@ -2910,17 +2912,17 @@ function renderLegend() {
       <span>Share of daylight hours (6 AM-8 PM, May-Oct ${M ? M.seasons : ""}) a spot is Choppy or worse (70+ J/m²): ${M ? M.hours.toLocaleString() : "?"} buoy hours of offshore waves carried in by the SWAN model (sheltering, wall reflection, breaking). Wind chop raised inside the harbours isn't in it.</span>${conf}`; }
   else if (S.ov === "s1") { const E1 = (DATA.earth || {}).s1, bar = S1_STOPS.map(([f, c]) => `rgb(${c}) ${Math.round(f * 100)}%`).join(",");
     h = `<b>Wind on the water: radar roughness</b><div class="bar" style="background:linear-gradient(90deg,${bar})"></div><div class="tk"><span>calmer</span><span></span><span>usual</span><span></span><span>rougher</span></div>
-      <span><b style="font:inherit;text-transform:none;letter-spacing:0">Bright</b> = wind is roughening the surface (ripples and chop). <b style="font:inherit;text-transform:none;letter-spacing:0">Dark</b> = calm or sheltered water: wind shadows behind breakwaters and buildings, slicks. It compares spots with each other on that pass; it isn't a wind speed.</span>
+      <span class="lead"><b style="font:inherit;text-transform:none;letter-spacing:0">Bright</b> = wind is roughening the surface (ripples and chop). <b style="font:inherit;text-transform:none;letter-spacing:0">Dark</b> = calm or sheltered water: wind shadows behind breakwaters and buildings, slicks. It compares spots with each other on that pass; it isn't a wind speed.</span>
       <span>${E1 ? `${E1.label} ${E1.time.slice(11, 16)} UTC (${E1.orbit === "ASCENDING" ? "evening" : "morning"} pass), radar backscatter ±${S1_SPAN_DB} dB around the pass's median.` : "No Sentinel-1 pass loaded"}</span><span>A snapshot from the satellite's pass, not live; passes come every few days.</span>`; }
   else if (S.ov === "s2") { const E2 = (DATA.earth || {}).s2, bar = S2_STOPS.map(([f, c]) => `rgb(${c}) ${Math.round(f * 100)}%`).join(",");
     h = `<b>Water clarity (turbidity)</b><div class="bar" style="background:linear-gradient(90deg,${bar})"></div><div class="tk"><span>0</span><span>2</span><span>8</span><span>25</span><span>60 FNU</span></div>
       <div class="zones"><span style="width:27%">clear</span><span style="width:17%">slightly cloudy</span><span style="width:23%">murky</span><span style="width:33%">very murky</span></div>
-      <span>How cloudy the water is (sediment stirred up by storms, river and outfall plumes). Under 2 FNU you can see well down; over 15 the water looks brown.</span>
+      <span class="lead">How cloudy the water is (sediment stirred up by storms, river and outfall plumes). Under 2 FNU you can see well down; over 15 the water looks brown.</span>
       <span>${E2 ? `${E2.label} (clear-sky water pixels; Nechad red-band turbidity). ${Object.entries(E2.launches || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v} FNU`).join(" · ")}` : "No clear Sentinel-2 pass in the last 10 days"}</span><span>A satellite snapshot from that pass, not live.</span>`; }
   else if (S.ov === "radar") { h = `<b>Radar reflectivity</b><div class="bar" style="background:linear-gradient(90deg,${DBZ_STOPS.slice(0, 13).map(([, c]) => c).join(",")})"></div><div class="tk"><span>5</span><span>35</span><span>65 dBZ</span></div>`; }
-  if (h) h += `<span class="more">Tap for details</span>`;
+  if (h) h += `<span class="more">${matchMedia("(hover: hover)").matches ? "Click" : "Tap"} for details</span>`;
   el.innerHTML = h; el.hidden = !h;
-  if (!el.dataset.init) { el.dataset.init = "1"; el.classList.toggle("min", matchMedia("(max-width: 760px)").matches); el.onclick = () => el.classList.toggle("min"); }
+  if (!el.dataset.init) { el.dataset.init = "1"; el.classList.add("min"); el.onclick = () => el.classList.toggle("min"); }
 }
 
 // ---------------------------------------------------------------- frame loop
