@@ -15,7 +15,8 @@ Three parts, all writing to the `learn` branch:
              leaving one year out at a time; the page shows it only as an experimental option.
 3. log/score Every snapshot records what the forecast said at the two buoys for the next 48 h (raw model,
              learned, the live-buoy-nudged product, the NWS wave grid and NOAA GLWU when available); `score`
-             lines those up with what the buoys measured and reports errors by lead time.
+             lines those up with what the buoys measured and reports errors by lead time. It also keeps the
+             next 6 h of each beach's forecast (scorecard/spots-*.jsonl) for photo spot checks (tools/spotcheck.py).
 
     python -m app.learn backfill --out learn/ [--years 2012-2026] [--era5 learn/era5]
     python -m app.learn fit --dir learn/
@@ -600,6 +601,37 @@ def log_forecast(sup, out_dir, glwu=None, winds=None):
     return path
 
 
+SPOT_FIELDS = ("wind", "gust", "dir", "offshore", "hs_offshore", "hs_paddle", "tp", "rating", "sky")
+
+
+def log_spots(sup, out_dir, hours=6):
+    """Append this run's beach forecasts (first `hours` hours) to scorecard/spots-YYYY-MM.jsonl, so a photo or
+    paddle report from any later day can be checked against what the page said beforehand (tools/spotcheck.py)."""
+    spots = (sup or {}).get("spots") or []
+    if not spots or not sup.get("start"):
+        return None
+    entry = {"issued": sup["start"], "generated": sup.get("generated"), "spots": {}}
+    for s in spots:
+        rows = []
+        for h in (s.get("hourly") or [])[:hours]:
+            r = {"t": h["t"]}
+            r.update({k: h[k] for k in SPOT_FIELDS if h.get(k) is not None})
+            lr = h.get("learned") or {}
+            if lr.get("rating"):
+                r["learned_rating"] = lr["rating"]
+                r["learned_hs_paddle"] = lr.get("hs_paddle")
+            rows.append(r)
+        if rows:
+            entry["spots"][s["id"]] = {"lat": s.get("lat"), "lon": s.get("lon"), "hourly": rows}
+    if not entry["spots"]:
+        return None
+    os.makedirs(os.path.join(out_dir, "scorecard"), exist_ok=True)
+    path = os.path.join(out_dir, "scorecard", "spots-%s.jsonl" % sup["start"][:7])
+    with open(path, "a") as fh:
+        fh.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    return path
+
+
 def score(out_dir, obs_hourly=None, days=45, now=None):
     """Line up logged forecasts with what the buoys measured; errors by method and lead time."""
     now = now or dt.datetime.now(UTC)
@@ -721,6 +753,7 @@ if __name__ == "__main__":
         if wn and wn.get("points") and wn.get("init"):
             winds["wn3"] = {b: {"t": p["t"], "wspd": p.get("wspd"), "wdir": p.get("wdir")} for b, p in wn["points"].items() if p.get("wspd")}
         print(log_forecast(sup, a.dir, g, winds) or "no buoy forecasts in sup.json")
+        print(log_spots(sup, a.dir) or "no beach forecasts in sup.json")
     elif a.cmd == "score":
         card = score(a.dir, days=a.days)
         with open(os.path.join(a.dir, "scorecard.json"), "w") as fh:
