@@ -6,6 +6,9 @@ Three parts, all writing to the `learn` branch:
 1. backfill  Rerun the wave model (same SeaState the paddling forecast uses) over years of NDBC archive at the
              Wilmette (45174) and Chicago (45198) buoys, driven by observed wind only, and keep every hour's
              model-vs-buoy pair. Because the model needs only wind, this gives years of training data at once.
+             With ERA5 (app.era5) cached, hours with buoy waves but no measured wind get ERA5 wind (scaled to read
+             like the buoy), and a 35-year ERA5-only hindcast shows how often big storms happen and how few of them
+             the buoys saw (era5_climate.json).
 2. fit       Learn a correction factor for wave height and period by wind direction (12 sectors) x wind speed
              (4 bins), plus one for swell-dominated hours (old waves after the wind drops or shifts), as the
              average log(buoy / model) with shrinkage toward broader averages where data is thin. Scored by
@@ -14,7 +17,7 @@ Three parts, all writing to the `learn` branch:
              learned, the live-buoy-nudged product, the NWS wave grid and NOAA GLWU when available); `score`
              lines those up with what the buoys measured and reports errors by lead time.
 
-    python -m app.learn backfill --out learn/ [--years 2012-2026]
+    python -m app.learn backfill --out learn/ [--years 2012-2026] [--era5 learn/era5]
     python -m app.learn fit --dir learn/
     python -m app.learn log --sup sup.json [--glwu glwu.json] --dir learn/
     python -m app.learn score --dir learn/
@@ -138,15 +141,19 @@ def hindcast(buoy, hourly_by_station, gap_reset_h=12):
         return []
     out, sea, gap = [], sw.SeaState(), 0
     t, t1 = wave_hours[0] - dt.timedelta(hours=24), wave_hours[-1]
+    era = era5_key(buoy)
+    order = WIND_ORDER[buoy] + ([era] if era in hourly_by_station else [])
     while t <= t1:
         u = d = src = None
-        for st in WIND_ORDER[buoy]:
+        for st in order:
             o = hourly_by_station.get(st, {}).get(t)
             if o and "wspd" in o and "wdir" in o:
                 u, d, src = o["wspd"], o["wdir"], st
                 break
         ob = own.get(t, {})
         air = ob.get("atmp", (hourly_by_station.get("CHII2", {}).get(t) or {}).get("atmp"))
+        if air is None:
+            air = (hourly_by_station.get(era, {}).get(t) or {}).get("atmp")
         if u is None:
             gap += 1
             if gap > gap_reset_h:
@@ -193,20 +200,128 @@ def read_pairs(paths):
     return out
 
 
-def backfill(out_dir, years, get=get_bytes, now=None):
+def backfill(out_dir, years, get=get_bytes, now=None, era5_dir=None):
     os.makedirs(os.path.join(out_dir, "backfill"), exist_ok=True)
     stations = sorted({s for v in WIND_ORDER.values() for s in v})
+    by_year = {y: {st: hourly_means(station_rows(st, [y], get, now)) for st in stations} for y in years}
+    era, calib = {}, {}
+    if era5_dir and os.path.isdir(era5_dir):
+        from . import era5
+        era = era5.load(era5_dir)
+        merged = {st: {h: o for y in years for h, o in by_year[y].get(st, {}).items()} for st in stations}
+        calib = calibrate_era5(era, merged)
+        log.info("ERA5 calibration: %s", json.dumps({b: {"ratio": c["overall"], "hours": c["hours"]} for b, c in calib.items()}))
     summary = {}
     for y in years:
-        hourly = {st: hourly_means(station_rows(st, [y], get, now)) for st in stations}
+        hourly = by_year[y]
         for b in BUOYS:
+            if b in era and b in calib:
+                hourly[era5_key(b)] = {h: o for h, o in calibrated(era[b], calib[b]).items() if h.year == y}
             pairs = hindcast(b, hourly)
             if not pairs:
                 continue
             write_pairs(os.path.join(out_dir, "backfill", f"pairs_{b}_{y}.csv.gz"), pairs)
             summary.setdefault(b, {})[str(y)] = len(pairs)
-            log.info("%s %s: %d hours", b, y, len(pairs))
+            log.info("%s %s: %d hours (%d with ERA5 wind)", b, y, len(pairs), sum(1 for p in pairs if p["wind_src"].startswith("era5")))
+    if era and calib:
+        observed = {b: {h for y in years for h, o in by_year[y].get(b, {}).items() if "wvht" in o} for b in BUOYS}
+        clim = era5_climate({b: calibrated(era[b], calib[b]) for b in BUOYS if b in era and b in calib}, observed)
+        clim["calibration"] = calib
+        with open(os.path.join(out_dir, "era5_climate.json"), "w") as fh:
+            json.dump(clim, fh, indent=1)
+        summary["era5"] = {b: v["totals"] for b, v in clim["buoys"].items()}
     return summary
+
+
+# ---------------------------------------------------------------------------- ERA5 (filling wind, storm climate)
+ERA5_MIN_U = 2.0
+NORTH = (315.0, 45.0)        # wind from NW through NE: the longest fetch down the lake to Chicago
+
+
+def era5_key(buoy):
+    return f"era5:{buoy}"
+
+
+def calibrated(series, cal):
+    """ERA5 hours scaled to read like the buoy's 10 m wind (ratio by direction sector)."""
+    out = {}
+    for h, o in series.items():
+        r = cal["sectors"][sector(o["wdir"])] if cal.get("sectors") else cal["overall"]
+        out[h] = {"wspd": o["wspd"] * r, "wdir": o["wdir"], "atmp": o.get("atmp")}
+    return out
+
+
+def calibrate_era5(era, hourly_by_station):
+    """Buoy 10 m wind / ERA5 wind over the hours both exist, overall and by direction sector (shrunk toward overall)."""
+    out = {}
+    for b in BUOYS:
+        e, own = era.get(b) or {}, hourly_by_station.get(b) or {}
+        num, den, n = [0.0] * SECTORS, [0.0] * SECTORS, [0] * SECTORS
+        for h, o in own.items():
+            q = e.get(h)
+            if not q or "wspd" not in o or q["wspd"] < ERA5_MIN_U:
+                continue
+            k = sector(q["wdir"])
+            num[k] += sw.u10(o["wspd"], b)
+            den[k] += q["wspd"]
+            n[k] += 1
+        if sum(n) < 200:
+            continue
+        overall = sum(num) / sum(den)
+        secs = [round((num[k] + SHRINK_K * overall * (den[k] / n[k] if n[k] else 1.0)) /
+                      (den[k] + SHRINK_K * (den[k] / n[k] if n[k] else 1.0)), 3) for k in range(SECTORS)]
+        out[b] = {"overall": round(overall, 3), "sectors": secs, "hours": sum(n), "hours_by_sector": n}
+    return out
+
+
+def _is_north(d):
+    return d >= NORTH[0] or d <= NORTH[1]
+
+
+def era5_climate(era_cal, observed, big=(1.0, 2.0), storm_gap_h=24):
+    """Open-lake wave model run on ERA5 wind alone at each buoy, all years: hours of big waves by wind direction
+    and how many of them the buoy was out to measure; the largest storms."""
+    out = {"method": "CEM growth with memory on ERA5 10 m wind (scaled to the buoy), no stability term", "big_m": list(big), "buoys": {}}
+    for b, ser in era_cal.items():
+        lat, lon = BUOYS[b]
+        table = sw.fetch_table(lat, lon, 90)
+        fetch = lambda d: sw.interp_dir(table, d) * 1000  # noqa: E731
+        sea, hours = sw.SeaState(), sorted(ser)
+        tot = {f"{m:g}m": {"all": [0, 0], "north": [0, 0]} for m in big}
+        storms, cur, last_big = [], None, None
+        by_sector = [[0, 0] for _ in range(8)]
+        for h in hours:
+            o = ser[h]
+            sea.step(o["wspd"], o["wdir"], fetch)
+            hs, obs = sea.total_hs(), h in observed.get(b, ())
+            for m in big:
+                if hs >= m:
+                    k = f"{m:g}m"
+                    tot[k]["all"][0] += 1; tot[k]["all"][1] += obs
+                    if _is_north(o["wdir"]):
+                        tot[k]["north"][0] += 1; tot[k]["north"][1] += obs
+            if hs >= big[0]:
+                s8 = int(((o["wdir"] + 22.5) % 360) // 45)
+                by_sector[s8][0] += 1; by_sector[s8][1] += obs
+                if cur is None or (h - last_big).total_seconds() > storm_gap_h * 3600:
+                    if cur:
+                        storms.append(cur)
+                    cur = {"start": h.isoformat(), "peak_hs": 0.0, "hours": 0, "observed_hours": 0}
+                cur["hours"] += 1; cur["observed_hours"] += obs
+                if hs > cur["peak_hs"]:
+                    cur.update(peak_hs=round(hs, 2), peak_t=h.isoformat(), peak_wind=round(o["wspd"], 1), peak_dir=round(o["wdir"]))
+                last_big = h
+        if cur:
+            storms.append(cur)
+        storms.sort(key=lambda s: -s["peak_hs"])
+        years = sorted({h.year for h in hours})
+        out["buoys"][b] = {
+            "years": [years[0], years[-1]] if years else None,
+            "totals": {k: {"model_hours": v["all"][0], "buoy_saw": v["all"][1], "north_model_hours": v["north"][0], "north_buoy_saw": v["north"][1]}
+                       for k, v in tot.items()},
+            "big_hours_by_dir": {d: {"model_hours": a, "buoy_saw": c} for d, (a, c) in zip(["N", "NE", "E", "SE", "S", "SW", "W", "NW"], by_sector)},
+            "top_storms": storms[:25]}
+    return out
 
 
 # ---------------------------------------------------------------------------- 2. fit
@@ -358,7 +473,10 @@ def cross_validate(pairs):
         return {"years": [], "note": "not enough years to hold one out"}
     better = sum(1 for x in rows if x["learned"]["rmse_m"] < x["raw"]["rmse_m"])
     tot_raw, tot_l = skill(all_o, all_raw), skill(all_o, all_l)
-    return {"years": rows, "overall": {"raw": tot_raw, "learned": tot_l},
+    held = [p for r in rows for p in pairs if p["t"][:4] == r["year"]]
+    sel = [i for i, p in enumerate(held) if p["obs_hs"] >= 1.0 and p.get("wdir") is not None and _is_north(p["wdir"])]
+    north_big = {"raw": skill([all_o[i] for i in sel], [all_raw[i] for i in sel]), "learned": skill([all_o[i] for i in sel], [all_l[i] for i in sel])}
+    return {"years": rows, "overall": {"raw": tot_raw, "learned": tot_l}, "north_big": north_big,
             "by_buoy": {b: {"raw": skill(v[0], v[1]), "learned": skill(v[0], v[2])} for b, v in by_buoy.items()},
             "years_better": better, "years_scored": len(rows),
             "improves": bool(tot_l["rmse_m"] < 0.97 * tot_raw["rmse_m"] and better * 2 > len(rows))}
@@ -394,6 +512,11 @@ def fit_dir(d):
     corr["by_year"] = by_year(every)
     corr["cv"] = cross_validate(pairs)
     corr["lag"] = best_lag(pairs)
+    corr["era5_filled_hours"] = sum(1 for p in pairs if str(p.get("wind_src", "")).startswith("era5"))
+    cp = os.path.join(d, "era5_climate.json")
+    if os.path.exists(cp):
+        clim = json.load(open(cp))
+        corr["era5"] = {b: {"years": v["years"], "totals": v["totals"], "top_storms": v["top_storms"][:5]} for b, v in clim["buoys"].items()}
     corr["in_sample"] = {"raw": skill([p["obs_hs"] for p in pairs], [p["pred_hs"] for p in pairs]),
                          "learned": skill([p["obs_hs"] for p in pairs], apply_pairs(corr, pairs))}
     with open(os.path.join(d, "correction.json"), "w") as fh:
@@ -517,12 +640,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("backfill"); p.add_argument("--out", required=True); p.add_argument("--years", default="2012-%d" % dt.datetime.now(UTC).year)
+    p.add_argument("--era5", help="cached ERA5 (app.era5) directory: fills missing wind, 35-year storm climate")
     p = sub.add_parser("fit"); p.add_argument("--dir", required=True)
     p = sub.add_parser("log"); p.add_argument("--sup", required=True); p.add_argument("--glwu"); p.add_argument("--dir", required=True)
     p = sub.add_parser("score"); p.add_argument("--dir", required=True); p.add_argument("--days", type=int, default=45)
     a = ap.parse_args()
     if a.cmd == "backfill":
-        s = backfill(a.out, parse_years(a.years))
+        s = backfill(a.out, parse_years(a.years), era5_dir=a.era5)
         print(json.dumps(s))
     elif a.cmd == "fit":
         c = fit_dir(a.dir)
@@ -534,6 +658,15 @@ if __name__ == "__main__":
         for r in cv.get("years", []):
             print(" ", r["year"], "raw rmse", r["raw"]["rmse_m"], "learned", r["learned"]["rmse_m"], "big-wave bias", r["raw"]["big_bias_m"], "->", r["learned"]["big_bias_m"])
         print("improves:", cv.get("improves"), "by buoy", json.dumps(cv.get("by_buoy")))
+        print("north-wind hours with 1 m+ waves (held out):", json.dumps(cv.get("north_big")))
+        print("hours with ERA5-filled wind in the fit:", c.get("era5_filled_hours"))
+        for b, v in (c.get("era5") or {}).items():
+            t1 = v["totals"].get("1m", {})
+            print("  ERA5 %s %s: 1 m+ model hours %d, buoy out for %d (%.0f%%); north-wind 1 m+ %d, buoy saw %d (%.0f%%)" % (
+                b, v["years"], t1.get("model_hours", 0), t1.get("buoy_saw", 0), 100 * t1.get("buoy_saw", 0) / max(t1.get("model_hours", 0), 1),
+                t1.get("north_model_hours", 0), t1.get("north_buoy_saw", 0), 100 * t1.get("north_buoy_saw", 0) / max(t1.get("north_model_hours", 0), 1)))
+            for s_ in v["top_storms"][:3]:
+                print("    storm", s_["peak_t"][:13], "peak %.1f m" % s_["peak_hs"], "wind %s m/s from %s" % (s_.get("peak_wind"), s_.get("peak_dir")), "buoy saw %d/%d h" % (s_["observed_hours"], s_["hours"]))
         print("height regression:", " ".join("%s %+.4f" % fc for fc in zip(FEATURES, c["hs"]["coef"])))
         for u_ in (3, 6, 9, 12):
             print("  factor at %2d m/s (model 0.5 m)" % u_, " ".join("%d:%.2f" % (d_, factor(c, d_, u_, 0.0, m=0.5)) for d_ in range(0, 360, 45)))

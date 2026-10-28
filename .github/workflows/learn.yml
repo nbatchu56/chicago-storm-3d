@@ -9,6 +9,9 @@ on:
       years:
         description: "Years (e.g. 2012-2026, or last5)"
         default: "2012-2026"
+      era5_years:
+        description: "ERA5 years for the storm climate (cached per year on the learn branch; needs GEE_SERVICE_ACCOUNT_KEY)"
+        default: "1991-2026"
 
 permissions:
   contents: write
@@ -16,7 +19,7 @@ permissions:
 jobs:
   learn:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
     defaults:
@@ -31,10 +34,20 @@ jobs:
       - run: pip install numpy scipy matplotlib
       - name: Check out the learn branch
         run: tools/learn_branch.sh checkout "$RUNNER_TEMP/L"
+      - name: ERA5 at the buoys (Earth Engine; skipped without the key)
+        continue-on-error: true
+        timeout-minutes: 45
+        env:
+          GEE_SERVICE_ACCOUNT_KEY: ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          if [ -z "$GEE_SERVICE_ACCOUNT_KEY" ]; then echo "no GEE_SERVICE_ACCOUNT_KEY secret; skipping"; exit 0; fi
+          pip install -q earthengine-api
+          python -m app.era5 --dir "$RUNNER_TEMP/L/era5" --years "${{ inputs.era5_years }}" 2>&1 | tail -50
       - name: Backfill model vs buoy from the NDBC archive
         run: |
           rm -rf "$RUNNER_TEMP/L/backfill"
-          python -m app.learn backfill --out "$RUNNER_TEMP/L" --years "${{ inputs.years }}" 2>&1 | tail -40
+          E=""; [ -d "$RUNNER_TEMP/L/era5" ] && E="--era5 $RUNNER_TEMP/L/era5"
+          python -m app.learn backfill --out "$RUNNER_TEMP/L" --years "${{ inputs.years }}" $E 2>&1 | tail -40
       - name: Fit the correction
         run: |
           python -m app.learn fit --dir "$RUNNER_TEMP/L" | tee "$RUNNER_TEMP/L/report.txt"
