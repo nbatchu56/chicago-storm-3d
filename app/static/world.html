@@ -124,6 +124,8 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #legend .bar { height: 9px; border-radius: 2px; }
 #legend .tk { display: flex; justify-content: space-between; }
 #legend b { font: 600 11px var(--font-ui); letter-spacing: .06em; text-transform: uppercase; }
+#legend .zones { display: flex; font-size: 10px; opacity: .85; } #legend .zones span { text-align: center; border-left: 1px solid currentColor; padding: 0 2px; line-height: 1.15; } #legend .zones span:first-child { border-left: 0; }
+#legend .more { display: none; font-size: 10px; opacity: .7; }
 #attr { position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); font: 10px var(--font-ui); color: rgba(255,255,255,.75); text-shadow: 0 1px 2px #000; }
 #toggle { display: none; }
 #msg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: min(460px, calc(100vw - 32px)); padding: 16px 18px; text-align: center; }
@@ -200,7 +202,9 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
   .launches { gap: 4px 6px; } .launches .cr { padding: 1px 4px; font-size: 10.5px; } .launches .strip { gap: 1px; }   /* fit the 12-hour squares on a phone */
   #toggle { display: block; position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); top: calc(var(--gut) + env(safe-area-inset-top, 0px)); background: var(--panel); }
   #controls { top: auto; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); width: auto; bottom: calc(var(--gut) + 92px + env(safe-area-inset-bottom, 0px)); max-height: 58%; }
-  #timeline { grid-template-columns: auto 1fr; } .speed { display: none; } #legend { display: none; }
+  #timeline { grid-template-columns: auto 1fr; } .speed { display: none; }
+  #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 128px + env(safe-area-inset-bottom, 0px)) !important; width: auto; max-width: 420px; padding: 6px 9px; gap: 3px; cursor: pointer; }
+  #legend.min > span:not(.more) { display: none; } #legend.min .more { display: block; }
 }
 </style>
 
@@ -316,6 +320,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
       <div class="row" hidden><label for="exag">Cloud height scale</label><output id="exag-o">×1</output></div>
       <input type="range" id="exag" min="1" max="5" step="0.5" value="1" hidden>
       <label class="check"><input type="checkbox" id="bolts" checked> Lightning flashes</label>
+      <label class="check" title="Moored buoys that ride the modelled waves, each beside a fixed pile painted in 1 ft bands from the still-water line (red). Zoom in near the water to see them."><input type="checkbox" id="buoys" checked> Buoys and wave gauges on the water</label>
     </section>
     <section>
       <h2>Your paddle (optional)</h2>
@@ -2009,6 +2014,104 @@ const board = new THREE.Group(); board.scale.setScalar(0.001); scene.add(board);
   const paddle = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 2.0, 8), lam(0x1d2a30)); paddle.position.set(0.1, 1.05, 0.35); paddle.rotation.z = 0.25; board.add(paddle);
   board.userData.rider = [paddler, head, paddle]; }
 const driftArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0.004, 0xffffff, 0.001, 0.0006); scene.add(driftArrow);
+// ---------------------------------------------------------------- marker buoys + wave gauge piles: a size reference on the water
+// A few moored buoys (hull 0.85 m across, light 2.5 m up) ride the surface the wave patch draws: they heave on the water
+// under the hull and rock to its slope, through a damped spring (a float, not a decal), so chop reads as a quick sway
+// and swell as the whole buoy rising and falling. Beside each a fixed pile is painted in 1 ft bands from the still-water
+// line (red): the water climbing and dropping on it is the wave height. Fixed scattered grid (~90 m), the nearest eight
+// that are in the wave patch and at least 1.5 m deep.
+const BUOY = { on: true, n: 8, cell: 0.09, list: [], key: "", FT: 0.3048 };
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const hash3 = (i, j, s) => { let h = Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ Math.imul(s + 1, 83492791); h = Math.imul(h ^ (h >>> 13), 0x5bd1e995); return ((h ^ (h >>> 15)) >>> 0) / 4294967296; };
+function shelterKm(xk, yk) {   // CPU copy of SHELTER_GLSL (land up-wave of the point within ~130 m)
+  if (!MAP.ok) return 1; const wv = U.uWaveDir.value; let tot = 0;
+  for (const a of [0.26, -0.26]) { const wx = Math.cos(a) * wv.x - Math.sin(a) * wv.y, wy = Math.sin(a) * wv.x + Math.cos(a) * wv.y; let s = 1;
+    for (let i = 1; i <= 7; i++) { const d = 0.004 + i * i * 0.0026, x = xk - wx * d, y = yk - wy * d;
+      if (x < MAP.x0 || y < MAP.y0 || x > MAP.x1 || y > MAP.y1) break;
+      if (maskAt(x, y) === 0) { s = 0.12 + 0.45 * sstep(0.02, 0.13, d); break; } }
+    tot += s; }
+  return tot * 0.5; }
+function fwEtaKm(xk, yk) {   // FUNWAVE surface (m) and its blend weight, as the patch shader samples them
+  const r = FW.cur; if (!r || !r.tex || U.uFwOn.value < 0.5) return null; const g = r.grid, e = r.eta, mx = g.x0 / 1000, my = g.y0 / 1000, sx = (g.nx - 1) * g.dx / 1000, sy = (g.ny - 1) * g.dx / 1000;
+  const fx = (xk - mx) / sx, fy = (yk - my) / sy; if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return null;
+  const w = sstep(0.02, 0.12, Math.min(fx, fy, 1 - fx, 1 - fy)); if (w <= 0) return null;
+  const D = r.tex.image.data, nx = e.nx, ny = e.ny, nf = e.frames, hf = THREE.DataUtils.fromHalfFloat;
+  const u = clamp(fx * nx - 0.5, 0, nx - 1.001), v = clamp(fy * ny - 0.5, 0, ny - 1.001), fr = ((U.uFwT.value * nf - 0.5) % nf + nf) % nf;
+  const i = Math.floor(u), j = Math.floor(v), k = Math.floor(fr), a = u - i, b = v - j, c = fr - k, k1 = (k + 1) % nf;
+  const at = (kk, jj, ii) => hf(D[(kk * ny + jj) * nx + ii]);
+  const bil = (kk) => (at(kk, j, i) * (1 - a) + at(kk, j, i + 1) * a) * (1 - b) + (at(kk, j + 1, i) * (1 - a) + at(kk, j + 1, i + 1) * a) * b;
+  return { w, eta: bil(k) * (1 - c) + bil(k1) * c }; }
+// water surface (m above the survey datum) at (xk, yk) km, following the patch's vertex shader term by term
+function surfaceKm(xk, yk) {
+  const cls = maskAt(xk, yk), n = WU.uShoreN2.value, xm = (xk - WAVES.origin[0]) * 1000, zm = -(yk - WAVES.origin[1]) * 1000;
+  const shelter = cls < 0.5 ? 0 : cls > 1.5 ? 0.18 : shelterKm(xk, yk), dO = WU.uShoreD2.value - (xm * n.x + zm * n.y), sAl = -xm * n.y + zm * n.x;
+  const kr = swanRatioKm(xk, yk), sw = kr != null && WU.uHsB.value > 0, G = sw ? kr / Math.max(U.uSwanRef.value, 0.02) : 1, hsB = Math.max(WU.uHsB.value * (sw ? G : 1), 0.02);
+  const d0 = depthAtKm(xk, yk); let dep = d0 != null ? d0 : 0.1 * Math.pow(Math.max(dO, 0), 0.6667);
+  const satL = 1 - clamp(0.62 * Math.max(dep, 0) / hsB, 0, 1), lvl = WU.uLevelD.value + WU.uSetupShore.value * satL * satL; dep += lvl;
+  const lim = (sw ? G : clamp(0.62 * Math.max(dep, 0) / Math.max(WU.uHsB.value, 0.02), 0, 1)) * shelter * (dep >= 0.02 ? 1 : 0);
+  let y = 0;
+  if (lim > 0) { const step = DMAX / (TABW - 1), x = clamp(dO, 0, DMAX) / step, i0 = Math.min(Math.floor(x), TABW - 2), f = x - i0, ext = Math.max(dO - DMAX, 0);
+    for (let i = 0; i < NW; i++) { const o0 = (i * TABW + i0) * 4, o1 = o0 + 4, kz = tabData[o0 + 2] * (1 - f) + tabData[o1 + 2] * f;
+      const P = tabData[o0] * (1 - f) + tabData[o1] * f + tabData[o1 + 2] * ext, A = tabData[o0 + 1] * (1 - f) + tabData[o1 + 1] * f, ky = WU.uKy.value[i];
+      const kk = Math.max(Math.hypot(ky, kz), 1e-4), a = WU.uA.value[i] * (sw ? 1 : A) * lim * sstep(5, 10, 2 * Math.PI / kk);
+      y += a * Math.sin(ky * sAl - P - WU.uW.value[i] * U.uTime.value + WU.uP.value[i]); }
+    const satV = 1 - clamp(0.62 * Math.max(dep, 0) / hsB, 0, 1); y *= y > 0 ? 1 + 0.5 * satV : 1 - 0.35 * satV; }
+  const fw = fwEtaKm(xk, yk); if (fw) y = y * (1 - fw.w) + fw.eta * fw.w;
+  const gD = WU.uOcOn.value * (cls < 0.5 ? 0 : cls > 1.5 ? 0.55 : 1) * sstep(0.05, 0.6, dep); if (gD > 0) y += OCEAN.heightAt(xm, zm) * gD;
+  return { h: y + lvl, lvl }; }
+const BUOY_PROTO = (() => {
+  const lam = (c) => new THREE.ShaderMaterial({ uniforms: Object.assign({ uC: { value: new THREE.Color(c) } }, U),
+    vertexShader: `${LOGV[0]} varying vec3 vN; void main(){ vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position,1.0); ${LOGV[1]} }`,
+    fragmentShader: `${LOGF[0]} uniform vec3 uC, uSunDir, uSunCol, uAmbTop, uAmbBot; uniform float uOvercast; varying vec3 vN;
+      void main(){ ${LOGF[1]} vec3 N = normalize(vN); gl_FragColor = vec4(pow(uC, vec3(2.2)) * (uSunCol * max(dot(N, uSunDir), 0.0) * (1.0 - 0.6 * uOvercast) * 0.5 + mix(uAmbBot, uAmbTop, 0.5 + 0.5 * N.y) * 1.6), 1.0); }` });
+  const red = lam(0xc8302a), white = lam(0xf2f2ee), dark = lam(0x26292c), FT = BUOY.FT;
+  const cyl = (rt, rb, h, y, m, seg = 18) => { const o = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), m); o.position.y = y; return o; };
+  // the buoy, waterline at y = 0
+  const buoy = new THREE.Group();
+  buoy.add(cyl(0.42, 0.34, 0.8, -0.05, red), cyl(0.43, 0.43, 0.13, 0.2, white), cyl(0.1, 0.42, 0.16, 0.43, red));
+  buoy.add(cyl(0.035, 0.035, 1.95, 1.48, dark, 8));
+  const mark = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.03), red); mark.position.y = 1.75; buoy.add(mark);
+  buoy.add(cyl(0.07, 0.07, 0.12, 2.48, dark, 10));
+  const lens = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 8), new THREE.MeshBasicMaterial({ color: 0xfff2c0 })); lens.position.y = 2.6; lens.name = "lens"; buoy.add(lens);
+  // the pile: fixed to the bottom, 1 ft bands from the still-water line (red ring at 0)
+  const pile = new THREE.Group();
+  for (let k = -5; k < 9; k++) pile.add(cyl(0.12, 0.12, FT, (k + 0.5) * FT, k % 2 ? dark : white, 12));
+  pile.add(cyl(0.135, 0.135, 0.05, 0, red, 12), cyl(0.12, 0.12, 2.5, -5 * FT - 1.25, dark, 10), cyl(0.15, 0.15, 0.06, 9 * FT + 0.03, dark, 12));
+  return { buoy, pile };
+})();
+for (let i = 0; i < BUOY.n; i++) { const b = BUOY_PROTO.buoy.clone(), p = BUOY_PROTO.pile.clone(); b.scale.setScalar(0.001); p.scale.setScalar(0.001);
+  b.visible = p.visible = false; scene.add(b, p); const lens = b.getObjectByName("lens"); lens.material = lens.material.clone(); BUOY.list.push({ b, p, lens, cell: null }); }
+try { BUOY.on = localStorage.getItem("lakelocal-buoys") !== "0"; } catch (e) {}
+// moorings near (cx, cy) km: a jittered grid, in the wave patch, deep enough, clear of walls
+function buoySites(cx, cy, pcx, pcy) {
+  const c = BUOY.cell, ix0 = Math.floor(cx / c), iy0 = Math.floor(cy / c), out = [];
+  for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) { const ix = ix0 + i, iy = iy0 + j;
+    const x = (ix + 0.2 + 0.6 * hash3(ix, iy, 1)) * c, y = (iy + 0.2 + 0.6 * hash3(ix, iy, 2)) * c;
+    if (Math.abs(x - pcx) > 0.27 || Math.abs(y - pcy) > 0.27) continue;
+    const cls = maskAt(x, y), d = depthAtKm(x, y); if (cls < 1 || cls > 2 || (d != null && d < 1.5)) continue;
+    if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => maskAt(x + a * 0.012, y + b * 0.012) === 0)) continue;
+    const ang = hash3(ix, iy, 3) * 2 * Math.PI;
+    out.push({ id: ix + "," + iy, x, y, px: x + Math.cos(ang) * 0.0045, py: y + Math.sin(ang) * 0.0045, ph: hash3(ix, iy, 4) * 4, d2: (x - cx) ** 2 + (y - cy) ** 2 }); }
+  return out.sort((a, b) => a.d2 - b.d2).slice(0, BUOY.n); }
+function stepBuoys(dt, show) {
+  const L = BUOY.list; if (!(show && BUOY.on && WAVES.ready && U.uIceExp.value < 0.15)) { for (const s of L) s.b.visible = s.p.visible = false; return; }
+  const cx = camera.position.x, cy = -camera.position.z, pcx = patch.position.x, pcy = -patch.position.z, key = `${Math.round(cx * 50)},${Math.round(cy * 50)},${pcx},${pcy}`;
+  if (key !== BUOY.key) { BUOY.key = key; const sites = buoySites(cx, cy, pcx, pcy), ids = new Set(sites.map((q) => q.id));
+    for (const s of L) if (s.cell && !ids.has(s.cell.id)) s.cell = null;
+    for (const q of sites) { if (L.some((s) => s.cell && s.cell.id === q.id)) continue; const s = L.find((s) => !s.cell); if (!s) break; s.cell = q; s.st = null; } }
+  const C = COND, wind = C ? C.wind : 0, db = C ? (C.dir + 180) * Math.PI / 180 : 0, lean = Math.min(0.006 * wind, 0.09), t = U.uTime.value;
+  for (const s of L) { const q = s.cell; s.b.visible = s.p.visible = !!q; if (!q) continue;
+    const r = 0.00045, h0 = surfaceKm(q.x, q.y), hE = surfaceKm(q.x + r, q.y).h, hW = surfaceKm(q.x - r, q.y).h, hN = surfaceKm(q.x, q.y + r).h, hS = surfaceKm(q.x, q.y - r).h;
+    const hT = (h0.h * 2 + hE + hW + hN + hS) / 6, gx = (hE - hW) / 0.9, gz = (hS - hN) / 0.9;   // scene z points south
+    const tx = Math.atan(gx) - lean * Math.sin(db), tz = -Math.atan(gz) - lean * Math.cos(db);   // roll about z, pitch about x
+    if (!s.st) s.st = { y: hT, vy: 0, rz: tx, vrz: 0, rx: tz, vrx: 0 };
+    const S2 = s.st, n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n, wH = 2 * Math.PI / 0.9, wT = 2 * Math.PI / 1.6;
+    for (let k = 0; k < n; k++) { S2.vy += (wH * wH * (hT - S2.y) - 2 * 0.45 * wH * S2.vy) * h; S2.y += S2.vy * h;
+      S2.vrz += (wT * wT * (tx - S2.rz) - 2 * 0.25 * wT * S2.vrz) * h; S2.rz += S2.vrz * h;
+      S2.vrx += (wT * wT * (tz - S2.rx) - 2 * 0.25 * wT * S2.vrx) * h; S2.rx += S2.vrx * h; }
+    s.b.position.set(q.x, S2.y / 1000, -q.y); s.b.rotation.set(S2.rx, q.ph, S2.rz, "XZY");
+    s.p.position.set(q.px, h0.lvl / 1000, -q.py);
+    s.lens.material.color.setHex(((t + q.ph) % 4) < 0.5 ? 0xfff2c0 : 0x5a4a20); } }
 const TRK = { group: new THREE.Group() }; scene.add(TRK.group);
 function parseGPX(text, name) {
   const doc = new DOMParser().parseFromString(text, "application/xml"), pts = [...doc.getElementsByTagName("trkpt")]; if (!pts.length) throw new Error("No track points in that file.");
@@ -2737,6 +2840,7 @@ $("#play").onclick = () => setPlaying(!S.playing);
 $("#scrub").oninput = (e) => { const [t0, t1] = range(); S.t = t0 + (t1 - t0) * (+e.target.value / 1000); setPlaying(false); if (S.mode === "live") { S.follow = false; $("#nowbtn").hidden = false; } };
 $("#nowbtn").onclick = () => { S.follow = true; $("#nowbtn").hidden = true; };
 $("#showtrack").onchange = (e) => { S.showTrack = e.target.checked; };
+$("#buoys").checked = BUOY.on; $("#buoys").onchange = (e) => { BUOY.on = e.target.checked; try { localStorage.setItem("lakelocal-buoys", BUOY.on ? "1" : "0"); } catch (err) {} };
 $("#toggle").onclick = () => { const c = $("#controls"); c.dataset.open = c.hidden ? "1" : "0"; applyPanel(); };
 function applyPanel() { const narrow = matchMedia("(max-width: 760px)").matches, c = $("#controls"), open = c.dataset.open ? c.dataset.open === "1" : !narrow; c.hidden = !open; $("#toggle").setAttribute("aria-expanded", String(open)); $("#toggle").textContent = open ? "Hide settings" : "Settings"; }
 matchMedia("(max-width: 760px)").addEventListener("change", applyPanel); applyPanel();
@@ -2805,13 +2909,18 @@ function renderLegend() {
       : `<b>Chop spots: suspected, how often</b>${bar}<div class="tk"><span>0</span><span>15%</span><span>30%</span><span>45%</span><span>60%+</span></div>
       <span>Share of daylight hours (6 AM-8 PM, May-Oct ${M ? M.seasons : ""}) a spot is Choppy or worse (70+ J/m²): ${M ? M.hours.toLocaleString() : "?"} buoy hours of offshore waves carried in by the SWAN model (sheltering, wall reflection, breaking). Wind chop raised inside the harbours isn't in it.</span>${conf}`; }
   else if (S.ov === "s1") { const E1 = (DATA.earth || {}).s1, bar = S1_STOPS.map(([f, c]) => `rgb(${c}) ${Math.round(f * 100)}%`).join(",");
-    h = `<b>Wind on the water: radar roughness</b><div class="bar" style="background:linear-gradient(90deg,${bar})"></div><div class="tk"><span>smoother</span><span></span><span>usual</span><span></span><span>rougher</span></div>
-      <span>${E1 ? `${E1.label} ${E1.time.slice(11, 16)} UTC (${E1.orbit === "ASCENDING" ? "evening" : "morning"} pass): backscatter ±${S1_SPAN_DB} dB around this pass's median. Dark water is sheltered or calm (wind shadows, slicks); bright is wind-roughened.` : "No Sentinel-1 pass loaded"}</span><span>A snapshot from the satellite's pass, not live; passes come every few days.</span>`; }
+    h = `<b>Wind on the water: radar roughness</b><div class="bar" style="background:linear-gradient(90deg,${bar})"></div><div class="tk"><span>calmer</span><span></span><span>usual</span><span></span><span>rougher</span></div>
+      <span><b style="font:inherit;text-transform:none;letter-spacing:0">Bright</b> = wind is roughening the surface (ripples and chop). <b style="font:inherit;text-transform:none;letter-spacing:0">Dark</b> = calm or sheltered water: wind shadows behind breakwaters and buildings, slicks. It compares spots with each other on that pass; it isn't a wind speed.</span>
+      <span>${E1 ? `${E1.label} ${E1.time.slice(11, 16)} UTC (${E1.orbit === "ASCENDING" ? "evening" : "morning"} pass), radar backscatter ±${S1_SPAN_DB} dB around the pass's median.` : "No Sentinel-1 pass loaded"}</span><span>A snapshot from the satellite's pass, not live; passes come every few days.</span>`; }
   else if (S.ov === "s2") { const E2 = (DATA.earth || {}).s2, bar = S2_STOPS.map(([f, c]) => `rgb(${c}) ${Math.round(f * 100)}%`).join(",");
     h = `<b>Water clarity (turbidity)</b><div class="bar" style="background:linear-gradient(90deg,${bar})"></div><div class="tk"><span>0</span><span>2</span><span>8</span><span>25</span><span>60 FNU</span></div>
-      <span>${E2 ? `${E2.label} (clear-sky water pixels; Nechad red-band turbidity). ${Object.entries(E2.launches || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v} FNU`).join(" · ")}` : "No clear Sentinel-2 pass in the last 10 days"}</span><span>Murky water after storms and river outflow; under 2 FNU is clear.</span>`; }
+      <div class="zones"><span style="width:27%">clear</span><span style="width:17%">slightly cloudy</span><span style="width:23%">murky</span><span style="width:33%">very murky</span></div>
+      <span>How cloudy the water is (sediment stirred up by storms, river and outfall plumes). Under 2 FNU you can see well down; over 15 the water looks brown.</span>
+      <span>${E2 ? `${E2.label} (clear-sky water pixels; Nechad red-band turbidity). ${Object.entries(E2.launches || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v} FNU`).join(" · ")}` : "No clear Sentinel-2 pass in the last 10 days"}</span><span>A satellite snapshot from that pass, not live.</span>`; }
   else if (S.ov === "radar") { h = `<b>Radar reflectivity</b><div class="bar" style="background:linear-gradient(90deg,${DBZ_STOPS.slice(0, 13).map(([, c]) => c).join(",")})"></div><div class="tk"><span>5</span><span>35</span><span>65 dBZ</span></div>`; }
+  if (h) h += `<span class="more">Tap for details</span>`;
   el.innerHTML = h; el.hidden = !h;
+  if (!el.dataset.init) { el.dataset.init = "1"; el.classList.toggle("min", matchMedia("(max-width: 760px)").matches); el.onclick = () => el.classList.toggle("min"); }
 }
 
 // ---------------------------------------------------------------- frame loop
@@ -2918,6 +3027,7 @@ function tick() {
   if (COND) { const dv = 0.06 * COND.wind, db = (COND.dir + 180) * Math.PI / 180; driftArrow.visible = board.visible && dv > 0.15 && S.view !== "rider";
     driftArrow.position.set(board.position.x, board.position.y + 0.0003, board.position.z); driftArrow.setDirection(new THREE.Vector3(Math.sin(db), 0, -Math.cos(db)));
     driftArrow.setLength(Math.min(0.012, dv * 0.0012), 0.0012, 0.0007); }
+  stepBuoys(dt, patch.visible);
   // radar volume
   RS = radarState(S.t);
   if (RS) { const g = RS.grid; U.uCloudA.value = RS.A.tc; U.uCloudB.value = RS.B.tc; U.uDbzA.value = RS.A.td; U.uDbzB.value = RS.B.td; U.uMix.value = RS.f;
