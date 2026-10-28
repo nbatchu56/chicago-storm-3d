@@ -102,3 +102,10 @@ def test_log_passes_dedupes(tmp_path):
     assert sorted(earth.log_passes(e, str(tmp_path))) == ["s1", "s2"]
     assert earth.log_passes(e, str(tmp_path)) == []
     assert open(tmp_path / "sat" / "s1_passes.jsonl").read().count("\n") == 1
+
+
+def test_cloud_top():
+    bt = np.array([288.0 - 26.0, 288.0 - 26.0, 288.0])
+    m = earth.cloud_mask(bt, None, 288.0, False)
+    assert list(m) == [1.0, 1.0, 0.0] and earth.cloud_top_km(bt, m, 288.0) == 4.0
+    assert earth.cloud_top_km(bt, np.zeros(3), 288.0) is None

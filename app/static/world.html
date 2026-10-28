@@ -570,6 +570,7 @@ const U = {
   uMix: { value: 0 }, uShiftA: { value: new THREE.Vector2() }, uShiftB: { value: new THREE.Vector2() },
   uGridMin: { value: new THREE.Vector3(-100, -100, 0) }, uGridN: { value: new THREE.Vector3(2, 2, 2) }, uGridD: { value: new THREE.Vector2(2, 0.5) },
   uExtra: { value: 0 }, uExtraBase: { value: 1.3 }, uSnow: { value: 0 },
+  uGoesOn: { value: 0 }, uGoesTex: { value: blank2D }, uGoesMin: { value: new THREE.Vector2() }, uGoesSize: { value: new THREE.Vector2(1, 1) },
   // lake surface
   uHs: { value: 0.3 }, uTp: { value: 3 }, uWaveDir: { value: new THREE.Vector2(0, 1) }, uWhitecap: { value: 0 }, uWindSpd: { value: 4 },
   // lakefront map
@@ -596,6 +597,8 @@ precision highp sampler3D;
 uniform sampler3D uCloudA, uCloudB, uDbzA, uDbzB, uNoise;
 uniform float uMix; uniform vec2 uShiftA, uShiftB; uniform vec3 uGridMin; uniform vec3 uGridN; uniform vec2 uGridD;
 uniform float uTime, uExtra, uExtraBase;
+// GOES-19 cloud mask (live): where the satellite sees cloud, ~2 km cells; replaces the uniform sky cover
+uniform sampler2D uGoesTex; uniform vec2 uGoesMin, uGoesSize; uniform float uGoesOn;
 vec3 tc(vec3 pk) { return vec3(((pk.x - uGridMin.x) / uGridD.x + 0.5) / uGridN.x, ((pk.y - uGridMin.y) / uGridD.x + 0.5) / uGridN.y, pk.z / (uGridD.y * uGridN.z)); }
 float edgeFade(vec3 pk) { vec2 lo = pk.xy - uGridMin.xy, hi = (uGridMin.xy + (uGridN.xy - 1.0) * uGridD.x) - pk.xy; float e = min(min(lo.x, lo.y), min(hi.x, hi.y));
   return smoothstep(0.0, 8.0, e) * step(0.0, pk.z) * (1.0 - smoothstep(uGridD.y * uGridN.z - 0.6, uGridD.y * uGridN.z, pk.z)); }
@@ -607,7 +610,9 @@ float extraLayer(vec3 pk, float n2) {
   float hump = smoothstep(uExtraBase, uExtraBase + 0.5, pk.z) * (1.0 - smoothstep(uExtraBase + 0.9, uExtraBase + 2.2, pk.z));
   if (hump <= 0.0) return 0.0;
   float cov = texture(uNoise, pk / vec3(16.0, 16.0, 6.0) + vec3(0.37, 0.11, 0.0) + vec3(uTime * 0.0006, 0.0, 0.0)).r;
-  return clamp((cov - (1.0 - uExtra)) * 2.4, 0.0, 1.0) * 0.7 * hump * (0.35 + 0.65 * n2);
+  float ex = uExtra;
+  if (uGoesOn > 0.5) { vec2 f = (pk.xy - uGoesMin) / uGoesSize; if (f.x >= 0.0 && f.y >= 0.0 && f.x <= 1.0 && f.y <= 1.0) ex = texture(uGoesTex, f).r * 0.97; }
+  return clamp((cov - (1.0 - ex)) * 2.4, 0.0, 1.0) * 0.7 * hump * (0.35 + 0.65 * n2);
 }
 float cloudDensity(vec3 pk, float raw) {
   vec3 drift = vec3(uTime * 0.002, uTime * 0.001, 0.0);
@@ -1337,6 +1342,11 @@ async function setEarth(E) {
   if (!E) return;
   try { if (E.s1 && E.s1.b64) { const med = E.s1.median_db ?? -18; EARTH.s1 = await satTexture(E.s1, (db) => rampAt(S1_STOPS, (db - med + S1_SPAN_DB) / (2 * S1_SPAN_DB))); } } catch (e) { console.warn("s1", e); }
   try { if (E.s2 && E.s2.b64) { const lo = Math.log10(E.s2.lo + 1), hi = Math.log10(E.s2.hi + 1); EARTH.s2 = await satTexture(E.s2, (v) => rampAt(S2_STOPS, (Math.log10(v + 1) - lo) / (hi - lo))); } } catch (e) { console.warn("s2", e); }
+  try { const g = E.goes && E.goes.grid; if (g && g.b64) { const q = await gunzipB64(g.b64), n = g.nlat * g.nlon;
+      if (q.length === n) { const d = new Uint8Array(n); for (let i = 0; i < n; i++) d[i] = q[i] ? Math.round((q[i] - 1) / 254 * 255) : 0;
+        const t = new THREE.DataTexture(d, g.nlon, g.nlat, THREE.RedFormat, THREE.UnsignedByteType); t.minFilter = t.magFilter = THREE.LinearFilter; t.needsUpdate = true;
+        const [ax, ay] = ll(g.lat0, g.lon0), [bx, by] = ll(g.lat1, g.lon1); EARTH.goes = { tex: t };
+        U.uGoesTex.value = t; U.uGoesMin.value.set(ax, ay); U.uGoesSize.value.set(bx - ax, by - ay); } } } catch (e) { console.warn("goes", e); }
   $("#sat-seg").hidden = !EARTH.s1 && !EARTH.s2;
   for (const k of ["s1", "s2"]) { const b = document.querySelector(`[data-ov="${k}"]`); if (b) b.disabled = !EARTH[k]; }
   setSat();
@@ -2839,6 +2849,11 @@ function tick() {
     U.uHasIce.value = S.mode !== "exp" && GRIDS.ice ? 1 : 0; U.uSnowCover.value = C.snow && (C.airC ?? 5) < -1 ? 0.8 : 0; U.uSnow.value = C.snow ? 1 : 0;
     // clouds beyond radar: forecast sky cover, or the chosen fair-weather layer
     U.uExtra.value = (S.mode === "forecast" || S.mode === "live" || S.mode === "import") && !RS ? clamp((C.sky - 10) / 90, 0, 1) * 0.95 : S.mode === "exp" && S.x.type === "cumulus" ? 0.55 * S.x.cov : 0;
+    // live, with a GOES image within 45 min: the satellite's cloud field (also over radar, which only sees clouds that rain)
+    { const G = DATA.earth && DATA.earth.goes, on = S.mode === "live" && EARTH.goes && G && Math.abs(new Date(G.time).getTime() - S.t) < 45 * 60e3;
+      U.uGoesOn.value = on ? 1 : 0;
+      if (on) { U.uExtra.value = Math.max(U.uExtra.value, clamp((G.sky_area_pct ?? G.sky_local_pct ?? 0) / 100, 0.02, 1) * 0.95); if (G.top_km) U.uExtraBase.value = clamp(G.top_km - 1.6, 0.6, 7); }
+      else U.uExtraBase.value = 1.3; }
     // wave patch: origin at the nearest shore frame; rebuild when conditions or place change
     const sf = C.shore, key = JSON.stringify([SWAN.key, sys.map((q) => [q.hs.toFixed(3), q.tp.toFixed(1), Math.round(q.dir)]), C.dRef, Math.round(sf.nx * 50), Math.round(sf.ny * 50), Math.round(C.wind)]);
     const ox = cx + sf.nx * (sf.d - C.dRef / 1000) * 0 , oy = cy;

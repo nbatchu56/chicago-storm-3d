@@ -365,14 +365,26 @@ def build_gfs(ee, now, hours=48):
     return {"init": t0.isoformat(), "points": gfs_series(feats, float(init))}
 
 
-def cloud_fraction(bt13_k, refl02, tref_k, sun_up, dt_k=8.0, refl_min=0.30):
-    """Cloudy if colder than the surface by dt_k at 10.3 um, or (by day) brighter than refl_min in the red band."""
+def cloud_mask(bt13_k, refl02, tref_k, sun_up, dt_k=8.0, refl_min=0.30):
+    """Cloudy if colder than the surface by dt_k at 10.3 um, or (by day) brighter than refl_min in the red band;
+    nan where there's no data."""
     bt = np.asarray(bt13_k, float)
     c = bt < tref_k - dt_k
     if sun_up and refl02 is not None:
         c = c | (np.asarray(refl02, float) > refl_min)
-    ok = np.isfinite(bt)
-    return float(np.mean(c[ok])) if ok.any() else None
+    return np.where(np.isfinite(bt), c.astype(float), np.nan)
+
+
+def cloud_fraction(bt13_k, refl02, tref_k, sun_up, dt_k=8.0, refl_min=0.30):
+    m = cloud_mask(bt13_k, refl02, tref_k, sun_up, dt_k, refl_min)
+    ok = np.isfinite(m)
+    return float(np.mean(m[ok])) if ok.any() else None
+
+
+def cloud_top_km(bt13_k, mask, tref_k, lapse_k_km=6.5):
+    """Rough cloud-top height from how much colder the cloud is than the surface (standard lapse rate)."""
+    sel = (np.asarray(mask) > 0.5) & np.isfinite(bt13_k)
+    return round(float(np.clip((tref_k - np.median(np.asarray(bt13_k)[sel])) / lapse_k_km, 0.3, 14.0)), 1) if sel.any() else None
 
 
 def _scale_offset(props, band, default):
@@ -416,7 +428,9 @@ def build_goes(ee, now, tref_c):
     near = dx ** 2 + dy ** 2 <= 15 ** 2
     loc = cloud_fraction(np.where(near, bt, np.nan), None if rf is None else np.where(near, rf, np.nan), tref, sun_up)
     area = cloud_fraction(bt, rf, tref, sun_up)
+    mask = cloud_mask(bt, rf, tref, sun_up)
     return {"time": t, "scale_c13": list(s13), "sky_local_pct": None if loc is None else round(100 * loc), "sky_area_pct": None if area is None else round(100 * area),
+            "grid": byte_grid(lats, lons, mask, 0.0, 1.0), "top_km": cloud_top_km(np.where(near, bt, np.nan), np.where(near, mask, 0), tref),
             "tref_c": round(tref_c, 1), "day": sun_up, "bt_median_c": round(float(np.nanmedian(bt)) - 273.15, 1) if np.isfinite(bt).any() else None}
 
 

@@ -85,13 +85,15 @@ With a service-account key in the repo secret `GEE_SERVICE_ACCOUNT_KEY` (a Cloud
 | Upwelling | That grid: water 0–2 km from shore vs 8–15 km out, rows 41.85–42.06° N | "Upwelling" pill when the shore water is 2.5 °C (≈4.5 °F) or more colder |
 | Wind on the water | Sentinel-1 VV backscatter (newest pass, ≤12 days), relative to the pass's median | View → *Wind on the water*: dark = sheltered/calm, bright = wind-roughened |
 | Water clarity | Sentinel-2 red-band turbidity (Nechad), water pixels from the newest clear pass (≤10 days) | View → *Water clarity*; FNU at the view point and the launches |
-| Clouds now | GOES-19 10.3 µm vs the GFS surface temperature (plus visible reflectance by day), within 15 km | Live mode's sky within 45 min of the image |
-| Second-opinion wind | NOAA GFS 0.25°, newest complete run, 48 h at North Ave | "GFS model wind" in the readouts |
+| Clouds now | GOES-19 10.3 µm vs the GFS surface temperature (plus visible reflectance by day): a ~2 km cloud mask and a cloud-top height from the lapse rate | Live mode within 45 min of the image: the sky layer follows the satellite's cloud field (also over radar, which sees only clouds that rain) at that height |
+| Second-opinion wind | NOAA GFS 0.25°, newest complete run, 48 h at North Ave and both buoys | "GFS model wind" in the readouts; the scorecard runs the wave model on it ("model on GFS wind") |
 | Normals | ERA5 hourly 1991–2020 (±10 days, cached on the `learn` branch), ERA5-Land lake temperature | "Windier than 9 in 10 hours", air/water "vs usual" pills, usual wind |
+
+Each new Sentinel-1 and Sentinel-2 pass's values at the launches are appended to `sat/` on the `learn` branch, to pair radar roughness with the wind at the time (how sheltered each launch is by wind direction) and clarity with storms. WeatherNext 3 (`wn3.json`), when the key has access, shows its wind with the 10–90% ensemble spread and is scored like GFS.
 
 The *Earth Engine probe* workflow lists which datasets the key can read and how fresh they are. `app/weathernext.py` (Google DeepMind WeatherNext 3, experimental) runs in the snapshot too but needs separate dataset access for the service account.
 
-**ERA5 in the learned correction**: the *Learn waves* workflow caches ERA5 hourly wind at the open-lake cells next to both buoys (1991 on, `era5/` on the `learn` branch). The backfill fills hours with buoy waves but no measured wind with ERA5 wind scaled to read like the buoy (ratio by direction sector over the overlap hours), and runs the wave model on 35 years of ERA5 wind alone (`era5_climate.json`): how many big-wave hours each wind direction brings and how few of them the buoys were out for, i.e. where the fit extrapolates. The fit report adds held-out skill on north-wind hours with 1 m+ waves. ERA5 adds wind, not wave observations, so it can't by itself teach the correction about storms the buoys missed.
+**ERA5 in the learned correction**: the *Learn waves* workflow caches ERA5 hourly wind at the open-lake cells next to both buoys (1991 on, `era5/` on the `learn` branch). The backfill fills hours with buoy waves but no measured wind with ERA5 wind scaled to read like the buoy (ratio by direction sector over the overlap hours), and runs the wave model on 35 years of ERA5 wind alone (`era5_climate.json`): how many big-wave hours each wind direction brings and how few of them the buoys were out for, i.e. where the fit extrapolates. The fit report adds held-out skill on north-wind hours with 1 m+ waves, and the hindcast's monthly wave percentiles become the page's "usual lake waves". ERA5 adds wind, not wave observations, so it can't by itself teach the correction about storms the buoys missed.
 
 ## Stand-up paddling forecast (`/sup`)
 
