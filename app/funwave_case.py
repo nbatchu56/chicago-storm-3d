@@ -46,6 +46,10 @@ CASES = {
     "east": {"hs": 1.2, "tp": 5.5, "dir": 90.0, "label": "Moderate east sea: 3.9 ft at 5.5 s"},
     # Oct 3, 2026 race in Monroe Harbor: buoy 45198 0.7-0.8 m, waves from the E (mean dir 50-90), wind ESE 5-6 m/s
     "race": {"hs": 0.75, "tp": 4.0, "dir": 85.0, "label": "Oct 3, 2026 race: 2.5 ft at 4 s from the east"},
+    # the glass sunrises of Oct 21 and Oct 28, 2026 (Diversey to North Ave): wind 1-4 m/s S-SSW (offshore), only the
+    # leftover swell of the days before, 0.1-0.2 m at buoy 45174 from the ESE-SE (mean dir ~100-160; 45198 was out
+    # for the season, no period reported at that height). 4 s keeps the run at the race case's resolution.
+    "glass": {"hs": 0.15, "tp": 4.0, "dir": 120.0, "label": "Glass mornings, Oct 21 & 28, 2026: 0.5 ft leftover swell at 4 s from the ESE"},
 }
 TOTAL, STEADY, SNAP = 420.0, 240.0, 0.5         # s: run time, start of averaging, snapshot interval
 
