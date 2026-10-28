@@ -1,5 +1,5 @@
 """
-Live radar pipeline: KLOT Level II scans -> 3-D scene JSON for the Chicago Storm 3D viewer.
+Live radar pipeline: KLOT Level II scans -> 3-D scene JSON for the LakeView viewer.
 
 Each run:
   1. lists the newest volume scans for the site in the public NOAA/Unidata archive on AWS,
@@ -264,7 +264,7 @@ class Pipeline:
 if __name__ == "__main__":
     import argparse
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    ap = argparse.ArgumentParser(description="Build the live Chicago Storm 3D scene")
+    ap = argparse.ArgumentParser(description="Build the live LakeView scene")
     ap.add_argument("--once", action="store_true", help="run one update and exit")
     a = ap.parse_args()
     p = Pipeline()

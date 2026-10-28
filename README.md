@@ -1,4 +1,4 @@
-# Chicago Storm 3D: live KLOT radar service
+# LakeView: Chicago's lakefront, live in 3-D
 
 A single container that:
 
@@ -19,7 +19,7 @@ tests/test_service.py        offline tests (stand-in archive serving a real Leve
 Dockerfile, docker-compose.yml, fly.toml, render.yaml
 ```
 
-## Chicago Lake World (`/world`)
+## The 3-D lakefront page (`/world`)
 
 One 3-D world for the lakefront: the radar volume (clouds, rain and snow shafts, lightning) over the real OpenStreetMap shoreline, harbours, piers and buildings, with satellite lake temperature and ice, and paddler-scale waves (refraction and shoaling toward the nearest beach) under a board you can ride along a GPX track. The camera goes from a 100 km overview down to standing on the board.
 
@@ -34,7 +34,7 @@ Conditions come from one of four sources on a single timeline:
 
 Historical periods: `GET /api/history?start=2026-10-23T12:20Z&end=2026-10-23T12:51Z` builds a period (202 while building, then cached under `DATA_DIR/history`), or run the **History snapshot** workflow, or `python -m app.history --start ... --end ... --out file.json` and load the file in the page.
 
-## Lakefront Local refresh and GitHub minutes
+## Page refresh and GitHub minutes
 
 The page is a published Claude artifact, which can't fetch data itself. The **Radar snapshot** workflow runs hourly from 5 AM to 10 PM Chicago time (about 2 minutes each) and builds `world.html` on the `snapshot` branch; a Claude scheduled task republishes it at :20. The page's **Refresh now** button fires that task on demand (it starts a new snapshot when the last one is over 20 minutes old). With the repo private this uses roughly 18 runs/day × 2–3 min (the GLWU download and scorecard add under a minute) ≈ 1,100 Actions minutes a month; CI runs tests on code pushes only (the Docker build and live smoke test run on demand). The SWAN, FUNWAVE, bathymetry and validation workflows are run by hand (SWAN ≈ 2 h of runner time, FUNWAVE ≈ 1.7 h).
 

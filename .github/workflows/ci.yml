@@ -71,7 +71,7 @@ jobs:
           curl -fs localhost:8080/healthz
           curl -fs localhost:8080/api/status | python3 -c "import json,sys; s=json.load(sys.stdin); print(s); assert s['ready'] and s['frames'] > 0"
           curl -fs -H 'Accept-Encoding: gzip' -o /dev/null -w 'scene: %{http_code}, %{size_download} bytes\n' localhost:8080/api/scene.json
-          curl -fs localhost:8080/ | grep -q 'Chicago Storm 3D'
+          curl -fs localhost:8080/ | grep -q 'LakeView'
       - name: Container logs
         if: always()
         run: docker logs storm 2>&1 | grep -v -i warning | tail -40

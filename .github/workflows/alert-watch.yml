@@ -3,7 +3,7 @@ name: NWS alert watch
 # Every ~10 minutes: if the NWS has issued a new wind/wave alert for the Chicago lakefront (Small Craft
 # Advisory, Gale/Storm warnings, Beach Hazards, Lakeshore Flood, Wind Advisory, Severe Thunderstorm
 # Warning, ...) since the last snapshot, start snapshot.yml so fresh data is ready.
-# The Lakefront Local page picks it up at its next scheduled refresh or "Refresh now".
+# The LakeView page picks it up at its next scheduled refresh or "Refresh now".
 on:
   schedule:
     - cron: "*/10 * * * *"

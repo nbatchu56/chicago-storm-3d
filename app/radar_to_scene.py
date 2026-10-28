@@ -2,7 +2,7 @@
 """
 radar_to_scene.py
 =================
-Turn NEXRAD radar volume scans into a 3-D weather scene for the Chicago Storm 3D viewer
+Turn NEXRAD radar volume scans into a 3-D weather scene for the LakeView viewer
 (chicago_storm_3d.html): clouds, rain shafts and storm cores over Chicago and the lake,
 for the observed scans plus a 0-2 h extrapolation forecast.
 

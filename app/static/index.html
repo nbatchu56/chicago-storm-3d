@@ -1,4 +1,4 @@
-<title>Chicago Storm 3D</title>
+<title>LakeView Radar</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
@@ -125,7 +125,7 @@ code { font-family: var(--font-data); font-size: 11.5px; color: var(--fg); }
   <div id="labels"></div>
 
   <div id="hud" class="panel" aria-live="polite">
-    <h1>Chicago Storm 3D</h1>
+    <h1>LakeView Radar</h1>
     <div class="src" id="source">Loading scene…</div>
     <div class="live" id="live" hidden></div>
     <div class="timebox"><span id="clock">--:--</span><span class="chip obs" id="status">Observed</span></div>
@@ -732,7 +732,7 @@ function tex3(data, nx, ny, nz) { const t = new THREE.Data3DTexture(data, nx, ny
   t.minFilter = t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = t.wrapR = THREE.ClampToEdgeWrapping; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
 
 async function loadScene(obj, keepView) {
-  if (!obj || !obj.meta || !Array.isArray(obj.frames) || !obj.frames.length) throw new Error("That file isn't a Chicago Storm 3D scene. Make one with radar_to_scene.py.");
+  if (!obj || !obj.meta || !Array.isArray(obj.frames) || !obj.frames.length) throw new Error("That file isn't a LakeView scene. Make one with radar_to_scene.py.");
   const g = obj.meta.grid, n = g.nx * g.ny * g.nz;
   const frames = [];
   for (const f of obj.frames) {

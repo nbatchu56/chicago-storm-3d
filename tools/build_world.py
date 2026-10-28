@@ -1,5 +1,5 @@
 """
-Assemble the self-contained Lakefront Local page (app/static/world.html + embedded data).
+Assemble the self-contained LakeView page (app/static/world.html + embedded data).
 
     python tools/build_world.py --out world.html --scene scene.json --sup sup.json --lakefront lakefront.json \
         --bathy bathy.json --swan swan.json --funwave funwave_rough.json funwave_storm.json --validate validate.json \

@@ -1,12 +1,12 @@
 """
-Chicago Storm 3D live service.
+LakeView live service.
 
     GET  /                 the 3-D viewer (live mode: loads api/scene.json, refreshes itself)
     GET  /sup              stand-up paddling wave forecast for the lakefront (loads api/sup.json)
     GET  /api/sup.json     SUP forecast: 8 spots x 48 h (refreshed every SUP_INTERVAL_MIN, default 30)
     GET  /api/lakefront.json  lakefront map (OSM), lake temperature/ice (NOAA GLSEA), station history (every 6 h)
     GET  /api/scene.json   latest scene (gzip when the client accepts it)
-    GET  /world            Chicago Lake World: radar volume over the real lakefront, waves, GPX ride-along
+    GET  /world            LakeView: radar volume over the real lakefront, waves, GPX ride-along
     GET  /api/history?start=..&end=..   conditions for a past window (UTC ISO); 202 while it is built, then cached
     GET  /api/status       freshness, latest scan time, errors, next run
     GET  /healthz          liveness probe (always 200 while the process is up)
@@ -64,7 +64,7 @@ async def lifespan(_app):
     lakefront.stop()
 
 
-app = FastAPI(title="Chicago Storm 3D", lifespan=lifespan, docs_url=None, redoc_url=None)
+app = FastAPI(title="LakeView", lifespan=lifespan, docs_url=None, redoc_url=None)
 origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 if origins:
     app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET"], allow_headers=["*"])

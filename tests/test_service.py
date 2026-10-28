@@ -141,10 +141,10 @@ def test_http(env, monkeypatch):
         st = c.get("/api/status").json()
         assert st["ready"] and st["stale"] is False and st["scan_age_min"] < 10
         html = c.get("/").text
-        assert "Chicago Storm 3D" in html and "pollLive" in html
+        assert "LakeView" in html and "pollLive" in html
         # SUP forecast: page always served; data once built (stubbed here, no network in tests)
         sup_page = c.get("/sup")
-        assert "Chicago SUP Waves" in sup_page.text and sup_page.text.startswith("<!doctype html>")
+        assert "LakeView SUP Waves" in sup_page.text and sup_page.text.startswith("<!doctype html>")
         assert 'charset="utf-8"' in sup_page.text and "utf-8" in sup_page.headers["content-type"]
         assert c.get("/api/sup.json").status_code == 503
         monkeypatch.setattr(main.sup_waves_mod, "build", lambda: {"generated": "2026-10-23T18:00:00+00:00", "sources": {"errors": []}, "spots": [{"id": "x", "hourly": []}]})
@@ -177,7 +177,7 @@ def test_world_and_history(env, monkeypatch):
     monkeypatch.setattr(main.history_mod, "build", fake_build)
     with TestClient(main.app) as c:
         r = c.get("/world")
-        assert r.status_code == 200 and "Lakefront Local" in r.text and r.text.startswith("<!doctype html>")
+        assert r.status_code == 200 and "LakeView" in r.text and r.text.startswith("<!doctype html>")
         assert c.get("/api/history", params={"start": "2026-10-23T12:20Z", "end": "2026-10-24T12:20Z"}).status_code == 400   # too long
         assert c.get("/api/history", params={"start": "nonsense"}).status_code == 400
         q = {"start": "2026-10-23T12:20:00Z", "end": "2026-10-23T12:51:00Z"}

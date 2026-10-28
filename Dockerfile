@@ -1,4 +1,4 @@
-# Chicago Storm 3D live radar service
+# LakeView live radar service
 # Py-ART ships x86_64 wheels only, so the image is pinned to amd64 (builds on Apple Silicon through emulation).
 ARG BASE_PLATFORM=linux/amd64
 FROM --platform=${BASE_PLATFORM} python:3.13-slim

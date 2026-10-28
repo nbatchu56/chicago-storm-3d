@@ -88,7 +88,7 @@ jobs:
           DATA_DIR: ${{ runner.temp }}/storm
           SOURCE: aws
         run: python -m app.pipeline --once
-      - name: Build the Lakefront Local page
+      - name: Build the LakeView page
         continue-on-error: true
         env:
           OUT: ${{ runner.temp }}/storm

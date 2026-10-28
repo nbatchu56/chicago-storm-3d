@@ -1,5 +1,5 @@
 """
-Satellite and model layers from Google Earth Engine for the Lakefront Local page (earth.json).
+Satellite and model layers from Google Earth Engine for the LakeView page (earth.json).
 
   water     nearshore lake-surface temperature: the newest clear-sky MODIS (Terra + Aqua, day + night, 1 km) or
             Landsat 8/9 thermal (100 m) pixel from the last 48 h, NOAA GLSEA (from lakefront.json) elsewhere,
