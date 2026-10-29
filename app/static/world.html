@@ -2216,7 +2216,8 @@ function bumpThreshold() { const v = [];
   if (v.length < 50) return 0.3; v.sort((x, y) => x - y); return 2 * v[Math.floor(v.length * 0.95)]; }
 function spotSessions() { const out = []; for (const H of SRC.hist) { const ss = H.raw.session; if (ss && ss.track && ss.track.pts && ss.track.pts.length) out.push(ss); } return out; }
 function buildConfirmed() {
-  const now = !!S.spotsNow, all = spotSessions(), key = `${now}|${all.length}|${now ? Math.round(S.t / 600e3) : 0}`; if (key === SPOTS.built) return; SPOTS.built = key;
+  // your logged sessions (ribbons and named-spot rings) are drawn only with "Show my track on the water" on; the heat map stands alone otherwise
+  const now = !!S.spotsNow, all = S.showTrack ? spotSessions() : [], key = `${now}|${all.length}|${now ? Math.round(S.t / 600e3) : 0}`; if (key === SPOTS.built) return; SPOTS.built = key;
   SPOTS.group.clear(); SPOTS.thr = bumpThreshold(); SPOTS.shown = [];
   const ribbon = (P, colorAt, half, y, op) => { const pos = [], col = [], idx = [];
     for (let i = 0; i < P.length; i++) { const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)]; let dx = b[1] - a[1], dy = b[2] - a[2]; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
@@ -3035,7 +3036,7 @@ function setPlaying(p) { S.playing = p; $("#play-icon").setAttribute("d", p ? IC
 $("#play").onclick = () => setPlaying(!S.playing);
 $("#scrub").oninput = (e) => { const [t0, t1] = range(); S.t = t0 + (t1 - t0) * (+e.target.value / 1000); setPlaying(false); if (S.mode === "live") { S.follow = false; $("#nowbtn").hidden = false; } };
 $("#nowbtn").onclick = () => { S.follow = true; $("#nowbtn").hidden = true; };
-$("#showtrack").onchange = (e) => { S.showTrack = e.target.checked; };
+$("#showtrack").onchange = (e) => { S.showTrack = e.target.checked; if (S.ov === "spots") { SPOTS.built = ""; buildConfirmed(); } };
 $("#buoys").checked = BUOY.on; $("#buoys").onchange = (e) => { BUOY.on = e.target.checked; try { localStorage.setItem("lakelocal-buoys", BUOY.on ? "1" : "0"); } catch (err) {} };
 $("#toggle").onclick = () => { const c = $("#controls"); c.dataset.open = c.hidden ? "1" : "0"; applyPanel(); };
 function applyPanel() { const narrow = matchMedia("(max-width: 760px)").matches, c = $("#controls"), open = c.dataset.open ? c.dataset.open === "1" : !narrow; c.hidden = !open; $("#toggle").setAttribute("aria-expanded", String(open)); $("#toggle").textContent = open ? "Hide settings" : "Settings"; }
@@ -3104,7 +3105,7 @@ function renderLegend() {
       <span>${SWAN.cur && !SWAN.cur.none ? `Direction from SWAN's mean wave direction in each cell (${SWAN.cur.D.name}); offshore direction elsewhere.` : "Outside the SWAN domains the streaks follow the offshore wave direction."} The map changes with the time slider as the offshore waves change.</span>`; }
   else if (S.ov === "spots") { const M = SPOTS.meta, thr = SPOTS.thr != null ? SPOTS.thr : bumpThreshold(), ss = SPOTS.shown || [];
     const bar = `<div class="bar" style="background:linear-gradient(90deg,#0a0d24,#661a85 30%,#db332b 55%,#fc9e1f 80%,#fff59e)"></div>`;
-    const conf = `<span><b>Confirmed</b>, your sessions${S.spotsNow ? " within 1.5 h of this time" : ""}: <i style="color:#59f2ff">━</i> calm/glass you logged · <i style="color:#ffd94d">━</i> light chop · <i style="color:#ff7326">━</i> choppy · <i style="color:#ff338c">━</i> rough · <i style="color:#ff4de6">━</i> bumpy by GPS (speed jitter over ${thr.toFixed(2)}, 2x your calm days) · rings: spots you named</span>
+    const conf = !S.showTrack ? `<span>Your logged sessions are not drawn: turn on "Show my track on the water" to overlay them.</span>` : `<span><b>Confirmed</b>, your sessions${S.spotsNow ? " within 1.5 h of this time" : ""}: <i style="color:#59f2ff">━</i> calm/glass you logged · <i style="color:#ffd94d">━</i> light chop · <i style="color:#ff7326">━</i> choppy · <i style="color:#ff338c">━</i> rough · <i style="color:#ff4de6">━</i> bumpy by GPS (speed jitter over ${thr.toFixed(2)}, 2x your calm days) · rings: spots you named</span>
       <span>${ss.length ? ss.map((x) => `${x.title || x.label}: ${x.observed.rating}`).join(" · ") : S.spotsNow ? "No session of yours near this time." : "No sessions yet."}</span>`;
     h = S.spotsNow ? `<b>Chop spots right now: suspected by the models</b>${bar}<div class="tk"><span>Light chop</span><span>Choppy</span><span>Rough</span><span>Very rough</span></div>
       <span><i style="display:inline-block;width:22px;height:9px;vertical-align:-1px;background:repeating-linear-gradient(135deg,#f240d9 0 3px,transparent 3px 7px)"></i> rebound off walls, trains crossing (wall tiles, with a Walls condition picked)</span>${conf}`
