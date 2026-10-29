@@ -242,7 +242,8 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #hud button, #hud .chip { pointer-events: auto; text-shadow: none; }
 #hud::before { content: ""; position: absolute; inset: -16px -48px -18px -18px; z-index: -1; border-radius: 40px; filter: blur(10px); pointer-events: none;   /* a soft shade so the text reads over pale land and sky */
   background: radial-gradient(ellipse at 25% 40%, rgba(9, 15, 21, .78), rgba(9, 15, 21, .45) 55%, rgba(9, 15, 21, 0) 85%); }
-#hud h1 { font-size: 26px; letter-spacing: -.01em; line-height: 1; margin: 0 0 3px; filter: drop-shadow(0 1px 2px #000); }
+#hud h1 { display: flex; align-items: center; gap: 0; font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1; margin: 0 0 4px; filter: drop-shadow(0 1px 2px #000); }
+#hud h1 .logo { width: 48px; height: 48px; flex: none; margin-right: 9px; }
 .readouts dt .ico { width: 12px; height: 12px; vertical-align: -1px; opacity: .75; }
 #hud .line { display: flex; align-items: flex-start; gap: 7px; font: 12.5px var(--font-data); color: var(--fg); } #hud .line > span:not(.ic) { min-width: 0; } #hud .line .ic { margin-top: 1px; }
 #hud .line .ic { display: inline-flex; color: rgba(220, 230, 238, .8); filter: drop-shadow(0 1px 2px #000); } .ico { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -2px; }
@@ -291,7 +292,10 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
   <canvas id="gl" tabindex="0" aria-label="3D Chicago lakefront world: radar weather, lake waves and your paddle track. Drag to orbit, scroll to zoom, right-drag to pan."></canvas>
   <div id="labels"></div>
   <div id="hud" aria-live="polite">
-    <h1><span class="lk">Lake</span><span class="vw">View</span></h1>
+    <h1><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><defs><clipPath id="lv-board"><path d="M32 1.5C39.5 1.5 43 18 43 33C43 49 38.5 62.5 32 62.5C25.5 62.5 21 49 21 33C21 18 24.5 1.5 32 1.5Z"/></clipPath></defs>
+      <g clip-path="url(#lv-board)"><rect x="10" y="0" width="44" height="64" fill="#90c841"/><path d="M10 0H54V30.5C48 27.5 44 34.5 38 31.5C33 28.5 29 35.5 24 32.5C20 29.5 15 33.5 10 30.5Z" fill="#05a0cb"/>
+      <g fill="#fff"><rect x="29.6" y="11" width="3.6" height="19"/><rect x="30.2" y="5.5" width="0.9" height="5.5"/><rect x="32.1" y="7.5" width="0.9" height="3.5"/><rect x="34.6" y="16" width="3.2" height="14"/><rect x="35.8" y="12.5" width="0.9" height="3.5"/><rect x="26.2" y="21" width="2.6" height="9"/></g></g>
+      <path d="M22 7L45.5 50.5" stroke="#05a0cb" stroke-width="3" stroke-linecap="round" fill="none"/><ellipse cx="48.3" cy="55.5" rx="4.6" ry="7.5" transform="rotate(-29 48.3 55.5)" fill="#05a0cb"/></svg><span class="lk">Lake</span><span class="vw">View</span></h1>
     <div class="line" style="align-items:center;flex-wrap:wrap"><span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span id="clock">--:--</span><span class="chip live" id="status">Live</span><button id="nowbtn" hidden>Back to now</button></div>
     <div class="line" id="ageline"><span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12L18 6M12 3a9 9 0 1 0 9 9M12 7a5 5 0 1 0 5 5"/></svg></span><span class="age" id="age"></span><span id="refreshbox" hidden><button id="refreshbtn">Refresh now</button><span class="age" id="refreshmsg"></span></span></div>
     <div class="alerts" id="alerts" hidden></div>
@@ -406,12 +410,12 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
       <div class="row" hidden><label for="exag">Cloud height scale</label><output id="exag-o">×1</output></div>
       <input type="range" id="exag" min="1" max="5" step="0.5" value="1" hidden>
       <label class="check"><input type="checkbox" id="bolts" checked> Lightning flashes</label>
-      <label class="check" title="Moored buoys that ride the modelled waves, each beside a fixed pile painted in 1 ft bands from the still-water line (red). Zoom in near the water to see them."><input type="checkbox" id="buoys" checked> Buoys and wave gauges on the water</label>
+      <label class="check" title="Moored buoys that ride the modelled waves, each beside a fixed pile painted in 1 ft bands from the still-water line (red). Zoom in near the water to see them."><input type="checkbox" id="buoys"> Buoys and wave gauges on the water</label>
     </section>
     <section id="sec-sat">
       <h2>Satellite</h2>
       <div class="seg" role="group" aria-label="Satellite overlay" id="sat-seg" hidden><button data-ov="natural" aria-pressed="true">None</button><button data-ov="s1" aria-pressed="false">Wind on the water</button><button data-ov="s2" aria-pressed="false">Water clarity</button></div>
-      <label class="check" title="Live mode: the cloud field seen by the GOES-19 satellite (within 45 min of its image) drawn beyond the radar's rain. Off: only the radar's clouds and the forecast sky cover."><input type="checkbox" id="goes" checked> GOES-19 clouds (live)</label>
+      <label class="check" title="Live mode: the cloud field seen by the GOES-19 satellite (within 45 min of its image) drawn beyond the radar's rain. Off: only the radar's clouds and the forecast sky cover."><input type="checkbox" id="goes"> GOES-19 clouds (live)</label>
       <p class="note" id="sat-note">One image at a time: each is a snapshot from that satellite's pass, and today's clouds, rain and lightning are hidden while it is shown.</p>
     </section>
     <section>
@@ -2142,7 +2146,7 @@ const driftArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.V
 // and swell as the whole buoy rising and falling. Beside each a fixed pile is painted in 1 ft bands from the still-water
 // line (red): the water climbing and dropping on it is the wave height. Fixed scattered grid (~90 m), the nearest eight
 // that are in the wave patch and at least 1.5 m deep.
-const BUOY = { on: true, n: 8, cell: 0.09, list: [], key: "", FT: 0.3048 };
+const BUOY = { on: false, n: 8, cell: 0.09, list: [], key: "", FT: 0.3048 };
 const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const hash3 = (i, j, s) => { let h = Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ Math.imul(s + 1, 83492791); h = Math.imul(h ^ (h >>> 13), 0x5bd1e995); return ((h ^ (h >>> 15)) >>> 0) / 4294967296; };
 function shelterKm(xk, yk) {   // CPU copy of SHELTER_GLSL (land up-wave of the point within ~130 m)
@@ -2203,7 +2207,7 @@ const BUOY_PROTO = (() => {
 })();
 for (let i = 0; i < BUOY.n; i++) { const b = BUOY_PROTO.buoy.clone(), p = BUOY_PROTO.pile.clone(); b.scale.setScalar(0.001); p.scale.setScalar(0.001);
   b.visible = p.visible = false; scene.add(b, p); const lens = b.getObjectByName("lens"); lens.material = lens.material.clone(); BUOY.list.push({ b, p, lens, cell: null }); }
-try { BUOY.on = localStorage.getItem("lakelocal-buoys") !== "0"; } catch (e) {}
+try { BUOY.on = localStorage.getItem("lakelocal-buoys") === "1"; } catch (e) {}   // off unless switched on
 // moorings near (cx, cy) km: a jittered grid, in the wave patch, deep enough, clear of walls
 function buoySites(cx, cy, pcx, pcy) {
   const c = BUOY.cell, ix0 = Math.floor(cx / c), iy0 = Math.floor(cy / c), out = [];
@@ -2802,7 +2806,7 @@ function clampView() {    // keep the camera in the local world and above the wa
 }
 // --- compass, mini-map, hint, help
 function updateCompass() { const hdg = NAV.move === "paddle" ? NAV.pad.yaw : viewState().hdg; $("#needle").setAttribute("transform", `rotate(${-hdg} 26 26)`);
-  const rose = $("#vsrose"); if (rose) rose.setAttribute("transform", `rotate(${-hdg} 48 48)`); const ht = $("#vshdg"); if (ht) ht.textContent = `View ${compass(hdg)} ${Math.round(hdg)}° · up is where you look`; }
+  const rose = $("#vsrose"); if (rose) { rose.setAttribute("transform", `rotate(${-hdg} 48 48)`); for (const t of rose.querySelectorAll(".vsl")) t.setAttribute("transform", `rotate(${hdg} ${t.dataset.x} ${t.dataset.y})`); } /* the letters stay upright */ const ht = $("#vshdg"); if (ht) ht.textContent = `View ${compass(hdg)} ${Math.round(hdg)}° · up is where you look`; }
 const MM = { el: $("#mm"), base: null };
 // ML: the local map's extents, LB widened to the card's shape (the map fills whatever width its card has); same for the radar map's MMR
 const ML = { x0: LB.x0, x1: LB.x1, y0: LB.y0, y1: LB.y1 };
@@ -2999,7 +3003,7 @@ document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-presse
 $("#exag").oninput = (e) => setExag(+e.target.value);
 try { S.learned = localStorage.getItem("lakelocal-learned") === "1"; } catch (e) { S.learned = false; }
 $("#bolts").checked = S.bolts; $("#bolts").onchange = (e) => S.bolts = e.target.checked;
-try { S.goes = localStorage.getItem("lakelocal-goes") !== "0"; } catch (e) {}
+try { S.goes = localStorage.getItem("lakelocal-goes") === "1"; } catch (e) {}   // off unless switched on
 $("#goes").checked = S.goes; $("#goes").onchange = (e) => { S.goes = e.target.checked; try { localStorage.setItem("lakelocal-goes", S.goes ? "1" : "0"); } catch (err) {} };
 $("#spd").onchange = (e) => S.speed = +e.target.value;
 const XFMT = { int: (v) => `${Math.round(v * 100)}%`, cov: (v) => `${Math.round(v * 100)}%`, mspd: (v) => `${v} km/h`, mdir: (v) => `${v}° ${compass(v)}`, wspd: (v) => `${mph(v)} mph`, wdir: (v) => `${v}° ${compass(v)}`,
@@ -3496,7 +3500,7 @@ function vsCompass(C, hs, wdirW) {
   const arrow = (deg, len, col) => { if (len < 2) return `<circle cx="${cx}" cy="${cy}" r="3" fill="${col}"/>`; const a = deg * Math.PI / 180, x = cx + Math.sin(a) * len, y = cy - Math.cos(a) * len, ux = Math.sin(a), uy = -Math.cos(a);
     const hx = x - ux * 7, hy = y - uy * 7; return `<line x1="${cx}" y1="${cy}" x2="${hx.toFixed(1)}" y2="${hy.toFixed(1)}" stroke="${col}" stroke-width="3.5" stroke-linecap="round"/><polygon points="${x.toFixed(1)},${y.toFixed(1)} ${(hx - uy * 4.5).toFixed(1)},${(hy + ux * 4.5).toFixed(1)} ${(hx + uy * 4.5).toFixed(1)},${(hy - ux * 4.5).toFixed(1)}" fill="${col}"/>`; };
   let ticks = ""; for (let d = 0; d < 360; d += 30) { const a = d * Math.PI / 180, r0 = d % 90 ? R + 1 : R - 2; ticks += `<line x1="${(cx + Math.sin(a) * r0).toFixed(1)}" y1="${(cy - Math.cos(a) * r0).toFixed(1)}" x2="${(cx + Math.sin(a) * (R + 4)).toFixed(1)}" y2="${(cy - Math.cos(a) * (R + 4)).toFixed(1)}" stroke="rgba(220,230,238,.45)" stroke-width="1"/>`; }
-  const lbl = (t, dx, dy) => `<text x="${cx + dx}" y="${cy + dy}" fill="rgba(220,230,238,.7)" font-size="8" font-family="IBM Plex Mono, monospace" text-anchor="middle" dominant-baseline="middle">${t}</text>`;
+  const lbl = (t, dx, dy) => `<text class="vsl" data-x="${cx + dx}" data-y="${cy + dy}" x="${cx + dx}" y="${cy + dy}" transform="rotate(${hdg} ${cx + dx} ${cy + dy})" fill="rgba(220,230,238,.8)" font-size="8.5" font-weight="600" font-family="IBM Plex Mono, monospace" text-anchor="middle" dominant-baseline="middle">${t}</text>`;
   const hdg = NAV.move === "paddle" ? NAV.pad.yaw : viewState().hdg;
   const svg = `<svg viewBox="0 0 96 96" aria-label="Air and water pushes on a compass"><circle cx="${cx}" cy="${cy}" r="${R}" fill="rgba(255,255,255,.03)" stroke="rgba(220,230,238,.25)"/>
     <g id="vsrose" transform="rotate(${-hdg} ${cx} ${cy})">${ticks}${lbl("N", 0, -R + 6)}${lbl("S", 0, R - 6)}${lbl("E", R - 6, 0)}${lbl("W", -R + 6, 0)}${arrow(toA, la, AIR)}${arrow(toW, lw, WATER)}</g>
