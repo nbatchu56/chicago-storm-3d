@@ -253,14 +253,15 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #hud .alerts { pointer-events: auto; display: grid; gap: 3px; } #hud .alerts[hidden] { display: none; } #hud .alerts .al { background: rgba(9, 15, 21, .7); text-shadow: none; }
 .cathead > span { display: inline-flex; align-items: center; gap: 5px; } .cathead .ico { width: 15px; height: 15px; }
 #app.flying #hud { opacity: .3; }
-#cards { display: flex; gap: 8px; align-items: stretch; overflow: visible; padding-top: 2px; }
+/* the cards share the row: they shrink to fit a narrower window, and below ~1250 px the row scrolls sideways rather than cut a line */
+#cards { display: flex; flex-wrap: nowrap; gap: 8px; align-items: stretch; overflow-x: auto; overflow-y: visible; scrollbar-width: thin; padding-top: 2px; }
 #cards .card { flex: none; position: static; padding: 8px 10px; box-sizing: border-box; height: var(--cardh); display: flex; flex-direction: column; gap: 6px; }
-#cards .card > .readouts { min-height: 0; overflow: hidden; } #cards .card .more { gap: 0; }
-#minimap { width: auto; padding: 6px; gap: 4px; flex: 1 1 auto !important; min-width: 170px; max-width: 520px; } #minimap canvas { height: calc(var(--cardh) - 12px - 22px); width: 100%; } #minimap .cap { margin-top: 0; }
-#cards .cat { width: 252px; margin: 0; border-left: 3px solid var(--cat); background: var(--panel); border-radius: 6px; }
+#cards .card > .readouts { min-height: 0; overflow: hidden; font-size: 11.5px; } #cards .card .more { gap: 0; }
+#minimap { width: auto; padding: 6px; gap: 4px; flex: 1.6 1 0 !important; min-width: 160px; max-width: 520px; } #minimap canvas { height: calc(var(--cardh) - 12px - 22px); width: 100%; } #minimap .cap { margin-top: 0; }
+#cards .cat { flex: 1 1 0 !important; width: auto; min-width: 236px; max-width: 340px; margin: 0; border-left: 3px solid var(--cat); background: var(--panel); border-radius: 6px; }
 #cards .cat::before { content: ""; position: absolute; inset: 0; border-radius: 6px; pointer-events: none; }
 #cards .cat.air { background: linear-gradient(180deg, rgba(144, 200, 65, .09), var(--panel) 60%); }
-#cards .cat.sky { --cat: #f0b44c; width: 248px; background: linear-gradient(180deg, rgba(240, 180, 76, .09), var(--panel) 60%); } #cat-sky .readouts { gap: 3px 10px; font-size: 11.5px; } #cat-sky .cathead { cursor: default; } #cards .cat.water { background: linear-gradient(180deg, rgba(5, 160, 203, .11), var(--panel) 60%); }
+#cards .cat.sky { --cat: #f0b44c; background: linear-gradient(180deg, rgba(240, 180, 76, .09), var(--panel) 60%); } #cat-sky .readouts { gap: 3px 10px; font-size: 11.5px; } #cat-sky .cathead { cursor: default; } #cards .cat.water { background: linear-gradient(180deg, rgba(5, 160, 203, .11), var(--panel) 60%); }
 .cathead { all: unset; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; font: 700 11px var(--font-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--cat); }
 button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter-spacing: 0; text-transform: none; color: var(--muted); } .card.open button.cathead::after { content: "less ▾"; }
 .card .more { display: none; } #cards .cat, #vsbox { position: relative; }
@@ -268,9 +269,9 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
 .card.open .more { display: block; position: absolute; left: -3px; right: 0; bottom: calc(100% + 6px); max-height: 46vh; overflow-y: auto; padding: 8px 10px; background: var(--panel-solid); border: 1px solid var(--line); border-left: 3px solid var(--cat); border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, .4); }
 .cat.water.open .more { width: 330px; right: auto; }
 .card .launches { border-top: 0; padding-top: 4px; }
-#vsbox { width: 270px; } #vsbox .cathead { cursor: default; }
+#vsbox { flex: 1.1 1 0 !important; width: auto; min-width: 256px; max-width: 340px; } #vsbox .cathead { cursor: default; }
 .vs { grid-template-columns: 108px 1fr; gap: 4px 8px; padding: 2px 0 0; } .vs svg { width: 108px; height: 108px; cursor: grab; touch-action: none; user-select: none; } .vs.drag svg { cursor: grabbing; }
-.vs .row span { white-space: nowrap; line-height: 1.3; } .vs .row { align-items: start; } .vs .hdg { grid-column: 1 / -1; font: 10px var(--font-data); color: var(--muted); }
+.vs .row span { white-space: nowrap; line-height: 1.3; } .vs .row { grid-template-columns: 1fr; gap: 0; align-items: start; } .vs .row + .row { margin-top: 4px; } .vs .hdg { grid-column: 1 / -1; font: 10px var(--font-data); color: var(--muted); }
 #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; bottom: calc(var(--gut) + 92px + var(--barh) + env(safe-area-inset-bottom, 0px)) !important; }
 #goto, #nav, #attr { bottom: calc(var(--gut) + 90px + var(--barh) + env(safe-area-inset-bottom, 0px)); }
 #hint { bottom: calc(var(--gut) + 150px + var(--barh) + env(safe-area-inset-bottom, 0px)); }
@@ -279,7 +280,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
 @media (max-width: 760px) {
   #bar { bottom: calc(var(--gut) + 78px + env(safe-area-inset-bottom, 0px)); }
   #hud { padding: 5px 10px !important; gap: 4px 8px; } #hud .src { display: none; } #hud h1 { font-size: 15px; }
-  :root { --cardh: 222px; } #cards { overflow-x: auto; scrollbar-width: thin; } #cards .cat, #vsbox { width: 210px; } #minimap { flex: none !important; width: 160px; }
+  :root { --cardh: 222px; } #cards .cat, #vsbox { flex: none !important; width: 210px; } #minimap { flex: none !important; width: 160px; }
   .ticks.abs span.fct, .ticks.abs span.wn3 { display: none; }   /* the phone's timeline keeps only the ends and the latest scan */
   .card.open .more { position: static; width: auto !important; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: 4px 0 0; margin-top: 4px; max-height: 30vh; }
   #controls { bottom: calc(var(--gut) + 92px + env(safe-area-inset-bottom, 0px)); max-height: 58% !important; z-index: 4; }
@@ -3418,28 +3419,30 @@ function updateHud(rr, tp) {
   const wind = [], waves = [], water = [], you = [];
   if (S.mode === "live" && Math.abs(S.t - nowMs) < 90 * 60e3) for (const m of W.metar || []) { if (nowMs - new Date(m.t).getTime() > 3 * 3600e3 || m.wspd_kt == null) continue;
     const k = (v) => Math.round(v * 1.15078); wind.push([m.name, `${m.wspd_kt < 1 ? "calm" : `${k(m.wspd_kt)} mph ${m.vrb ? "var" : compass(m.wdir)}${m.wgst_kt ? ` · G ${k(m.wgst_kt)}` : ""}`}`]); }
-  if (live && C.gfs) wind.push(["GFS model", `${mph(C.gfs.wspd)} mph ${compass(C.gfs.wdir)}`]);
-  if (live && C.wn3) wind.push(["WeatherNext 3", `${mph(C.wn3.wspd)} mph ${C.wn3.wdir != null ? compass(C.wn3.wdir) : ""}${C.wn3.lo != null && C.wn3.hi != null ? ` · ${mph(C.wn3.lo)}–${mph(C.wn3.hi)} likely` : ""}`]);
-  if (live && NM.era5 && NM.era5.wind_ms) wind.push(["Usual (ERA5)", `${mph(NM.era5.wind_ms.p50)} mph · 1 in 10 h over ${mph(NM.era5.wind_ms.p90)} mph`]);
+  if (live && C.gfs) wind.push(["GFS", `${mph(C.gfs.wspd)} mph ${compass(C.gfs.wdir)}`]);
+  if (live && C.wn3) wind.push(["WeatherNext", `${mph(C.wn3.wspd)} mph ${C.wn3.wdir != null ? compass(C.wn3.wdir) : ""}${C.wn3.lo != null && C.wn3.hi != null ? ` · ${mph(C.wn3.lo)}–${mph(C.wn3.hi)}` : ""}`]);
+  if (live && NM.era5 && NM.era5.wind_ms) wind.push(["Usual", `${mph(NM.era5.wind_ms.p50)} mph · 1 in 10 ≥${mph(NM.era5.wind_ms.p90)}`]);
   if (tp && tp.inside && C.wind > 0.5) { const rel = Math.abs(angd(tp.hd, C.dir)); wind.push(["Your heading", rel < 60 ? "into the wind" : rel > 120 ? "with the wind" : "cross-wind"]); }
   if (hs > 0.01) waves.push(["Energy", `${Math.round(613 * hs ** 2)} J/m²`]);
   if (C.swan && C.off) waves.push(["Offshore", `${ft(C.off.hs)} ft ${compass(C.off.dir)} · ${C.off.tp.toFixed(1)} s`]);
   if (C.fwHs != null && tot > 0.01) waves.push(["Model (SWAN)", `${ft(tot)} ft`]);
   if (C.fwCross != null) waves.push(["Crossing seas", `${Math.round(C.fwCross * 100)}%${C.fwCross >= 0.5 ? " · confused" : ""}`]);
   { const LE = DATA.learn && DATA.learn.correction && DATA.learn.correction.era5, M = LE && LE["45198"] && LE["45198"].monthly_hs_m && LE["45198"].monthly_hs_m[String(new Date(S.t).getMonth() + 1)];
-    if (live && M) waves.push(["Usual (ERA5)", `${ft(M.p50)} ft · 1 in 10 h over ${ft(M.p90)} ft`]); }
+    if (live && M) waves.push(["Usual", `${ft(M.p50)} ft · 1 in 10 ≥${ft(M.p90)}`]); }
   if (C.waterC != null) { const d = live && NM.lake && NM.lake.mean_c != null ? (C.waterC - NM.lake.mean_c) * 1.8 : null;
-    water.push(["Temperature", `${Math.round(cToF(C.waterC))}°${d != null && Math.abs(d) >= 3 ? ` · ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° vs usual` : ""}`]); }
-  if (C.depth != null) water.push(["Depth here", C.depth > 0 ? `${(C.depth * FT).toFixed(C.depth * FT < 10 ? 1 : 0)} ft` : "dry"]);
-  { const fnu = satAt(EARTH.s2, C.xk, C.yk); if (fnu != null && live) water.push(["Clarity", `${fnuWord(fnu)} · ${fnu.toFixed(1)} FNU · ${E.s2.label}`]); }
+    water.push(["Temp", `${Math.round(cToF(C.waterC))}°${d != null && Math.abs(d) >= 3 ? ` · ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° usual` : ""}`]); }
+  if (C.depth != null) water.push(["Depth", C.depth > 0 ? `${(C.depth * FT).toFixed(C.depth * FT < 10 ? 1 : 0)} ft` : "dry"]);
+  { const fnu = satAt(EARTH.s2, C.xk, C.yk); if (fnu != null && live) water.push(["Clarity", `${fnu.toFixed(1)} FNU · ${fnuWord(fnu).replace("slightly cloudy", "sl. cloudy")}`]); }
   if (tp && tp.inside) you.push(["Speed", `${(tp.v * MPH).toFixed(1)} mph ${compass(tp.hd)}${tp.hr ? ` · ${tp.hr} bpm` : ""}`]);
   // presentation rules for all of the above: speeds "N mph DIR · G N"; waves "N.N ft DIR · N.N s"; temperatures "N°" (F);
   // ranges "N–N"; a middle dot separates the parts of one reading
   const grp = (name, rs) => rs.length ? `<dt class="grp">${name}</dt><dd class="grp"></dd>` + rs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("") : "";
-  const RI = { Temperature: "M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0zM12 9v8", "Depth here": "M4 4v16M4 20h16M8 20v-4M12 20v-7M16 20v-10", Energy: "M13 2L4 14h7l-1 8 9-12h-7z", Offshore: "M3 17c3 0 3-2 6-2s3 2 6 2 3-2 6-2M3 11c3 0 3-2 6-2s3 2 6 2 3-2 6-2", Clarity: "M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM12 9v3l2 2", "Usual (ERA5)": "M4 18V8M8 18v-5M12 18V6M16 18v-8M20 18v-3" };
-  const rows = (rs) => rs.map(([k, v]) => `<dt>${RI[k] ? `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${RI[k]}"/></svg> ` : ""}${k}</dt><dd>${v}</dd>`).join("");
-  const topW = waves.concat(water).filter(([k]) => k === "Energy" || k === "Temperature" || k === "Depth here"), moreW = waves.concat(water).filter((r) => !topW.includes(r));
-  $("#ro-air-top").innerHTML = rows(wind.slice(0, 2)); $("#ro-air").innerHTML = rows(wind.slice(2)); $("#ro-water-top").innerHTML = rows(topW); $("#ro-water").innerHTML = rows(moreW);
+  const RI = { Temp: "M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0zM12 9v8", Depth: "M4 4v16M4 20h16M8 20v-4M12 20v-7M16 20v-10", Energy: "M13 2L4 14h7l-1 8 9-12h-7z", Offshore: "M3 17c3 0 3-2 6-2s3 2 6 2 3-2 6-2M3 11c3 0 3-2 6-2s3 2 6 2 3-2 6-2", Clarity: "M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM12 9v3l2 2", "Usual": "M4 18V8M8 18v-5M12 18V6M16 18v-8M20 18v-3" };
+  const rows = (rs) => rs.map(([k, v]) => `<dt${k === "Usual" ? ' title="ERA5 reanalysis, this time of year"' : ""}>${RI[k] ? `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${RI[k]}"/></svg> ` : ""}${k}</dt><dd>${v}</dd>`).join("");
+  // the card faces: Water shows energy, temperature, depth, clarity and the usual; Air the models and the usual (stations under "more")
+  const TOPW = ["Energy", "Temp", "Depth", "Clarity", "Usual"], TOPA = ["GFS", "WeatherNext", "Usual"];
+  const allW = waves.concat(water), topW = allW.filter(([k]) => TOPW.includes(k)).sort((a, b) => TOPW.indexOf(a[0]) - TOPW.indexOf(b[0])), moreW = allW.filter((r) => !topW.includes(r)), topA = wind.filter(([k]) => TOPA.includes(k)), moreA = wind.filter((r) => !topA.includes(r));
+  $("#ro-air-top").innerHTML = rows(topA); $("#ro-air").innerHTML = rows(moreA); $("#ro-water-top").innerHTML = rows(topW); $("#ro-water").innerHTML = rows(moreW);
   $("#readouts").innerHTML = grp("Your paddle", you); $("#readouts").hidden = !you.length;
   renderSky(C);
   $("#source").textContent = [RS ? RS.label + lead : S.mode === "live" && SRC.live && S.t > SRC.live.frames[SRC.live.frames.length - 1].t ? "Clouds from forecast sky cover" : S.mode === "live" ? "Observed hour, no radar archived" : "No radar for this time", ...C.src].join(" · ");
@@ -3470,7 +3473,7 @@ function renderSky(C) {
   const slp = raw.match(/SLP(\d{3})/), alt = raw.match(/\bA(\d{4})\b/), tg = raw.match(/\bT(\d)(\d{3})(\d)(\d{3})\b/);
   let hpa = slp ? (+slp[1] / 10 + (+slp[1] < 500 ? 1000 : 900)) : alt ? +alt[1] / 100 * 33.8639 : F && F.mslp != null ? F.mslp : null;
   const trend = F && F.trend != null ? F.trend : null, arrow = trend == null ? "" : trend > 1 ? " ↗" : trend < -1 ? " ↘" : " →";
-  if (hpa != null) rows.push(["Barometer", `${Math.round(hpa)} hPa · ${(hpa / 33.8639).toFixed(2)} in${arrow}`]);
+  if (hpa != null) rows.push(["Barometer", `${Math.round(hpa)} hPa · ${(hpa / 33.8639).toFixed(2)}${arrow}`]);
   const T = m ? (tg ? (tg[1] === "1" ? -1 : 1) * +tg[2] / 10 : m.temp_c) : F && F.t2m != null ? F.t2m : C.airC, Td = m ? (tg ? (tg[3] === "1" ? -1 : 1) * +tg[4] / 10 : m.dewp_c) : F && F.td != null ? F.td : null;
   if (Td != null) { const rh = T != null ? Math.round(100 * Math.exp(17.625 * Td / (243.04 + Td)) / Math.exp(17.625 * T / (243.04 + T))) : null; rows.push(["Dew point", `${Math.round(cToF(Td))}°${rh != null ? ` · ${Math.min(rh, 100)}% RH` : ""}`]); }
   if (m) { const cl = raw.match(/\b(FEW|SCT|BKN|OVC|VV)(\d{3})/), word = { FEW: "few", SCT: "scattered", BKN: "broken", OVC: "overcast", VV: "obscured" }, clr = /\b(CLR|SKC)\b/.test(raw);
@@ -3500,8 +3503,8 @@ function vsCompass(C, hs, wdirW) {
     <polygon points="${cx},${cy - R - 6} ${cx - 4},${cy - R + 1} ${cx + 4},${cy - R + 1}" fill="#f0b44c"/><circle cx="${cx}" cy="${cy}" r="2" fill="#dce6ee"/></svg>`;
   const d = Math.abs(angd(toA, toW)), rel = mphW < 3 && hs <= 0.01 ? "Still air, flat water." : mphW < 3 ? "Hardly any wind: the waves are left over, running on their own." : hs <= 0.01 ? "The wind has not raised waves here yet." :
     d < 30 ? "Pushing together: a wind sea, the waves running with the wind." : d <= 120 ? `Crossed by ${Math.round(d)}°: the wind pushes across the waves, a confused surface.` : "Opposed: the wind blows against the waves and steepens them.";
-  return `${svg}<div><div class="row"><b style="color:${AIR}">Air</b><span>${mph(U10)} mph → ${compass(toA)}<br>${tau < 0.01 ? "<0.01" : tau.toFixed(2)} N/m² stress</span></div>
-    <div class="row"><b style="color:${WATER}">Water</b><span>${hs > 0.01 ? `${ft(hs)} ft → ${compass(toW)}<br>${Math.round(E)} J/m² energy` : "calm"}</span></div></div><div class="rel">${rel}</div><div class="hdg" id="vshdg">View ${compass(hdg)} ${Math.round(hdg)}° · up is where you look</div>`;
+  return `${svg}<div><div class="row"><b style="color:${AIR}">Air</b><span>${mph(U10)} mph → ${compass(toA)}<br>${tau < 0.01 ? "<0.01" : tau.toFixed(2)} N/m²</span></div>
+    <div class="row"><b style="color:${WATER}">Water</b><span>${hs > 0.01 ? `${ft(hs)} ft → ${compass(toW)}<br>${Math.round(E)} J/m²` : "calm"}</span></div></div><div class="rel">${rel}</div><div class="hdg" id="vshdg">View ${compass(hdg)} ${Math.round(hdg)}° · up is where you look</div>`;
 }
 function renderModels() {
   const rows = [];
