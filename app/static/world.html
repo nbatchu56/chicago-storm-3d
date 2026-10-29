@@ -237,11 +237,10 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #bar > * { pointer-events: auto; }
 #toggle { padding: 6px 10px; font-size: 12px; z-index: 4; }
 /* the name and the moment: text on the scene, no box */
-#hud { position: absolute; top: calc(var(--gut) + env(safe-area-inset-top, 0px)); left: calc(var(--gut) + env(safe-area-inset-left, 0px)); max-width: min(480px, calc(100vw - 2 * var(--gut) - 110px)); display: grid; gap: 5px; pointer-events: none; z-index: 3;
+#hud { position: absolute; top: calc(var(--gut) + env(safe-area-inset-top, 0px)); left: calc(var(--gut) + env(safe-area-inset-left, 0px)); max-width: min(480px, calc(100vw - 2 * var(--gut) - 110px)); display: grid; gap: 5px; width: max-content; pointer-events: none; z-index: 3;
   background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; padding: 0; text-shadow: 0 0 2px #000, 0 1px 3px #000, 0 0 10px rgba(0, 0, 0, .9); }
 #hud button, #hud .chip { pointer-events: auto; text-shadow: none; }
-#hud::before { content: ""; position: absolute; inset: -16px -48px -18px -18px; z-index: -1; border-radius: 40px; filter: blur(10px); pointer-events: none;   /* a soft shade so the text reads over pale land and sky */
-  background: radial-gradient(ellipse at 25% 40%, rgba(9, 15, 21, .78), rgba(9, 15, 21, .45) 55%, rgba(9, 15, 21, 0) 85%); }
+#hud::before { content: ""; position: absolute; inset: -8px -12px -8px -10px; z-index: -1; border-radius: 16px; filter: blur(7px); pointer-events: none; background: rgba(9, 15, 21, .62); }   /* a soft shade hugging the text, so it reads over pale land and sky */
 #hud h1 { display: flex; align-items: center; gap: 0; font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1; margin: 0 0 4px; filter: drop-shadow(0 1px 2px #000); }
 #hud h1 .logo { width: 48px; height: 48px; flex: none; margin-right: 9px; }
 .readouts dt .ico { width: 12px; height: 12px; vertical-align: -1px; opacity: .75; }
