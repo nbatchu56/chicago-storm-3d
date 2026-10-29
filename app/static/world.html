@@ -836,7 +836,9 @@ float cloudShadow(vec3 pk){ vec3 sd = vec3(uSunDir.x, -uSunDir.z, uSunDir.y); fl
   for (int i = 0; i < 4; i++) { float h = 1.5 + float(i) * 2.2; s += cloudRaw(pk + sd * (h / sd.z)); } return exp(-s * 2.2); }
 void main(){
   ${LOGF[1]}
-  vec2 p = vec2(vW.x, -vW.z); vec3 V = normalize(uCamPos - vW); float dist = length(uCamPos - vW);
+  // the ground point from the view ray (the direction survives interpolation far better than the position does)
+  vec3 rd = normalize(vW - uCamPos), wP = rd.y < -1e-5 && uCamPos.y > 0.0 ? uCamPos + rd * (uCamPos.y / -rd.y) : vW;
+  vec2 p = vec2(wP.x, -wP.z); vec3 V = normalize(uCamPos - wP); float dist = length(uCamPos - wP);
   // hyperlocal: far outside the lakefront area just fade into haze (no waves, no shoreline search)
   if (length(p - uLocalC) > 14.0) { gl_FragColor = vec4(skyColor(normalize(vec3(-V.x, 0.02, -V.z)), false) * 0.85, 1.0); return; }
   float shadow = cloudShadow(vec3(p, 0.0)), sunUp = smoothstep(-0.02, 0.06, uSunDir.y);
@@ -950,7 +952,9 @@ void main(){
   col = mix(col, skyColor(normalize(vec3(-V.x, 0.02, -V.z)), false) * 0.85, 1.0 - exp(-dist * hf / (70.0 * uHaze)));
   gl_FragColor = vec4(col, 1.0);
 }` });
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600, 1, 1).rotateX(-Math.PI / 2), groundMat); ground.frustumCulled = false; scene.add(ground);
+// the ground is a fine grid that follows the camera: one quad 1600 km across left some GPUs (Apple, mobile) interpolating the world position
+// so loosely that the lakefront fell into the far-field haze branch and the whole ground read as a flat brown veil
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600, 160, 160).rotateX(-Math.PI / 2), groundMat); ground.frustumCulled = false; scene.add(ground);
 
 // ---------------------------------------------------------------- lakefront map (OSM): colour texture + water mask, buildings
 const MAP = { ok: false };
@@ -3196,7 +3200,7 @@ function tick() {
   if (RV) { const g = RS.grid; U.uCloudA.value = RS.A.tc; U.uCloudB.value = RS.B.tc; U.uDbzA.value = RS.A.td; U.uDbzB.value = RS.B.td; U.uMix.value = RS.f;
     U.uShiftA.value.set(...RS.shiftA); U.uShiftB.value.set(...RS.shiftB); U.uGridMin.value.set(g.x0_km, g.y0_km, 0); U.uGridN.value.set(g.nx, g.ny, g.nz); U.uGridD.value.set(g.dx_km, g.dz_km); }
   else { U.uCloudA.value = U.uCloudB.value = U.uDbzA.value = U.uDbzB.value = emptyVol; }
-  U.uCamPos.value.copy(camera.position); sky.position.copy(camera.position);
+  U.uCamPos.value.copy(camera.position); sky.position.copy(camera.position); ground.position.set(Math.round(camera.position.x / 10) * 10, 0, Math.round(camera.position.z / 10) * 10);
   // precipitation at the camera
   let rr = 0; if (RV) { const g = RS.grid, xk = camera.position.x, yk = -camera.position.z, i = Math.round((xk - RS.shiftA[0] - g.x0_km) / g.dx_km), j = Math.round((yk - RS.shiftA[1] - g.y0_km) / g.dx_km);
     if (i >= 0 && j >= 0 && i < g.nx && j < g.ny) { const b = RS.A.dbz[(1 * g.ny + j) * g.nx + i] * (1 - RS.f) + RS.B.dbz[(1 * g.ny + j) * g.nx + i] * RS.f, dbz = b / 3 - 10; if (b > 1 && dbz > 5) rr = Math.pow(Math.pow(10, dbz / 10) / 200, 1 / 1.6); } }
