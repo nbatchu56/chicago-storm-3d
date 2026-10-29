@@ -28,7 +28,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .lbl.lake::after, .lbl.lake::before { display: none; }
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 #hud { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); left: calc(var(--gut) + env(safe-area-inset-left, 0px)); padding: 12px 14px; width: min(330px, calc(100vw - 2 * var(--gut))); display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-#hud h1 { margin: 0; font-size: 20px; font-weight: 700; }
+#hud h1 { margin: 0; font-size: 20px; font-weight: 700; } #hud h1 .lk { color: #05a0cb; } #hud h1 .vw { color: #90c841; }   /* Lake = water, View = air */
 .hudhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 #hudmin { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-color: transparent; color: var(--muted); flex: none; }
 #hudmin:hover { color: var(--fg); border-color: var(--line); }
@@ -244,7 +244,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
   <canvas id="gl" tabindex="0" aria-label="3D Chicago lakefront world: radar weather, lake waves and your paddle track. Drag to orbit, scroll to zoom, right-drag to pan."></canvas>
   <div id="labels"></div>
   <div id="hud" class="panel" aria-live="polite">
-    <div class="hudhead"><h1>LakeView</h1><button id="hudmin" aria-expanded="true" aria-controls="readouts" title="Minimize" aria-label="Minimize the conditions box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button></div>
+    <div class="hudhead"><h1><span class="lk">Lake</span><span class="vw">View</span></h1><button id="hudmin" aria-expanded="true" aria-controls="readouts" title="Minimize" aria-label="Minimize the conditions box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button></div>
     <div class="timebox"><span id="clock">--:--</span><span class="chip live" id="status">Live</span><button id="nowbtn" hidden style="padding:4px 8px;font-size:11px">Back to now</button></div>
     <div class="age" id="age"></div>
     <div id="refreshbox" hidden style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button id="refreshbtn" style="padding:6px 10px;font-size:12px">Refresh now</button><span class="age" id="refreshmsg"></span></div>
