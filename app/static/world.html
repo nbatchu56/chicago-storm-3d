@@ -190,7 +190,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 .mmstat { position: absolute; left: 12px; top: 12px; font: 600 10.5px var(--font-data); padding: 2px 6px; border-radius: 3px; background: rgba(9,15,21,.78); color: var(--obs); border: 1px solid rgba(92,200,232,.4); }
 .mmstat.fc { color: var(--fc); border-color: rgba(184,146,245,.45); } .mmstat.exp { color: var(--exp); border-color: rgba(240,138,108,.45); } .mmstat.hist { color: var(--hist); border-color: rgba(127,211,154,.45); }
 .segs { position: relative; height: 4px; border-radius: 2px; background: rgba(220,230,238,.08); margin-top: -2px; }
-.segs i { position: absolute; top: 0; bottom: 0; border-radius: 2px; } .segs i.o { background: var(--obs); opacity: .75; } .segs i.f { background: var(--fc); } .segs i.f2 { background: var(--fc); opacity: .3; }
+.segs i { position: absolute; top: 0; bottom: 0; border-radius: 2px; } .segs i.o { background: var(--obs); opacity: .75; } .segs i.f { background: var(--fc); } .segs i.f2 { background: var(--fc); opacity: .3; } .segs i.f3h { background: #8b7cf6; opacity: .45; } .segs i.f3 { background: #f06bd0; opacity: .4; }
 .segs b { position: absolute; top: -4px; width: 2px; height: 12px; margin-left: -1px; background: var(--fg); border-radius: 1px; }
 .ticks.abs { display: block; position: relative; height: 14px; } .ticks.abs span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .ticks.abs span.l { transform: none; } .ticks.abs span.r { transform: translateX(-100%); } .ticks span.now { color: var(--fg); } .ticks span.fct { color: var(--fc); }
@@ -2407,6 +2407,18 @@ const supSpots = () => (DATA.sup && DATA.sup.spots) || [];
 function nearestSpot(xk, yk) { let best = null, bd = 1e9; for (const s of supSpots()) { const [x, y] = ll(s.lat, s.lon), d = (x - xk) ** 2 + (y - yk) ** 2; if (d < bd) { bd = d; best = s; } } return best; }
 function supHour(spot, tMs) { if (!spot || !spot.hourly.length) return null; const t0 = new Date(spot.hourly[0].t).getTime(); const i = clamp(Math.round((tMs - t0) / 3600e3), 0, spot.hourly.length - 1);
   const h = spot.hourly[i]; return S.learned && h.learned ? { ...h, ...h.learned, raw: h } : h; }   // experimental: the learned correction swapped in
+function supEnd(spot) { return spot && spot.hourly.length ? new Date(spot.hourly[spot.hourly.length - 1].t).getTime() : -Infinity; }   // the wave model's last hour
+// WeatherNext 3 beyond the NWS hours: the ensemble-mean wind at North Ave for the hour nearest tMs, with how long that wind
+// has held (hours back while the direction stays within 45 degrees and the speed above 60% of now), for the wave model's duration limit
+function wn3Hour(tMs) { const W = DATA.wn3 && DATA.wn3.points && (DATA.wn3.points.northave || DATA.wn3.points["45174"]); if (!W || !W.t || !W.wspd) return null;
+  let k = -1, bd = 1e15; W.t.forEach((t, i) => { const d = Math.abs(Date.parse(t) - tMs); if (d < bd) { bd = d; k = i; } }); if (k < 0 || bd > 90 * 60e3 || W.wspd[k] == null) return null;
+  let dur = 1; for (let j = k - 1; j >= 0 && dur < 36; j--) { if (W.wspd[j] == null || W.wspd[j] < 0.6 * W.wspd[k] || Math.abs(angd(W.wdir[j] || 0, W.wdir[k] || 0)) > 45) break; dur++; }
+  const pr = W.precip_mm_p90 ? W.precip_mm_p90[k] : null, cl = W.cloud ? W.cloud[k] : null;
+  return { t: Date.parse(W.t[k]), wind: W.wspd[k], dir: W.wdir[k] || 0, gust: W.wspd_p90 ? W.wspd_p90[k] : null, lo: W.wspd_p10 && W.wspd_p10[k], hi: W.wspd_p90 && W.wspd_p90[k], dur,
+    sky: cl == null ? 0 : Math.round(cl <= 1 ? cl * 100 : cl), pop: pr == null ? 0 : pr >= 1 ? 60 : pr >= 0.3 ? 30 : 0, air_c: W.t2m_c ? W.t2m_c[k] : null,
+    long: DATA.wn3.long_from ? tMs >= Date.parse(DATA.wn3.long_from) : false }; }
+function wn3End() { const W = DATA.wn3 && DATA.wn3.points && (DATA.wn3.points.northave || DATA.wn3.points["45174"]); return W && W.t && W.t.length ? Date.parse(W.t[W.t.length - 1]) : -Infinity; }
+function forecastRange() { const L = SRC.live, t0 = L ? L.frames[L.nObs - 1].t : Date.now(); return [t0, Math.max(t0 + 48 * 3600e3, Math.min(wn3End(), t0 + 16 * 86400e3))]; }   // 48 h of NWS, then WeatherNext 3 as far as it goes
 // the Harrison-Dever crib stands ~4.5 km out with its anemometer well above the water: it reads the open-lake wind, which on
 // calm mornings is several times what reaches the water along the shore (your Oct 21 paddle: near-perfect glass from Diversey
 // to North Ave while the crib read 11-13 mph S and Oak St, Northerly Isle, Calumet and the Wilmette buoy 0-4 mph). For wind it
@@ -2428,7 +2440,7 @@ function stationAt(stations, field, tMs, xk, yk) {
 function range() {   // [t0, t1] ms for the current mode
   const L = SRC.live, now = Date.now();
   if (S.mode === "live") return L ? [L.frames[0].t, Math.max(L.frames[L.frames.length - 1].t, now)] : [now - 1800e3, now];
-  if (S.mode === "forecast") { const t0 = L ? L.frames[L.nObs - 1].t : now; return [t0, t0 + 48 * 3600e3]; }
+  if (S.mode === "forecast") return forecastRange();
   if (S.mode === "history") { const H = SRC.hist[S.histIdx]; if (!H) return [now - 3600e3, now]; const w = H.raw.window; return [new Date(w.start).getTime() - 10 * 60e3, new Date(w.end).getTime() + 5 * 60e3]; }
   if (S.mode === "import") { const I = IMP.list[IMP.idx]; if (!I) return [now - 3600e3, now]; return [I.rows[0].t, Math.max(I.rows[I.rows.length - 1].t, I.rows[0].t + 3600e3)]; }
   const base = new Date(); base.setHours(0, 0, 0, 0); const t0 = base.getTime() + S.x.hour * 3600e3; return [t0, t0 + 120 * 60e3];
@@ -2483,7 +2495,10 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
     else if (c.systems[0]) c.off = { hs: c.systems[0].hs, tp: c.systems[0].tp, dir: c.systems[0].dir };
     withChop(c.systems, c.wind, c.dir);
   } else {
-    const sp = nearestSpot(xk, yk), h = supHour(sp, tMs);
+    const sp = nearestSpot(xk, yk), ext = S.mode === "forecast" && tMs > supEnd(sp) + 30 * 60e3 ? wn3Hour(tMs) : null, h = ext ? null : supHour(sp, tMs);
+    if (ext) { Object.assign(c, { wind: ext.wind, dir: ext.dir, gust: ext.gust, airC: ext.air_c, sky: ext.sky, pop: ext.pop, ext });
+      const w = cem(ext.wind, fetchAt(ext.dir), ext.dur); if (w.hm0 > 0.01) { c.systems = [{ hs: w.hm0, tp: w.tp, dir: ext.dir, spread: 28 }]; c.off = { hs: w.hm0, tp: w.tp, dir: ext.dir }; }
+      withChop(c.systems, ext.wind, ext.dir); c.spot = sp; c.src.push(`WeatherNext 3 ${ext.long ? "15-day" : "hourly"} run · waves grown from its wind over ${ext.dur} h`); }
     if (h) { Object.assign(c, { wind: h.wind, dir: h.dir, gust: h.gust, airC: h.air_c, sky: h.sky ?? 0, pop: h.pop ?? 0 });
       if (shore.d < 0.6 && h.components && h.components.length) { c.systems = h.components.map((q) => ({ hs: q.hs, tp: q.tp, dir: q.ang != null ? sp.normal + q.ang : q.dir, spread: q.kind === "swell" ? 12 : 28 })); c.dRef = 165; }
       else if (h.hs_offshore > 0.01) { c.systems = [{ hs: h.hs_offshore, tp: h.tp, dir: h.wave_dir, spread: 28 }]; c.dRef = 1000; }
@@ -2529,7 +2544,7 @@ function renderLaunches() {
   const el = $("#launches"); if (!supSpots().length && !SWAN.domains.length) { el.hidden = true; return; }
   const key = `${S.mode}|${Math.round(S.t / 600e3)}|${FW.case || ""}|${SWAN.domains.length}`; if (key === LAUNCH_KEY) return; LAUNCH_KEY = key;
   const ahead = S.mode === "live" || S.mode === "forecast" ? 12 : 0, sp0 = supSpots()[0], hl = sp0 && sp0.hourly.length ? sp0.hourly[sp0.hourly.length - 1].t : null;
-  const t1 = hl ? new Date(hl).getTime() : range()[1];   // the forecast model's last hour
+  const t1 = S.mode === "forecast" ? range()[1] : hl ? new Date(hl).getTime() : range()[1];   // the forecast model's last hour (the whole extended range in Forecast)
   let h = `<b>SUP launches · chop</b>`;
   for (const [name, lat, lon] of LAUNCHES) { const [x, y] = ll(lat, lon), r = chopRating(conditions(S.t, x, y, true));
     let strip = "";
@@ -2866,7 +2881,7 @@ window.addEventListener("resize", resize);
 // ---------------------------------------------------------------- UI
 const MODE_NOTE = {
   live: "Right now, minute by minute: the latest KLOT radar scans carried forward by the nowcast, the nearest lakefront wind station, waves for this hour, and satellite lake temperature. The page refreshes hourly; Refresh now gets new data on demand.",
-  forecast: "Radar extrapolated for 2 hours, then the 48-hour forecast: NWS wind and cloud cover, waves from the wind-wave model. Beyond 2 hours clouds come from forecast sky cover; rain isn't placed.",
+  forecast: "Radar extrapolated for 2 hours, then the 48-hour forecast: NWS wind and cloud cover, waves from the wind-wave model. Past 48 hours the timeline runs on Google DeepMind WeatherNext 3 (experimental; the hourly run in violet, its 6-hourly 15-day run in magenta): ensemble-mean wind, with waves grown from that wind over the fetch here. Beyond 2 hours clouds come from forecast sky cover; rain isn't placed.",
   history: "Archived KLOT radar, NDBC observations and satellite lake temperature for a past time.",
   import: "Conditions read from a forecast screenshot, hour by hour. Its waves are treated as the offshore sea and transformed to the shore by SWAN over the real lake bottom; local chop grows from its wind.",
   exp: "Set the weather yourself. Storm structure follows the same profiles as the demo storms; waves grow from your wind over the real fetch.",
@@ -2998,7 +3013,7 @@ function renderUpsets() {
   $("#ups-strip").innerHTML = strip;
   const cur = rows.reduce((m, r) => Math.abs(r.t + HOUR / 2 - now) < Math.abs(m.t + HOUR / 2 - now) ? r : m, rows[0] || { t: 0 }), ahead = ev.filter((e) => e.t1 > now), worst = ["red", "yellow", "green"].find((l) => ahead.some((e) => e.level === l));
   $("#ups-now").innerHTML = rows.length ? `<b>Now:</b> ${cur.wind != null ? `${mph(cur.wind)} mph ${compass(cur.dir)}` : "no wind reading"}${cur.hs != null ? ` · ${ft(cur.hs)} ft` : ""} — ${glass(cur) ? "glass" : "not glass"}. ${ahead.length ? `${ahead.length} upset${ahead.length > 1 ? "s" : ""} now or ahead, worst <b style="color:${UPS_C[worst]}">${worst}</b>.` : "Nothing in the way of glass in the forecast."}` : "No wind or wave series on this page.";
-  const [f0, f1] = (() => { const L = SRC.live; const t0 = L ? L.frames[L.nObs - 1].t : now; return [t0, t0 + 48 * HOUR]; })();
+  const [f0, f1] = forecastRange();
   const rel = (e) => e.t0 <= now && e.t1 > now ? "now" : e.t1 <= now ? `ended ${Math.round((now - e.t1) / HOUR)} h ago` : e.t0 - now < 36 * HOUR ? `in ${Math.max(1, Math.round((e.t0 - now) / HOUR))} h` : `in ${Math.round((e.t0 - now) / HOUR / 24)} d`;
   $("#ups-list").innerHTML = ev.length ? ev.map((e, i) => `<div class="ups ${e.level}"><b>${e.title}</b><span class="tag">${rel(e)}</span>
     <span class="when">${fmtDH.format(e.t0)} → ${fmtDH.format(e.t1)}${e.hours > 1 ? ` · ${e.hours} h` : ""} · ${e.src}</span>
@@ -3060,9 +3075,11 @@ function buildTicks() { const [t0, t1] = range(), tk = $("#ticks"), sg = $("#seg
     const xL = pc(lastObs); if (xL - xs[0] > 16) xs.push(tick(lastObs, `Latest scan ${fmtHM.format(new Date(lastObs))}`, "now"));
     if (lead > 0 && pc(lastF) - xs[xs.length - 1] > 16) tick(lastF, `+${lead >= 90 ? Math.round(lead / 60) + " h" : lead + " min"} ${fmtHM.format(new Date(lastF))}`, "fct");
     return; }
-  if (S.mode === "forecast" && L && L.frames.length) { const lastF = L.frames[L.frames.length - 1].t; seg(t0, lastF, "f"); seg(lastF, t1, "f2"); }
+  if (S.mode === "forecast" && L && L.frames.length) { const lastF = L.frames[L.frames.length - 1].t, se = Math.min(Math.max(supEnd(supSpots()[0]), lastF), t1), lf = DATA.wn3 && DATA.wn3.long_from ? Date.parse(DATA.wn3.long_from) : se;
+    seg(t0, lastF, "f"); seg(lastF, se, "f2"); seg(se, clamp(lf, se, t1), "f3h"); seg(Math.max(se, Math.min(lf, t1)), t1, "f3"); }
   if (S.mode === "history" && H && H.scene && H.scene.frames.length) seg(H.scene.frames[0].t, H.scene.frames[H.scene.nObs - 1].t, "o");
-  [t0, t0 + span / 2, t1].forEach((t) => { const s = document.createElement("span"); s.textContent = f.format(new Date(t)); tk.appendChild(s); }); }
+  const fd = span > 4 * 86400e3 ? new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", month: "numeric", day: "numeric" }) : f, nT = span > 4 * 86400e3 ? 4 : 2;
+  for (let i = 0; i <= nT; i++) { const t = t0 + span * i / nT, s = document.createElement("span"); s.textContent = (i === 0 || i === nT ? f : fd).format(new Date(t)); tk.appendChild(s); } }
 async function addHistory(raw) { const scene = raw.scene ? await decodeScene(raw.scene) : null; SRC.hist.push({ raw, scene });
   const sel = $("#hist-pick"), o = document.createElement("option"); o.value = String(SRC.hist.length - 1);
   o.textContent = `${raw.title ? raw.title + " · " : ""}${fmtFull.format(new Date(raw.window.start))}${scene ? ` · ${scene.frames.length} radar scans` : " · no radar"}`; sel.appendChild(o); }
@@ -3133,7 +3150,7 @@ function tick() {
   if (S.mode === "live" && S.follow) S.t = Date.now();
   if (S.ov === "spots") buildConfirmed();
   const [t0, t1] = range();
-  if (S.playing && !(S.mode === "live" && S.follow)) { const rate = S.mode === "forecast" ? 1800 : S.mode === "exp" ? 60 : 60; S.t += dt * 1000 * rate * S.speed; if (S.t > t1) S.t = t0; }
+  if (S.playing && !(S.mode === "live" && S.follow)) { const rate = S.mode === "forecast" ? Math.max(1800, (t1 - t0) / 100e3) : S.mode === "exp" ? 60 : 60; S.t += dt * 1000 * rate * S.speed; if (S.t > t1) S.t = t0; }
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   navStep(dt);
@@ -3271,7 +3288,7 @@ function updateHud(rr, tp) {
     el.textContent = age > 150 ? `Data is ${age > 2880 ? Math.round(age / 1440) + " days" : Math.round(age / 60) + " h"} old (radar ${fmtHM.format(new Date(lastObs))}); it refreshes hourly, or use Refresh now${gen}` :
       `Radar ${fmtHM.format(new Date(lastObs))} (${Math.round(age)} min ago)${S.t > lastObs + 60e3 ? ", carried forward by the nowcast" : ""}${gen}`;
     el.className = "age" + (age > 75 ? " stale" : ""); } else $("#age").textContent = "";
-  chip.textContent = { import: "From screenshot", live: S.follow ? "Live" : "Live · paused", forecast: `Forecast${S.t > t0 ? " +" + Math.round((S.t - t0) / 3600e3 * 10) / 10 + " h" : ""}`, history: "Historical", exp: "Experimental" }[S.mode];
+  chip.textContent = { import: "From screenshot", live: S.follow ? "Live" : "Live · paused", forecast: `Forecast${S.t > t0 ? " +" + (S.t - t0 >= 72 * 3600e3 ? Math.round((S.t - t0) / 86400e3 * 10) / 10 + " d" : Math.round((S.t - t0) / 3600e3 * 10) / 10 + " h") : ""}${C.ext ? " · WeatherNext 3" : ""}`, history: "Historical", exp: "Experimental" }[S.mode];
   const sc = $("#scrub"); if (document.activeElement !== sc) sc.value = Math.round((S.t - t0) / Math.max(t1 - t0, 1) * 1000);
   if (Date.now() - (MM.ticksAt || 0) > 60e3) { MM.ticksAt = Date.now(); buildTicks(); }   // live: the range grows with the clock; keep "now" and the ticks in place
   const tot = Math.sqrt(C.systems.reduce((a, q) => a + q.hs * q.hs, 0)), tpk = C.systems[0] ? C.systems[0].tp : 0;
@@ -3292,11 +3309,11 @@ function updateHud(rr, tp) {
   if (live && UP && UP.upwelling) wl += pill("", `Upwelling: shore water ${Math.round(UP.delta_c * 1.8)}° colder than offshore`, "spc", "background:#8fd0ff;color:#0b2540");
   if (live && NM.era5 && NM.era5.wind_ms && C.wind > NM.era5.wind_ms.p90) wl += pill("", "Windier than 9 in 10 hours this time of year", "spc", "background:#ffd38a;color:#3a2400");
   if (live && NM.era5 && NM.era5.air_c && C.airC != null) { const d = (C.airC - NM.era5.air_c.p50) * 1.8; if (Math.abs(d) >= 5) wl += pill("", `<i>Air</i> ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° vs usual`); }
-  const spc = W.spc, nowMs = Date.now();
-  if (live && spc && spc.cat && (!spc.expire || new Date(spc.expire).getTime() > nowMs))
+  const spc = W.spc, nowMs = Date.now(), tRef = S.mode === "forecast" ? S.t : nowMs;   // in Forecast, today's headlines only while the shown hour is inside them
+  if (live && spc && spc.cat && (!spc.expire || new Date(spc.expire).getTime() > tRef) && (!spc.valid || new Date(spc.valid).getTime() < tRef + 24 * 3600e3))
     wl += pill("", spc.cat === "TSTM" ? "Thunder possible" : `Severe: ${spc.label.replace(/ risk$/i, "")} ${spc.level}/5`, "spc", `background:${spc.color || "#f6f67f"}`);
   $("#wxline").innerHTML = wl;
-  renderAlerts(live ? (W.alerts || []) : [], nowMs);
+  renderAlerts(live ? (W.alerts || []) : [], tRef);
   // the readouts, by topic: wind (other stations and models), waves, water, your paddle
   const wind = [], waves = [], water = [], you = [];
   if (S.mode === "live") for (const m of W.metar || []) { if (nowMs - new Date(m.t).getTime() > 3 * 3600e3 || m.wspd_kt == null) continue;
