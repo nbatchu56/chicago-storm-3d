@@ -1,8 +1,8 @@
 {
  "version": 1,
- "generated": "2026-10-29T17:57:28+00:00",
+ "generated": "2026-10-29T18:17:09+00:00",
  "window_days": 45,
- "forecasts": 76,
+ "forecasts": 77,
  "buckets": [
   "0 h",
   "1-3 h",
