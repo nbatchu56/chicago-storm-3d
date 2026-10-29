@@ -5,7 +5,8 @@ Google DeepMind WeatherNext 3 (experimental ensemble) at a few lakefront points,
   0.05 deg projects/gcp-public-data-weathernext/assets/weathernext_3_0_0_0p05deg  station-tuned 2 m temperature, dewpoint
 
 Each collection holds ensemble statistics (mean, p10..p90) per forecast hour; we take the newest init that is
-fully ingested for the first 48 h and sample the points. Earth Engine gets a run ~7.5 h after its init time.
+fully ingested for the first 48 h and sample the points at every lead hour it has out to 15 days (MAX_HOURS; the
+WN3_HOURS environment variable overrides). Earth Engine gets a run ~7.5 h after its init time.
 
 Two ways in, same output. Earth Engine: a service-account key (JSON) registered for Earth Engine with WeatherNext
 access, in the GEE_SERVICE_ACCOUNT_KEY environment variable (or a path to it in GEE_SERVICE_ACCOUNT_FILE);
@@ -29,7 +30,8 @@ log = logging.getLogger("weathernext")
 UTC = dt.timezone.utc
 COL_10 = "projects/gcp-public-data-weathernext/assets/weathernext_3_0_0_0p1deg"
 COL_05 = "projects/gcp-public-data-weathernext/assets/weathernext_3_0_0_0p05deg"
-HOURS = 48
+HOURS = 48                                   # lead hours an init must have in full to be used (keeps the newest run)
+MAX_HOURS = int(os.environ.get("WN3_HOURS", 360))   # lead hours taken from it when present: 15 days
 POINTS = {                                   # id -> (lat, lon)
     "45174": (42.135, -87.655),              # Wilmette buoy
     "45198": (41.892, -87.563),              # Chicago buoy
@@ -124,7 +126,7 @@ def bq_inits(now, lag_h=BQ_LAG_H, tries=BQ_TRIES):
     return [t0 - dt.timedelta(hours=k) for k in range(tries)]
 
 
-def bq_query(table, bands, init, hours=HOURS):
+def bq_query(table, bands, init, hours=MAX_HOURS):
     """GoogleSQL for the point samples of one init from a WeatherNext 3 BigQuery table (one row per point x lead hour).
     The cells are picked with a constant MULTIPOINT so the table's geography clustering prunes the scan (a join
     predicate alone doesn't); then each point takes its own cell (two points can share one: North Ave and 45198)."""
@@ -140,7 +142,8 @@ def bq_query(table, bands, init, hours=HOURS):
 
 def bq_series(rows, hours=HOURS):
     """Query rows (dicts with id, init_time, forecast_hour, bands) -> (init ISO string, series) for the newest init
-    that has every lead hour 1..hours at every point; None, {} when no init is complete yet."""
+    that has every lead hour 1..hours at every point (all its rows are kept, later leads included); None, {} when no
+    init is complete yet."""
     by_init = {}
     for r in rows:
         t = r["init_time"]
@@ -148,7 +151,8 @@ def bq_series(rows, hours=HOURS):
         by_init.setdefault(t.astimezone(UTC), []).append(r)
     for init in sorted(by_init, reverse=True):
         rs = by_init[init]
-        if all(len({r["forecast_hour"] for r in rs if r["id"] == k}) >= hours for k in POINTS):
+        need = set(range(1, hours + 1))
+        if all(need <= {int(r["forecast_hour"]) for r in rs if r["id"] == k} for k in POINTS):
             key = init.isoformat()
             return key, to_series(rs, key)
     return None, {}
@@ -168,17 +172,18 @@ def init_bq(table=None):
     return bigquery.Client(project=project, credentials=creds, default_job_creation_mode="JOB_CREATION_OPTIONAL")
 
 
-def sample_bq(client, table, bands, now, hours=HOURS):
+def sample_bq(client, table, bands, now, hours=HOURS, max_hours=MAX_HOURS):
     from google.cloud import bigquery
     billed, seen = 0, []
     for t in bq_inits(now):
-        it = client.query_and_wait(bq_query(table, bands, t, hours), job_config=bigquery.QueryJobConfig(labels={"app": "lakeview"}))
+        it = client.query_and_wait(bq_query(table, bands, t, max_hours), job_config=bigquery.QueryJobConfig(labels={"app": "lakeview"}))
         rows = [dict(r) for r in it]
         billed += getattr(it, "total_bytes_processed", None) or 0
         seen.append(f"{t:%H}Z:{len(rows)}")
         init, ser = bq_series(rows, hours)
         if init:
-            log.info("%s init %s: %d rows, %.0f MB read (%s)", table.rsplit(".", 1)[-1], init, len(rows), billed / 1e6, " ".join(seen))
+            log.info("%s init %s: %d rows to +%d h, %.0f MB read (%s)", table.rsplit(".", 1)[-1], init, len(rows), _last_lead(ser, init),
+                     billed / 1e6, " ".join(seen))
             return init, ser
     raise RuntimeError(f"{table}: no init with all {hours} hours at every point in the last {BQ_TRIES} tried ({' '.join(seen)})")
 
@@ -201,25 +206,33 @@ def init_ee():
     return ee
 
 
-def sample(ee, col_id, bands, now, hours=HOURS):
-    """Newest complete init of a collection, sampled at POINTS -> (init string, series by point)."""
+def sample(ee, col_id, bands, now, hours=HOURS, max_hours=MAX_HOURS):
+    """Newest init of a collection complete for 1..hours, sampled at POINTS at every lead hour to max_hours
+    -> (init string, series by point)."""
     col = ee.ImageCollection(col_id).filterDate(ee.Date((now - dt.timedelta(days=2)).isoformat()),
-                                                ee.Date((now + dt.timedelta(days=3)).isoformat()))
+                                                ee.Date((now + dt.timedelta(hours=max_hours + 24)).isoformat()))
     first = col.filter(ee.Filter.rangeContains("forecast_hour", 1, hours))
     counts = first.aggregate_histogram("start_time").getInfo() or {}
     init = pick_init(counts, hours)
     if not init:
         raise RuntimeError(f"{col_id}: no init with all {hours} hours ({len(counts)} partial)")
     pts = ee.FeatureCollection([ee.Feature(ee.Geometry.Point([lo, la]), {"id": k}) for k, (la, lo) in POINTS.items()])
-    imgs = first.filter(ee.Filter.eq("start_time", init)).select(bands)
+    imgs = col.filter(ee.Filter.rangeContains("forecast_hour", 1, max_hours)).filter(ee.Filter.eq("start_time", init)).select(bands)
 
     def per_image(img):
         fh = img.get("forecast_hour")
         return img.reduceRegions(pts, ee.Reducer.first(), SCALE[col_id]).map(lambda f: f.set("forecast_hour", fh))
 
     feats = imgs.map(per_image).flatten().getInfo()["features"]
-    log.info("%s init %s: %d samples", col_id.rsplit("/", 1)[-1], init, len(feats))
-    return init, to_series(feats, init)
+    ser = to_series(feats, init)
+    log.info("%s init %s: %d samples to +%d h", col_id.rsplit("/", 1)[-1], init, len(feats), _last_lead(ser, init))
+    return init, ser
+
+
+def _last_lead(ser, init):
+    """Longest lead (hours after init) in a series by point, 0 when empty."""
+    t0, ends = parse_time(init), [p["t"][-1] for p in ser.values() if p.get("t")]
+    return max((round((parse_time(e) - t0).total_seconds() / 3600) for e in ends), default=0)
 
 
 def fetch(out_path, now=None):
@@ -249,6 +262,7 @@ def fetch(out_path, now=None):
             out["notes"].append(f"{col.rsplit('/', 1)[-1]}: {e}")
             continue
         out[key] = parse_time(init).isoformat()
+        out[key.replace("init", "hours")] = _last_lead(ser, init)
         for pid, s in ser.items():
             p = out["points"].setdefault(pid, {})
             if key == "init_station":                # hourly times can differ between the two inits

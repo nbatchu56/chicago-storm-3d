@@ -44,7 +44,7 @@ def test_bq_query_one_init():
     q = wn.bq_query("p.d.weathernext_3_0_0_0p1deg", wn.BANDS_10, inits[0])
     assert "FROM `p.d.weathernext_3_0_0_0p1deg` AS t, UNNEST(t.forecast) AS f" in q
     assert "ST_GEOGPOINT(-87.622, 41.915)" in q and "'northave' AS id" in q      # lon first
-    assert "t.init_time = TIMESTAMP('2026-10-28 13:00:00 UTC')" in q and "f.hours BETWEEN 1 AND 48" in q   # equality: one partition
+    assert "t.init_time = TIMESTAMP('2026-10-28 13:00:00 UTC')" in q and "f.hours BETWEEN 1 AND 360" in q   # equality: one partition; 15 days
     assert "ST_GEOGFROMTEXT('MULTIPOINT((-87.655 42.135), (-87.563 41.892), (-87.622 41.915))')" in q   # constant: prunes
     assert all(f"f.{b}" in q for b in wn.BANDS_10)
 
@@ -63,3 +63,16 @@ def test_bq_series_newest_complete_init():
 def test_to_series_dewpoint_from_bq():
     feats = [{"id": "northave", "forecast_hour": 1, "wind_speed_10m_mean": 3.0, "dewpoint_temperature_2m_mean": 278.15}]
     assert wn.to_series(feats, "2026-10-28T13:00:00Z")["northave"]["td2m_c"] == [5.0]
+
+
+def test_bq_series_keeps_leads_past_48h_but_needs_the_first_48():
+    import datetime as dt
+    t0, t1 = dt.datetime(2026, 10, 28, 6, tzinfo=dt.timezone.utc), dt.datetime(2026, 10, 28, 12, tzinfo=dt.timezone.utc)
+    rows = [{"id": k, "init_time": t0, "forecast_hour": h, "wind_speed_10m_mean": 4.0} for k in wn.POINTS for h in range(1, 361)]
+    # the 12Z init has 300 leads but hour 5 is missing: a count alone would pass it, the first 48 must all be there
+    rows += [{"id": k, "init_time": t1, "forecast_hour": h, "wind_speed_10m_mean": 6.0} for k in wn.POINTS for h in range(1, 302) if h != 5]
+    init, ser = wn.bq_series(rows)
+    assert init == "2026-10-28T06:00:00+00:00"
+    p = ser["northave"]
+    assert len(p["wspd"]) == 360 and p["t"][-1] == "2026-11-12T06:00:00+00:00"
+    assert wn._last_lead(ser, init) == 360 and wn._last_lead({}, init) == 0
