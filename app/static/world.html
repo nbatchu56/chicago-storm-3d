@@ -451,7 +451,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
   <div id="timeline" class="panel">
     <button id="play" aria-label="Play"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="play-icon" d="M3 1.5v13l11-6.5z"/></svg></button>
     <div class="track"><input type="range" id="scrub" min="0" max="100000" step="1" value="100000" aria-label="Time"><div class="segs" id="segs" aria-hidden="true"></div><div class="ticks" id="ticks"></div></div>
-    <div class="speed"><label for="spd">Speed</label><select id="spd"><option value="0.4">Slow</option><option value="1" selected>Normal</option><option value="2.5">Fast</option></select></div>
+    <div class="speed"><label for="spd">Speed</label><select id="spd" title="How much of the timeline passes each real second, the same everywhere on it"><option value="60">1 min / s</option><option value="600" selected>10 min / s</option><option value="3600">1 h / s</option><option value="21600">6 h / s</option></select></div>
   </div>
   <div id="msg" class="panel" hidden></div>
 </div>
@@ -607,7 +607,7 @@ const azElDir = (o, v) => { const a = o.az * Math.PI / 180, e = o.el * Math.PI /
 // ---------------------------------------------------------------- data
 const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), learn: parseJSON("learn-data"), levels: parseJSON("levels-data"), earth: parseJSON("earth-data"), wn3: parseJSON("wn3-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
 { const h = parseJSON("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
-const S = { mode: "live", t: Date.now(), follow: true, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, goes: true, view: "overview", histIdx: 0,
+const S = { mode: "live", t: Date.now(), follow: true, playing: false, speed: 600, ov: "natural", exag: 1, quality: 1, bolts: !RM, goes: true, view: "overview", histIdx: 0,
   x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, hour: 14, seed: 7 } };
 try { const q = localStorage.getItem("lakeworld-q"); if (q !== null) S.quality = +q; } catch (e) {}
 
@@ -3250,13 +3250,13 @@ function tick() {
   if (S.mode === "live" && S.follow) S.t = Date.now();
   if (S.ov === "spots") buildConfirmed();
   const [t0, t1] = range();
-  if (S.playing && !(S.mode === "live" && S.follow)) { /* radar minutes at 60x, the rest of the timeline in about 100 s */ const rate = S.mode === "live" && !inRadar(S.t) ? Math.max(1800, (t1 - t0) / 100e3) : 60; S.t += dt * 1000 * rate * S.speed; if (S.t > t1) S.t = t0; }
+  if (S.playing && !(S.mode === "live" && S.follow)) { S.t += dt * 1000 * S.speed; if (S.t > t1) S.t = t0; }   // one steady rate: S.speed seconds of the timeline per real second
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   navStep(dt);
   // board: on the track at this time (history or replay), else under the camera target
   if (S.rideOwn && S.playing && DATA.track) { const t0 = new Date(DATA.track.start).getTime(), L = DATA.track.pts[DATA.track.pts.length - 1][0] * 1000;
-    S.rideT += dt * 1000 * 60 * S.speed; if (S.rideT > t0 + L) S.rideT = t0; }
+    S.rideT += dt * 1000 * Math.min(S.speed, 600); if (S.rideT > t0 + L) S.rideT = t0; }
   const tp = S.showTrack ? trackAt(trackTime()) : null; const tgt = controls.target;
   const paddle = NAV.move === "paddle";
   let bx = paddle ? NAV.pad.x : tp ? tp.x : tgt.x, by = paddle ? NAV.pad.y : tp ? tp.y : -tgt.z;
