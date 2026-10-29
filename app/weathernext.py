@@ -4,9 +4,11 @@ Google DeepMind WeatherNext 3 (experimental ensemble) at a few lakefront points,
   0.1 deg  projects/gcp-public-data-weathernext/assets/weathernext_3_0_0_0p1deg   10 m wind (+ spread), cloud, rain, MSLP
   0.05 deg projects/gcp-public-data-weathernext/assets/weathernext_3_0_0_0p05deg  station-tuned 2 m temperature, dewpoint
 
-Each collection holds ensemble statistics (mean, p10..p90) per forecast hour; we take the newest init that is
-fully ingested for the first 48 h and sample the points at every lead hour it has out to 15 days (MAX_HOURS; the
-WN3_HOURS environment variable overrides). Earth Engine gets a run ~7.5 h after its init time.
+Each collection holds ensemble statistics (mean, p10..p90) per forecast hour. Runs start every hour, but only
+the 6-hourly ones (00/06/12/18Z) go out 15 days; the hourly ones in between stop at 48 h. We take the newest init
+that is fully ingested for the first 48 h for the near term, then extend it with the newest 15-day run beyond the
+last hour it covers (MAX_HOURS leads; the WN3_HOURS environment variable overrides). Earth Engine gets a run ~7.5 h
+after its init time.
 
 Two ways in, same output. Earth Engine: a service-account key (JSON) registered for Earth Engine with WeatherNext
 access, in the GEE_SERVICE_ACCOUNT_KEY environment variable (or a path to it in GEE_SERVICE_ACCOUNT_FILE);
@@ -31,7 +33,8 @@ UTC = dt.timezone.utc
 COL_10 = "projects/gcp-public-data-weathernext/assets/weathernext_3_0_0_0p1deg"
 COL_05 = "projects/gcp-public-data-weathernext/assets/weathernext_3_0_0_0p05deg"
 HOURS = 48                                   # lead hours an init must have in full to be used (keeps the newest run)
-MAX_HOURS = int(os.environ.get("WN3_HOURS", 360))   # lead hours taken from it when present: 15 days
+MAX_HOURS = int(os.environ.get("WN3_HOURS", 360))   # lead hours of a long run: 15 days
+LONG_EVERY_H = 6                             # the long runs start at 00/06/12/18Z
 POINTS = {                                   # id -> (lat, lon)
     "45174": (42.135, -87.655),              # Wilmette buoy
     "45198": (41.892, -87.563),              # Chicago buoy
@@ -120,10 +123,11 @@ def _round(v, n):
 BQ_LAG_H, BQ_TRIES = 7.0, 6
 
 
-def bq_inits(now, lag_h=BQ_LAG_H, tries=BQ_TRIES):
-    """Init times to try, newest first: whole hours from now - lag back tries hours."""
+def bq_inits(now, lag_h=BQ_LAG_H, tries=BQ_TRIES, every_h=1):
+    """Init times to try, newest first: whole hours (multiples of every_h) from now - lag back tries steps."""
     t0 = (now - dt.timedelta(hours=lag_h)).replace(minute=0, second=0, microsecond=0)
-    return [t0 - dt.timedelta(hours=k) for k in range(tries)]
+    t0 -= dt.timedelta(hours=t0.hour % every_h)
+    return [t0 - dt.timedelta(hours=k * every_h) for k in range(tries)]
 
 
 def bq_query(table, bands, init, hours=MAX_HOURS):
@@ -172,10 +176,12 @@ def init_bq(table=None):
     return bigquery.Client(project=project, credentials=creds, default_job_creation_mode="JOB_CREATION_OPTIONAL")
 
 
-def sample_bq(client, table, bands, now, hours=HOURS, max_hours=MAX_HOURS):
+def sample_bq(client, table, bands, now, hours=HOURS, max_hours=MAX_HOURS, every_h=1, tries=BQ_TRIES):
+    """Newest init complete for 1..hours among the ones bq_inits lists -> (init ISO string, series). every_h=LONG_EVERY_H
+    with hours=MAX_HOURS finds the newest 15-day run."""
     from google.cloud import bigquery
     billed, seen = 0, []
-    for t in bq_inits(now):
+    for t in bq_inits(now, tries=tries, every_h=every_h):
         it = client.query_and_wait(bq_query(table, bands, t, max_hours), job_config=bigquery.QueryJobConfig(labels={"app": "lakeview"}))
         rows = [dict(r) for r in it]
         billed += getattr(it, "total_bytes_processed", None) or 0
@@ -185,7 +191,26 @@ def sample_bq(client, table, bands, now, hours=HOURS, max_hours=MAX_HOURS):
             log.info("%s init %s: %d rows to +%d h, %.0f MB read (%s)", table.rsplit(".", 1)[-1], init, len(rows), _last_lead(ser, init),
                      billed / 1e6, " ".join(seen))
             return init, ser
-    raise RuntimeError(f"{table}: no init with all {hours} hours at every point in the last {BQ_TRIES} tried ({' '.join(seen)})")
+    raise RuntimeError(f"{table}: no init with all {hours} hours at every point in the last {len(seen)} tried ({' '.join(seen)})")
+
+
+def extend(short, long_, long_init):
+    """Append the long run's hours after the last hour of the short series, point by point (keys the short series
+    has; a key the long run lacks is padded with None) -> (merged series, ISO time the long run takes over at, or
+    None when it added nothing)."""
+    out, joined = {}, None
+    for pid, s in short.items():
+        s = {k: list(v) for k, v in s.items()}
+        L = long_.get(pid) or {}
+        if L.get("t") and s.get("t"):
+            last = s["t"][-1]
+            idx = [i for i, t in enumerate(L["t"]) if t > last]
+            if idx:
+                joined = joined or L["t"][idx[0]]
+                for k in s:
+                    s[k].extend([(L[k][i] if k in L else None) for i in idx])
+        out[pid] = s
+    return out, joined
 
 
 def _key():
@@ -206,13 +231,14 @@ def init_ee():
     return ee
 
 
-def sample(ee, col_id, bands, now, hours=HOURS, max_hours=MAX_HOURS):
-    """Newest init of a collection complete for 1..hours, sampled at POINTS at every lead hour to max_hours
-    -> (init string, series by point)."""
+def sample(ee, col_id, bands, now, hours=HOURS, max_hours=MAX_HOURS, every_h=1):
+    """Newest init of a collection complete for 1..hours (among inits on every_h-hour boundaries), sampled at POINTS
+    at every lead hour to max_hours -> (init string, series by point)."""
     col = ee.ImageCollection(col_id).filterDate(ee.Date((now - dt.timedelta(days=2)).isoformat()),
                                                 ee.Date((now + dt.timedelta(hours=max_hours + 24)).isoformat()))
     first = col.filter(ee.Filter.rangeContains("forecast_hour", 1, hours))
     counts = first.aggregate_histogram("start_time").getInfo() or {}
+    counts = {k: n for k, n in counts.items() if parse_time(k).hour % every_h == 0}
     init = pick_init(counts, hours)
     if not init:
         raise RuntimeError(f"{col_id}: no init with all {hours} hours ({len(counts)} partial)")
@@ -262,6 +288,16 @@ def fetch(out_path, now=None):
             out["notes"].append(f"{col.rsplit('/', 1)[-1]}: {e}")
             continue
         out[key] = parse_time(init).isoformat()
+        if key == "init" and _last_lead(ser, init) < MAX_HOURS:       # an hourly run (48 h): extend with the newest 15-day one
+            try:
+                li, ls = (sample_bq(client, col, bands, now, hours=MAX_HOURS, every_h=LONG_EVERY_H, tries=3) if bq_table
+                          else sample(ee, col, bands, now, hours=MAX_HOURS, every_h=LONG_EVERY_H))
+                ser, joined = extend(ser, ls, li)
+                if joined:
+                    out["init_long"], out["long_from"] = parse_time(li).isoformat(), joined
+            except Exception as e:
+                log.warning("%s long run: %s", col, e)
+                out["notes"].append(f"{col.rsplit('/', 1)[-1]} 15-day run: {e}")
         out[key.replace("init", "hours")] = _last_lead(ser, init)
         for pid, s in ser.items():
             p = out["points"].setdefault(pid, {})

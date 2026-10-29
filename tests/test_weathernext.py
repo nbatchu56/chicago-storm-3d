@@ -76,3 +76,24 @@ def test_bq_series_keeps_leads_past_48h_but_needs_the_first_48():
     p = ser["northave"]
     assert len(p["wspd"]) == 360 and p["t"][-1] == "2026-11-12T06:00:00+00:00"
     assert wn._last_lead(ser, init) == 360 and wn._last_lead({}, init) == 0
+
+
+def test_bq_inits_six_hourly_for_the_long_runs():
+    import datetime as dt
+    now = dt.datetime(2026, 10, 29, 2, 48, tzinfo=dt.timezone.utc)          # now - 7 h = 19:48 -> 19Z hourly, 18Z six-hourly
+    assert wn.bq_inits(now)[0] == dt.datetime(2026, 10, 28, 19, tzinfo=dt.timezone.utc)
+    longs = wn.bq_inits(now, every_h=6, tries=3)
+    assert [t.hour for t in longs] == [18, 12, 6] and longs[0].day == 28
+
+
+def test_extend_appends_the_long_run_after_the_short_one():
+    short = {"northave": {"t": ["2026-10-28T20:00:00+00:00", "2026-10-28T21:00:00+00:00"], "wspd": [3.0, 4.0], "td2m_c": [1.0, 1.0]}}
+    long_ = {"northave": {"t": ["2026-10-28T19:00:00+00:00", "2026-10-28T21:00:00+00:00", "2026-10-28T22:00:00+00:00", "2026-10-28T23:00:00+00:00"],
+                          "wspd": [9.0, 9.0, 5.0, 6.0]}}
+    ser, joined = wn.extend(short, long_, "2026-10-28T18:00:00+00:00")
+    p = ser["northave"]
+    assert joined == "2026-10-28T22:00:00+00:00"
+    assert p["t"][-2:] == ["2026-10-28T22:00:00+00:00", "2026-10-28T23:00:00+00:00"] and p["wspd"] == [3.0, 4.0, 5.0, 6.0]
+    assert p["td2m_c"] == [1.0, 1.0, None, None]                       # a band the long run lacks is padded
+    assert short["northave"]["wspd"] == [3.0, 4.0]                     # input untouched
+    assert wn.extend(short, {}, "x")[1] is None
