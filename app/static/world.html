@@ -977,7 +977,9 @@ void main(){
       body *= mix(clamp(1.0 + dot(N.xz, normalize(sl.xz + 1e-4)) * 3.2, 0.55, 1.6), 1.0, step(0.5, ov));
       body += vec3(0.008, 0.038, 0.040) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - N.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
     vec3 H = normalize(uSunDir + V); float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
-    col = mix(body, refl, uTempOn > 0.5 ? F * 0.45 : F) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice);
+    // with a data overlay on (depth, wave height, chop, energy flow, chop spots, satellite) the sun glint goes and the sky and moon reflection is kept faint, so the colours read true
+    float ovOn = step(0.5, uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uSatOn);
+    col = mix(body, refl, (uTempOn > 0.5 ? F * 0.45 : F) * (1.0 - 0.85 * ovOn)) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice) * (1.0 - ovOn);
     // light through the thin tops of the waves: a lighter green-blue on the crests, stronger as the waves grow
     float hsLook = (kr >= 0.0 ? uHsOff * kr : uHs) * calm * shel;
     col += vec3(0.012, 0.040, 0.044) * (sunL + amb * 2.0) * smoothstep(0.9, 3.2, crest) * clamp(hsLook * 2.5, 0.15, 1.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uSatOn > 0.5 ? 0.0 : 1.0);
@@ -1927,9 +1929,10 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uSatOn;
         body *= mix(clamp(1.0 + dot(Nn.xz, normalize(sl.xz + 1e-4)) * 3.2, 0.55, 1.6), 1.0, step(0.5, ov));
         body += vec3(0.008, 0.038, 0.040) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - Nn.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
-      vec3 c = mix(body, skyColor(R, false), uTempOn > 0.5 ? F * 0.45 : F);
+      float ovOn = step(0.5, uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uSatOn);   // overlay on: no glint, faint sky and moon reflection
+      vec3 c = mix(body, skyColor(R, false), (uTempOn > 0.5 ? F * 0.45 : F) * (1.0 - 0.85 * ovOn));
       vec3 Hv = normalize(uSunDir + V); float rough = sqrt(max(unres + 0.0025, (0.003 + 0.00512 * uWindSpd) * 0.55)) + 0.01;   // Cox & Munk floor
-      c += uSunCol * pow(max(dot(Nn, Hv), 0.0), 2.0 / (rough * rough)) / (1.0 + rough * 20.0) * sunUp * (1.0 - 0.8 * uOvercast) * 0.6;
+      c += uSunCol * pow(max(dot(Nn, Hv), 0.0), 2.0 / (rough * rough)) / (1.0 + rough * 20.0) * sunUp * (1.0 - 0.8 * uOvercast) * 0.6 * (1.0 - ovOn);
       float W = clamp(3.84e-6 * pow(uWindSpd * (1.0 + 0.5 * gust), 3.41), 0.0, 0.25) * uWcFetch;
       // whitecaps: on the steep faces of the big waves, broken up by where the short waves bunch (their Jacobian), plus
       // the short-wave crests themselves breaking in a fresh wind
