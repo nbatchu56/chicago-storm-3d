@@ -247,7 +247,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #hud .line { display: flex; align-items: flex-start; gap: 7px; font: 12.5px var(--font-data); color: var(--fg); } #hud .line > span:not(.ic) { min-width: 0; } #hud .line .ic { margin-top: 1px; }
 #hud .line .ic { display: inline-flex; color: rgba(220, 230, 238, .8); filter: drop-shadow(0 1px 2px #000); } .ico { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -2px; }
 #hud #clock { font: 500 15px/1 var(--font-data); } #hud .chip { background: rgba(9, 15, 21, .55); }
-#hud .age { font-size: 11.5px; } #hud .src { color: rgba(220, 230, 238, .82); font-size: 11px; line-height: 1.35; border: 0; padding: 0; opacity: 1; } #hud .src #source { flex: 1 1 200px; min-width: 0; }
+#hud .age { font-size: 11.5px; white-space: nowrap; } #hud .src { color: rgba(220, 230, 238, .82); font-size: 11px; line-height: 1.35; border: 0; padding: 0; opacity: 1; } #hud .src #source { flex: 1 1 200px; min-width: 0; }
 #hud #nowbtn, #hud #refreshbtn { padding: 3px 8px; font-size: 11px; background: rgba(9, 15, 21, .6); }
 #hud .alerts { pointer-events: auto; display: grid; gap: 3px; } #hud .alerts[hidden] { display: none; } #hud .alerts .al { background: rgba(9, 15, 21, .7); text-shadow: none; }
 .cathead > span { display: inline-flex; align-items: center; gap: 5px; } .cathead .ico { width: 15px; height: 15px; }
@@ -255,7 +255,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #cards { display: flex; gap: 8px; align-items: stretch; overflow: visible; padding-top: 2px; }
 #cards .card { flex: none; position: static; padding: 8px 10px; box-sizing: border-box; height: var(--cardh); display: flex; flex-direction: column; gap: 6px; }
 #cards .card > .readouts { min-height: 0; overflow: hidden; } #cards .card .more { gap: 0; }
-#minimap { width: auto; padding: 6px; gap: 4px; } #minimap canvas { height: calc(var(--cardh) - 12px - 22px); width: auto; aspect-ratio: 300 / 444; } #minimap .cap { margin-top: 0; }
+#minimap { width: auto; padding: 6px; gap: 4px; flex: 1 1 auto !important; min-width: 170px; } #minimap canvas { height: calc(var(--cardh) - 12px - 22px); width: 100%; } #minimap .cap { margin-top: 0; }
 #cards .cat { width: 252px; margin: 0; border-left: 3px solid var(--cat); background: var(--panel); border-radius: 6px; }
 #cards .cat::before { content: ""; position: absolute; inset: 0; border-radius: 6px; pointer-events: none; }
 #cards .cat.air { background: linear-gradient(180deg, rgba(144, 200, 65, .09), var(--panel) 60%); } #cards .cat.water { background: linear-gradient(180deg, rgba(5, 160, 203, .11), var(--panel) 60%); }
@@ -277,7 +277,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
 @media (max-width: 760px) {
   #bar { bottom: calc(var(--gut) + 78px + env(safe-area-inset-bottom, 0px)); }
   #hud { padding: 5px 10px !important; gap: 4px 8px; } #hud .src { display: none; } #hud h1 { font-size: 15px; }
-  :root { --cardh: 222px; } #cards { overflow-x: auto; scrollbar-width: thin; } #cards .cat, #vsbox { width: 210px; }
+  :root { --cardh: 222px; } #cards { overflow-x: auto; scrollbar-width: thin; } #cards .cat, #vsbox { width: 210px; } #minimap { flex: none !important; width: 160px; }
   .ticks.abs span.fct, .ticks.abs span.wn3 { display: none; }   /* the phone's timeline keeps only the ends and the latest scan */
   .card.open .more { position: static; width: auto !important; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: 4px 0 0; margin-top: 4px; max-height: 30vh; }
   #controls { bottom: calc(var(--gut) + 92px + env(safe-area-inset-bottom, 0px)); max-height: 58% !important; z-index: 4; }
@@ -292,7 +292,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
     <div class="line" style="align-items:center;flex-wrap:wrap"><span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span id="clock">--:--</span><span class="chip live" id="status">Live</span><button id="nowbtn" hidden>Back to now</button></div>
     <div class="line" id="ageline"><span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12L18 6M12 3a9 9 0 1 0 9 9M12 7a5 5 0 1 0 5 5"/></svg></span><span class="age" id="age"></span><span id="refreshbox" hidden><button id="refreshbtn">Refresh now</button><span class="age" id="refreshmsg"></span></span></div>
     <div class="alerts" id="alerts" hidden></div>
-    <div class="line src" id="srcline"><span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span><span id="source">Loading…</span></div>
+    <div class="line src" id="srcline" hidden><span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span><span id="source">Loading…</span></div>
   </div>
   <button id="toggle" aria-expanded="false" aria-controls="controls">Settings</button>
   <div id="bar" aria-label="Conditions">
@@ -2800,21 +2800,27 @@ function clampView() {    // keep the camera in the local world and above the wa
 function updateCompass() { const hdg = NAV.move === "paddle" ? NAV.pad.yaw : viewState().hdg; $("#needle").setAttribute("transform", `rotate(${-hdg} 26 26)`);
   const rose = $("#vsrose"); if (rose) rose.setAttribute("transform", `rotate(${-hdg} 48 48)`); const ht = $("#vshdg"); if (ht) ht.textContent = `View ${compass(hdg)} ${Math.round(hdg)}° · up is where you look`; }
 const MM = { el: $("#mm"), base: null };
-function mmXY(x, y) { const W = MM.el.width, H = MM.el.height; return [(x - LB.x0) / (LB.x1 - LB.x0) * W, (LB.y1 - y) / (LB.y1 - LB.y0) * H]; }
+// ML: the local map's extents, LB widened to the card's shape (the map fills whatever width its card has); same for the radar map's MMR
+const ML = { x0: LB.x0, x1: LB.x1, y0: LB.y0, y1: LB.y1 };
+function mmXY(x, y) { const W = MM.el.width, H = MM.el.height; return [(x - ML.x0) / (ML.x1 - ML.x0) * W, (ML.y1 - y) / (ML.y1 - ML.y0) * H]; }
+function mmFit() { const el = MM.el, cw = Math.round(el.clientWidth), ch = Math.round(el.clientHeight); if (!cw || !ch) return;
+  const H = el.height, W = Math.max(200, Math.round(H * cw / ch)); if (W === el.width && MM.fitted) return; el.width = W; MM.fitted = true;
+  const widen = (R, B) => { const cx = (B.x0 + B.x1) / 2, hw = (B.y1 - B.y0) / 2 * W / H; R.x0 = cx - hw; R.x1 = cx + hw; };
+  widen(ML, LB); widen(MMR, MMR.base0); MM.base = null; MMR.base = null; if (MM.built) { buildMinimap(); drawMinimap(); } }
 function buildMinimap() {
   const W = MM.el.width, H = MM.el.height, c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d"), img = g.createImageData(W, H);
-  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) { const x = LB.x0 + (px + 0.5) / W * (LB.x1 - LB.x0), y = LB.y1 - (py + 0.5) / H * (LB.y1 - LB.y0), m = maskAt(x, y), o = (py * W + px) * 4;
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) { const x = ML.x0 + (px + 0.5) / W * (ML.x1 - ML.x0), y = ML.y1 - (py + 0.5) / H * (ML.y1 - ML.y0), m = maskAt(x, y), o = (py * W + px) * 4;
     let col; if (m === 0) col = [52, 58, 62]; else { const d = depthAtKm(x, y), k = d == null ? 0.6 : clamp(d / 9, 0, 1); col = m === 1 ? [20 + 30 * (1 - k), 70 + 60 * (1 - k), 110 + 50 * (1 - k)] : [40, 95, 120]; }
     img.data.set([...col, 255], o); }
   g.putImageData(img, 0, 0);
   g.fillStyle = "rgba(220,230,238,.9)"; g.font = "600 17px IBM Plex Sans Condensed, sans-serif";
   for (const [n, la, lo] of [["North Ave", 41.9145, -87.6235], ["Diversey Hbr", 41.9310, -87.6385], ["Fullerton", 41.9255, -87.6400]]) { const [x, y] = mmXY(...ll(la, lo)); g.fillText(n, x - 70, y); }
-  MM.base = c; const km = (LB.x1 - LB.x0); $("#mmscale").textContent = `${(km * 0.621).toFixed(1)} mi across`;
+  MM.base = c; MM.built = true; const km = (ML.x1 - ML.x0); $("#mmscale").textContent = `${(km * 0.621).toFixed(1)} mi across`;
   $("#minimap").classList.add("ready");
 }
 // ---------------------------------------------------------------- mini map, radar view: the region around Chicago (~120 x 180 km)
 // with the radar reflectivity for the timeline's time (scans, then the nowcast), where the echoes are heading, and the local area
-const MMR = { view: "auto", x0: -62, x1: 58, y0: -86, y1: 92, base: null, rc: null, key: "", comp: new WeakMap(), track: null };
+const MMR = { view: "auto", x0: -62, x1: 58, y0: -86, y1: 92, base0: { x0: -62, x1: 58, y0: -86, y1: 92 }, base: null, rc: null, key: "", comp: new WeakMap(), track: null };
 const DBZ_LUT = (() => { const t = new Uint8ClampedArray(256 * 4); for (let b = 0; b < 256; b++) { const dbz = b / 3 - 10; let c = null; for (const [lv, col] of DBZ_STOPS) if (dbz >= lv) c = col;   // the NWS colours, as the 3-D radar view
   if (c) { const k = parseInt(c.slice(1), 16); t.set([k >> 16, (k >> 8) & 255, k & 255, dbz < 15 ? 150 : 225], b * 4); } } return t; })();
 function mmRadarOn() { if (MMR.view === "local") return false; if (MMR.view === "radar") return true;
@@ -2888,7 +2894,7 @@ function drawRadarMap() { const W = MM.el.width, H = MM.el.height, g = MM.el.get
 function drawMinimap() {
   if (!MM.base) return; const radar = mmRadarOn(); $("#mmview").textContent = radar ? "Local map" : "Radar map";
   if (radar) { drawRadarMap(); return; }
-  $("#mmstat").hidden = true; $("#mmscale").textContent = `${((LB.x1 - LB.x0) * 0.621).toFixed(1)} mi across`;
+  $("#mmstat").hidden = true; $("#mmscale").textContent = `${((ML.x1 - ML.x0) * 0.621).toFixed(1)} mi across`;
   const g = MM.el.getContext("2d"); g.drawImage(MM.base, 0, 0);
   const P = NAV.move === "paddle" ? { x: NAV.pad.x, y: NAV.pad.y, h: NAV.pad.yaw } : (() => { const v = viewState(); return { x: camera.position.x, y: -camera.position.z, h: v.hdg, tx: v.tx, ty: v.ty }; })();
   const [cx, cy] = mmXY(P.x, P.y), h = P.h * Math.PI / 180, L = 60;
@@ -2900,7 +2906,7 @@ $("#mmview").onclick = () => { MMR.view = mmRadarOn() ? "local" : "radar"; drawM
 MM.el.addEventListener("click", (ev) => { const r = MM.el.getBoundingClientRect(); hideHint();
   if (mmRadarOn()) { const x = MMR.x0 + (ev.clientX - r.left) / r.width * (MMR.x1 - MMR.x0), y = MMR.y1 - (ev.clientY - r.top) / r.height * (MMR.y1 - MMR.y0);
     if (x > LB.x0 && x < LB.x1 && y > LB.y0 && y < LB.y1) { const v = viewState(); S.view = "free"; flyTo(x, y, clamp(v.dist, 0.15, 2.5), v.hdg, Math.max(v.pitch, 15)); } return; }
-  const x = LB.x0 + (ev.clientX - r.left) / r.width * (LB.x1 - LB.x0), y = LB.y1 - (ev.clientY - r.top) / r.height * (LB.y1 - LB.y0);
+  const x = ML.x0 + (ev.clientX - r.left) / r.width * (ML.x1 - ML.x0), y = ML.y1 - (ev.clientY - r.top) / r.height * (ML.y1 - ML.y0);
   if (NAV.move === "paddle") { if (maskAt(x, y) !== 0) { NAV.pad.x = x; NAV.pad.y = y; } return; }
   const v = viewState(); S.view = "free"; flyTo(x, y, clamp(v.dist, 0.15, 2.5), v.hdg, Math.max(v.pitch, 15)); });
 function toggleHelp() { $("#help").hidden = !$("#help").hidden; hideHint(); }
@@ -2917,6 +2923,7 @@ function showHintOnce() { let seen = false; try { seen = localStorage.getItem("l
 // the conditions box folds down to title, time and status (remembered per browser)
 // the toolbar's height sets where the legend, the place button and the navigation sit
 { const bar = $("#bar"), fit = () => document.documentElement.style.setProperty("--barh", `${bar.offsetHeight}px`); fit(); if (window.ResizeObserver) new ResizeObserver(fit).observe(bar); else addEventListener("resize", fit); }
+{ let raf = 0; const fit = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(mmFit); }; if (window.ResizeObserver) new ResizeObserver(fit).observe($("#minimap")); addEventListener("resize", fit); }
 // the Air and Water cards open to their full readouts
 document.querySelectorAll("button.cathead").forEach((b) => b.onclick = () => { const c = b.closest(".card"), o = !c.classList.contains("open"); c.classList.toggle("open", o); b.setAttribute("aria-expanded", String(o)); });
 // the vector compass turns with the view; dragging its rose turns the view, a double-click faces north
@@ -3370,9 +3377,9 @@ function updateHud(rr, tp) {
   $("#clock").textContent = fmtFull.format(new Date(S.t)).replace(/^\w+, /, "");
   const chip = $("#status"); const lead = RS && RS.lead ? ` +${RS.lead} min` : "";
   if (S.mode === "live" && SRC.live) { const lastObs = SRC.live.frames[SRC.live.nObs - 1].t, age = (Date.now() - lastObs) / 60000, el = $("#age");
-    const gen = DATA.generated ? ` · page built ${fmtHM.format(new Date(DATA.generated))}` : "";
-    el.textContent = age > 150 ? `Data is ${age > 2880 ? Math.round(age / 1440) + " days" : Math.round(age / 60) + " h"} old (radar ${fmtHM.format(new Date(lastObs))}); it refreshes hourly, or use Refresh now${gen}` :
-      `Radar ${fmtHM.format(new Date(lastObs))} (${Math.round(age)} min ago)${S.t > lastObs + 60e3 ? ", carried forward by the nowcast" : ""}${gen}`;
+    const gen = DATA.generated ? ` · built ${fmtHM.format(new Date(DATA.generated))}` : "";
+    el.textContent = age > 150 ? `Radar ${fmtHM.format(new Date(lastObs))} · ${age > 2880 ? Math.round(age / 1440) + " d" : Math.round(age / 60) + " h"} old · refreshes hourly${gen}` :
+      `Radar ${fmtHM.format(new Date(lastObs))} · ${Math.round(age)} min ago${S.t > lastObs + 60e3 ? " · nowcast" : ""}${gen}`;
     el.className = "age" + (age > 75 ? " stale" : ""); } else $("#age").textContent = "";
   const span = (ms) => ms >= 72 * 3600e3 ? Math.round(ms / 86400e3 * 10) / 10 + " d" : ms >= 3600e3 ? Math.round(ms / 3600e3 * 10) / 10 + " h" : Math.round(ms / 60e3) + " min";
   const liveChip = () => { const L = SRC.live, now = Date.now(), lastObs = L ? L.frames[L.nObs - 1].t : now, lastF = L ? L.frames[L.frames.length - 1].t : now;
@@ -3640,7 +3647,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
     const about = () => { $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""} GPU: ${GPU.name || "unknown"}, ${GPU.tex} textures, ${GPU.fvec} uniform vectors.${GPU.errs.length ? ` Shader problem: ${GPU.errs.join(" | ")}` : ""}`; };
     await setBathy(DATA.bathy); await yieldUI();
     if (DATA.lake) { await buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
-    buildMinimap(); await yieldUI();
+    mmFit(); buildMinimap(); await yieldUI();
     await setEarth(DATA.earth); await yieldUI();
     showHintOnce(); initRefresh(); await initImport();
     SRC.live = await decodeScene(DATA.scene);
