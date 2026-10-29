@@ -34,13 +34,13 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 #hudmin:hover { color: var(--fg); border-color: var(--line); }
 #hudmin svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s; }
 /* minimized: just the title, time and status chip */
-#hud.min { width: auto; } #hud.min .src, #hud.min .age, #hud.min #refreshbox, #hud.min .readouts, #hud.min .launches, #hud.min .hero, #hud.min .wxline { display: none !important; }
+#hud.min { width: auto; } #hud.min .src, #hud.min .age, #hud.min #refreshbox, #hud.min .readouts, #hud.min .launches, #hud.min .hero, #hud.min .wxline, #hud.min .cat, #hud.min .vs { display: none !important; }
 #hud.min #hudmin svg { transform: rotate(180deg); }
 .src { color: var(--muted); font-size: 11px; line-height: 1.35; opacity: .8; border-top: 1px solid var(--line); padding-top: 7px; }
 .timebox { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 #clock { font: 500 15px/1 var(--font-data); font-variant-numeric: tabular-nums; }
 .chip { font: 600 11px/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; padding: 4px 7px; border-radius: 3px; border: 1px solid currentColor; }
-.chip.live { color: var(--obs); } .chip.forecast { color: var(--fc); } .chip.history { color: var(--hist); } .chip.exp { color: var(--exp); }
+.chip.live { color: var(--obs); } .chip.forecast { color: var(--fc); } .chip.wn3 { color: #f06bd0; } .chip.history { color: var(--hist); } .chip.exp { color: var(--exp); }
 .readouts { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12px; margin: 0; }
 .readouts:empty { display: none; }
 /* conditions box: alert banners, the two big numbers (wind, waves), a one-line weather strip */
@@ -48,7 +48,8 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .alerts .al { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; align-items: baseline; padding: 5px 8px; border-radius: 4px; border-left: 3px solid var(--accent); background: rgba(240, 180, 76, .10); font-size: 12px; }
 .alerts .al.warn { border-color: var(--danger); background: rgba(242, 112, 90, .13); } .alerts .al.stmt { border-color: var(--muted); background: rgba(142, 162, 180, .08); }
 .alerts .al b { font-weight: 600; } .alerts .al span { color: var(--muted); font: 11px var(--font-data); text-align: right; white-space: nowrap; }
-#exp-lab { display: contents; } #exp-lab[hidden] { display: none; }
+#exp-lab, .xpanel { display: contents; } #exp-lab[hidden], .xpanel[hidden] { display: none; }
+#exp-tabs { grid-template-columns: repeat(4, 1fr); grid-auto-flow: row; }
 .upsets { display: grid; gap: 8px; }
 .upsets .strip { position: relative; height: 34px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: rgba(255, 255, 255, .03); }
 .upsets .strip i { position: absolute; top: 0; bottom: 14px; opacity: .85; } .upsets .strip i.glass { background: rgba(95, 201, 168, .22); }
@@ -66,6 +67,16 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .ups .tag { font: 10px var(--font-data); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 .ups .acts { grid-column: 1 / -1; display: flex; gap: 4px; margin-top: 3px; } .ups .acts button { padding: 2px 8px; font-size: 11px; min-height: 0; }
 .upsets .legend { display: flex; gap: 10px; font: 10px var(--font-data); color: var(--muted); } .upsets .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 3px; }
+/* the two concepts: air (green) and water (blue), each with its big number, its weather pills and its readouts */
+.cat { --cat: #90c841; display: grid; gap: 6px; padding: 8px 0 2px 10px; border-left: 3px solid var(--cat); margin-left: -2px; border-radius: 3px 0 0 3px; background: linear-gradient(90deg, rgba(144, 200, 65, .07), transparent 70%); }
+.cat.water { --cat: #05a0cb; background: linear-gradient(90deg, rgba(5, 160, 203, .09), transparent 70%); }
+.cathead { font: 700 11px var(--font-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--cat); }
+.cat .hero { grid-template-columns: 1fr; border-top: 0; padding-top: 0; } .cat .tile { background: rgba(255, 255, 255, .03); border-color: rgba(255, 255, 255, .06); }
+.cat .hero .arw path { fill: var(--cat); } .cat .readouts dt { color: var(--muted); } .cat .readouts { gap: 2px 12px; }
+.vs { display: grid; grid-template-columns: 96px 1fr; gap: 4px 10px; align-items: center; padding: 4px 0; font-size: 11.5px; }
+.vs:empty { display: none; } .vs svg { width: 96px; height: 96px; display: block; } .vs .row { display: grid; grid-template-columns: auto 1fr; gap: 0 6px; align-items: baseline; }
+.vs .row b { font: 600 10px var(--font-ui); letter-spacing: .1em; text-transform: uppercase; } .vs .row span { font: 11px var(--font-data); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vs .rel { grid-column: 1 / -1; color: var(--muted); font-size: 11px; line-height: 1.35; }
 .hero { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
 .hero:empty { display: none; }
 .hero .tile { min-width: 0; padding: 8px 10px 9px; border-radius: 6px; background: rgba(255, 255, 255, .035); border: 1px solid rgba(255, 255, 255, .05); }
@@ -114,7 +125,6 @@ button[aria-pressed="true"] { background: var(--accent); color: #1b1305; border-
 .modes button[data-mode="history"][aria-pressed="true"] { background: var(--hist); border-color: var(--hist); }
 .modes button[data-mode="exp"][aria-pressed="true"] { background: var(--exp); border-color: var(--exp); }
 .modes { grid-template-columns: repeat(2, 1fr); grid-auto-flow: row; }
-.modes button:nth-child(2), .modes button:nth-child(4) { border-right: 0; } .modes button:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
 .modes button[data-mode="import"][aria-pressed="true"] { background: #e6c35c; border-color: #e6c35c; }
 .chip.import { color: #e6c35c; }
 #imp-table table { border-collapse: collapse; width: 100%; } #imp-table td, #imp-table th { padding: 2px 4px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; } #imp-table th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--panel-solid); }
@@ -190,10 +200,10 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 .mmstat { position: absolute; left: 12px; top: 12px; font: 600 10.5px var(--font-data); padding: 2px 6px; border-radius: 3px; background: rgba(9,15,21,.78); color: var(--obs); border: 1px solid rgba(92,200,232,.4); }
 .mmstat.fc { color: var(--fc); border-color: rgba(184,146,245,.45); } .mmstat.exp { color: var(--exp); border-color: rgba(240,138,108,.45); } .mmstat.hist { color: var(--hist); border-color: rgba(127,211,154,.45); }
 .segs { position: relative; height: 4px; border-radius: 2px; background: rgba(220,230,238,.08); margin-top: -2px; }
-.segs i { position: absolute; top: 0; bottom: 0; border-radius: 2px; } .segs i.o { background: var(--obs); opacity: .75; } .segs i.f { background: var(--fc); } .segs i.f2 { background: var(--fc); opacity: .3; } .segs i.f3h { background: #8b7cf6; opacity: .45; } .segs i.f3 { background: #f06bd0; opacity: .4; }
+.segs i { position: absolute; top: 0; bottom: 0; border-radius: 2px; } .segs i.o { background: var(--obs); opacity: .75; } .segs i.f { background: var(--fc); } .segs i.f2 { background: var(--fc); opacity: .3; } .segs i.f3h { background: #8b7cf6; opacity: .45; } .segs i.f3 { background: #f06bd0; opacity: .4; } .segs i.p { background: var(--obs); opacity: .28; }
 .segs b { position: absolute; top: -4px; width: 2px; height: 12px; margin-left: -1px; background: var(--fg); border-radius: 1px; }
 .ticks.abs { display: block; position: relative; height: 14px; } .ticks.abs span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
-.ticks.abs span.l { transform: none; } .ticks.abs span.r { transform: translateX(-100%); } .ticks span.now { color: var(--fg); } .ticks span.fct { color: var(--fc); }
+.ticks.abs span.l { transform: none; } .ticks.abs span.r { transform: translateX(-100%); } .ticks span.now { color: var(--fg); } .ticks span.fct { color: var(--fc); } .ticks span.wn3 { color: #f06bd0; } .ticks span.past { color: var(--obs); opacity: .8; }
 /* beside the mini map (its right edge), above the "Go to a place" row; where the mini map is hidden, at the left edge */
 #legend { left: calc(var(--gut) + 172px + env(safe-area-inset-left, 0px)) !important; bottom: calc(var(--gut) + 128px + env(safe-area-inset-bottom, 0px)) !important; }
 @media (min-width: 761px) and (max-height: 700px) { #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; } }
@@ -239,10 +249,10 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
     <div class="age" id="age"></div>
     <div id="refreshbox" hidden style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button id="refreshbtn" style="padding:6px 10px;font-size:12px">Refresh now</button><span class="age" id="refreshmsg"></span></div>
     <div class="alerts" id="alerts" hidden></div>
-    <div class="hero" id="hero"></div>
-    <div class="wxline" id="wxline"></div>
+    <div class="cat air" id="cat-air"><div class="cathead">Air</div><div class="hero" id="hero-air"></div><div class="wxline" id="wx-air"></div><dl class="readouts" id="ro-air"></dl></div>
+    <div class="vs" id="vs" title="Air and water as two pushes: each arrow points the way that force travels, its length is its strength"></div>
+    <div class="cat water" id="cat-water"><div class="cathead">Water</div><div class="hero" id="hero-water"></div><div class="wxline" id="wx-water"></div><dl class="readouts" id="ro-water"></dl><div class="launches" id="launches" hidden></div></div>
     <dl class="readouts" id="readouts"></dl>
-    <div class="launches" id="launches" hidden></div>
     <div class="src" id="source">Loading…</div>
   </div>
   <button id="toggle" aria-expanded="true" aria-controls="controls">Settings</button>
@@ -288,16 +298,15 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
     <section>
       <h2>Conditions from</h2>
       <div class="seg modes" role="group" aria-label="Conditions source">
-        <button data-mode="live" aria-pressed="true">Live</button>
-        <button data-mode="forecast" aria-pressed="false">Forecast</button>
-        <button data-mode="history" aria-pressed="false">Historical</button>
+        <button data-mode="live" aria-pressed="true">Live &amp; forecast</button>
         <button data-mode="exp" aria-pressed="false">Experimental</button>
-        <button data-mode="import" aria-pressed="false" style="grid-column: 1 / span 2; border-top: 1px solid var(--line)">From a screenshot</button>
       </div>
       <p class="note" id="mode-note"></p>
     </section>
-    <section id="sec-history" hidden>
-      <h2>Historical</h2>
+    <section id="sec-exp" hidden>
+      <h2>Experimental</h2>
+      <div class="seg" role="group" aria-label="Experimental tab" id="exp-tabs"><button data-xtab="lab" aria-pressed="true">Weather lab</button><button data-xtab="upsets" aria-pressed="false" title="The weather that takes the glass away: wind runs, wave events, wind shifts, storms and water-level swings, past two days and the forecast">Upsets</button><button data-xtab="hist" aria-pressed="false" title="Archived radar, observations and lake temperature for a past time">Historical</button><button data-xtab="import" aria-pressed="false" title="Conditions read from a forecast app's screenshot">Screenshot</button></div>
+      <div id="exp-hist" class="xpanel" hidden>
       <select id="hist-pick" aria-label="Historical period"></select>
       <div id="hist-build" hidden>
         <div class="row"><label for="hist-start">Start (your time)</label></div><input type="datetime-local" id="hist-start">
@@ -306,17 +315,13 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
       </div>
       <label class="file"><input type="file" id="hist-file" accept=".json,application/json"><span>Load a history file (.json)</span></label>
       <p class="note" id="hist-note">Built from the NEXRAD archive, NDBC observations and NOAA satellite lake temperature. Any past time can be built with the History workflow or the deployed service (<code>/api/history?start=…</code>).</p>
-    </section>
-    <section id="sec-import" hidden>
-      <h2>Forecast screenshot</h2>
+      </div>
+      <div id="exp-import" class="xpanel" hidden>
       <label class="file" id="shot-label"><input type="file" id="shot-file" accept="image/png,image/jpeg,image/webp"><span>Import a screenshot (Windy, Surfline, NWS…)</span></label>
       <select id="imp-pick" aria-label="Imported forecast"></select>
       <p class="note" id="imp-note">Wind, gusts and waves read from a forecast app's screenshot drive the world: the waves enter SWAN as the offshore condition and are carried to the shore over the real lake bottom.</p>
       <div id="imp-table" style="overflow-x:auto;max-height:180px;font:11px var(--font-data)"></div>
-    </section>
-    <section id="sec-exp" hidden>
-      <h2>Experimental</h2>
-      <div class="seg" role="group" aria-label="Experimental tab" id="exp-tabs"><button data-xtab="lab" aria-pressed="true">Weather lab</button><button data-xtab="upsets" aria-pressed="false" title="The weather that takes the glass away: wind runs, wave events, wind shifts, storms and water-level swings, past two days and the forecast">LakeView Upsets</button></div>
+      </div>
       <div id="exp-upsets" class="upsets" hidden>
         <p class="note" id="ups-now"></p>
         <div id="ups-strip" class="strip" aria-label="Upsets timeline"></div>
@@ -391,7 +396,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
   <div id="attr"></div>
   <div id="timeline" class="panel">
     <button id="play" aria-label="Play"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="play-icon" d="M3 1.5v13l11-6.5z"/></svg></button>
-    <div class="track"><input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Time"><div class="segs" id="segs" aria-hidden="true"></div><div class="ticks" id="ticks"></div></div>
+    <div class="track"><input type="range" id="scrub" min="0" max="100000" step="1" value="100000" aria-label="Time"><div class="segs" id="segs" aria-hidden="true"></div><div class="ticks" id="ticks"></div></div>
     <div class="speed"><label for="spd">Speed</label><select id="spd"><option value="0.4">Slow</option><option value="1" selected>Normal</option><option value="2.5">Fast</option></select></div>
   </div>
   <div id="msg" class="panel" hidden></div>
@@ -548,7 +553,7 @@ const azElDir = (o, v) => { const a = o.az * Math.PI / 180, e = o.el * Math.PI /
 // ---------------------------------------------------------------- data
 const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), learn: parseJSON("learn-data"), levels: parseJSON("levels-data"), earth: parseJSON("earth-data"), wn3: parseJSON("wn3-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
 { const h = parseJSON("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
-const S = { mode: "live", t: 0, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, goes: true, view: "overview", histIdx: 0,
+const S = { mode: "live", t: Date.now(), follow: true, playing: false, speed: 1, ov: "natural", exag: 1, quality: 1, bolts: !RM, goes: true, view: "overview", histIdx: 0,
   x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, hour: 14, seed: 7 } };
 try { const q = localStorage.getItem("lakeworld-q"); if (q !== null) S.quality = +q; } catch (e) {}
 
@@ -2440,12 +2445,20 @@ function stationAt(stations, field, tMs, xk, yk) {
 }
 function range() {   // [t0, t1] ms for the current mode
   const L = SRC.live, now = Date.now();
-  if (S.mode === "live") return L ? [L.frames[0].t, Math.max(L.frames[L.frames.length - 1].t, now)] : [now - 1800e3, now];
-  if (S.mode === "forecast") return forecastRange();
+  // live: one timeline, 12 h of observations back, the radar scans and nowcast, the NWS 48 h, then WeatherNext 3 as far as it goes
+  if (S.mode === "live") { const t0 = Math.min(L ? L.frames[0].t : now, now - 12 * 3600e3); return [t0, Math.max(forecastRange()[1], now + 3600e3)]; }
   if (S.mode === "history") { const H = SRC.hist[S.histIdx]; if (!H) return [now - 3600e3, now]; const w = H.raw.window; return [new Date(w.start).getTime() - 10 * 60e3, new Date(w.end).getTime() + 5 * 60e3]; }
   if (S.mode === "import") { const I = IMP.list[IMP.idx]; if (!I) return [now - 3600e3, now]; return [I.rows[0].t, Math.max(I.rows[I.rows.length - 1].t, I.rows[0].t + 3600e3)]; }
   const base = new Date(); base.setHours(0, 0, 0, 0); const t0 = base.getTime() + S.x.hour * 3600e3; return [t0, t0 + 120 * 60e3];
 }
+// the slider is piecewise: the past 12 h and the radar window take the first 30%, the NWS 48 h the next 40%, WeatherNext 3 the rest
+const SCRUB_N = 100000;
+function tlKnots() { const [t0, t1] = range(); const L = SRC.live; if (S.mode !== "live" || !L || !L.frames.length) return [[t0, 0], [t1, 1]];
+  const lastF = L.frames[L.frames.length - 1].t, se = Math.min(Math.max(supEnd(supSpots()[0]), lastF + 3600e3), t1), k = [[t0, 0], [Math.max(lastF, t0 + 1), 0.3]];
+  if (se < t1 - 3600e3) k.push([se, 0.7]); k.push([t1, 1]); return k; }
+function tlX(t) { const k = tlKnots(); if (t <= k[0][0]) return 0; for (let i = 1; i < k.length; i++) if (t <= k[i][0]) return k[i - 1][1] + (k[i][1] - k[i - 1][1]) * (t - k[i - 1][0]) / Math.max(k[i][0] - k[i - 1][0], 1); return 1; }
+function tlT(x) { const k = tlKnots(); if (x <= 0) return k[0][0]; for (let i = 1; i < k.length; i++) if (x <= k[i][1]) return k[i - 1][0] + (k[i][0] - k[i - 1][0]) * (x - k[i - 1][1]) / Math.max(k[i][1] - k[i - 1][1], 1e-9); return k[k.length - 1][0]; }
+function inRadar(t) { const L = SRC.live; return !!L && L.frames.length > 0 && t >= L.frames[0].t - 30 * 60e3 && t <= L.frames[L.frames.length - 1].t + 15 * 60e3; }
 function radarState(tMs) {   // which frames to show, blend and motion shift
   if (S.mode === "import") { const r = impRow(tMs); if (!r || !(r.precip_in > 0.005)) return null; const [t0] = range(), tm = (tMs - t0) / 60000, i = Math.floor(tm / 5) * 5, f = (tm - i) / 5;
     const p = { ...S.x, type: r.lightning ? "thunder" : r.precip_in > 0.08 ? "showers" : "stratiform", int: clamp(0.5 + r.precip_in * 4, 0.5, 1.5), cov: 1, wspd: r.wind_mph / MPH, wdir: r.wind_from_deg, mspd: 35, mdir: (r.wind_from_deg + 180) % 360 }; delete p.hour;
@@ -2454,7 +2467,7 @@ function radarState(tMs) {   // which frames to show, blend and motion shift
     const p = { ...S.x }; delete p.hour; return { A: synthFrame({ ...p }, i), B: synthFrame({ ...p }, i + 5), f, shiftA: [0, 0], shiftB: [0, 0], grid: XG, label: "Experimental storm" }; }
   const src = S.mode === "history" ? (SRC.hist[S.histIdx] && SRC.hist[S.histIdx].scene) : SRC.live; if (!src) return null;
   // live: the latest scans, then the radar nowcast carries the picture forward to the present minute
-  const F = S.mode === "forecast" || S.mode === "live" ? src.frames : src.frames.slice(0, Math.max(src.nObs, 1));
+  const F = S.mode === "live" ? src.frames : src.frames.slice(0, Math.max(src.nObs, 1));
   if (!F.length) return null; if (tMs > F[F.length - 1].t + 15 * 60e3 || tMs < F[0].t - 30 * 60e3) return null;
   let i = 0; while (i < F.length - 2 && F[i + 1].t <= tMs) i++; const j = Math.min(i + 1, F.length - 1), f = j > i ? clamp((tMs - F[i].t) / (F[j].t - F[i].t), 0, 1) : 0;
   const mot = src.meta.motion_km_per_min || [0, 0], dtm = (F[j].t - F[i].t) / 60000;
@@ -2496,7 +2509,7 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
     else if (c.systems[0]) c.off = { hs: c.systems[0].hs, tp: c.systems[0].tp, dir: c.systems[0].dir };
     withChop(c.systems, c.wind, c.dir);
   } else {
-    const sp = nearestSpot(xk, yk), ext = S.mode === "forecast" && tMs > supEnd(sp) + 30 * 60e3 ? wn3Hour(tMs) : null, h = ext ? null : supHour(sp, tMs);
+    const sp = nearestSpot(xk, yk), ext = S.mode === "live" && tMs > supEnd(sp) + 30 * 60e3 ? wn3Hour(tMs) : null, h = ext ? null : supHour(sp, tMs);
     if (ext) { Object.assign(c, { wind: ext.wind, dir: ext.dir, gust: ext.gust, airC: ext.air_c, sky: ext.sky, pop: ext.pop, ext });
       const w = cem(ext.wind, fetchAt(ext.dir), ext.dur); if (w.hm0 > 0.01) { c.systems = [{ hs: w.hm0, tp: w.tp, dir: ext.dir, spread: 28 }]; c.off = { hs: w.hm0, tp: w.tp, dir: ext.dir }; }
       withChop(c.systems, ext.wind, ext.dir); c.spot = sp; c.src.push(`WeatherNext 3 ${ext.long ? "15-day" : "hourly"} run · waves grown from its wind over ${ext.dur} h`); }
@@ -2505,7 +2518,13 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
       else if (h.hs_offshore > 0.01) { c.systems = [{ hs: h.hs_offshore, tp: h.tp, dir: h.wave_dir, spread: 28 }]; c.dRef = 1000; }
       if (h.hs_offshore > 0.01) c.off = { hs: h.hs_offshore, tp: h.tp, dir: h.wave_dir };
       withChop(c.systems, h.wind, h.dir); c.spot = sp; c.hour = h; c.src.push(`forecast model · ${sp.name}${h.raw ? ` · learned ×${h.factor.toFixed(2)}` : ""}`); }
-    if (S.mode === "live" && DATA.lake && DATA.lake.stations) { const wd = stationAt(DATA.lake.stations, "wspd", tMs, xk, yk); if (wd) { c.wind = wd.h.wspd; c.dir = wd.h.wdir ?? c.dir; c.gust = wd.h.gst ?? c.gust; c.src.unshift(`wind ${wd.st.id}`); } }
+    if (S.mode === "live" && DATA.lake && DATA.lake.stations) { const wd = stationAt(DATA.lake.stations, "wspd", tMs, xk, yk); if (wd) { c.wind = wd.h.wspd; c.dir = wd.h.wdir ?? c.dir; c.gust = wd.h.gst ?? c.gust; c.src.unshift(`wind ${wd.st.id}`); }
+      // before the forecast's first hour (the past 12 h of the timeline): the waves a buoy measured, like a history period
+      const supStart = sp && sp.hourly.length ? new Date(sp.hourly[0].t).getTime() : Infinity;
+      if (tMs < supStart - 20 * 60e3) { const wv = stationAt(DATA.lake.stations, "wvht", tMs, xk, yk);
+        if (wv && wv.h.wvht != null) { const tp = wv.h.dpd || (c.systems[0] ? Math.max(c.systems[0].tp, 2.5) : 3), dir = wv.h.mwd != null ? wv.h.mwd : c.dir;
+          c.systems = wv.h.wvht > 0.01 ? [{ hs: wv.h.wvht, tp, dir, spread: 25 }] : []; if (wv.h.wvht > 0.01) c.off = { hs: wv.h.wvht, tp, dir, src: `buoy ${wv.st.id}` };
+          withChop(c.systems, c.wind, c.dir); c.src.push(`waves ${wv.st.id}`); } } }
     // clouds right now from GOES-19 (within 45 min), instead of the forecast's sky cover
     const G = DATA.earth && DATA.earth.goes;
     if (S.mode === "live" && G && G.sky_local_pct != null && Math.abs(new Date(G.time).getTime() - tMs) < 45 * 60e3) { c.sky = G.sky_local_pct; c.src.push("clouds GOES-19"); }
@@ -2544,8 +2563,8 @@ let LAUNCH_KEY = "";
 function renderLaunches() {
   const el = $("#launches"); if (!supSpots().length && !SWAN.domains.length) { el.hidden = true; return; }
   const key = `${S.mode}|${Math.round(S.t / 600e3)}|${FW.case || ""}|${SWAN.domains.length}`; if (key === LAUNCH_KEY) return; LAUNCH_KEY = key;
-  const ahead = S.mode === "live" || S.mode === "forecast" ? 12 : 0, sp0 = supSpots()[0], hl = sp0 && sp0.hourly.length ? sp0.hourly[sp0.hourly.length - 1].t : null;
-  const t1 = S.mode === "forecast" ? range()[1] : hl ? new Date(hl).getTime() : range()[1];   // the forecast model's last hour (the whole extended range in Forecast)
+  const ahead = S.mode === "live" ? 12 : 0, sp0 = supSpots()[0], hl = sp0 && sp0.hourly.length ? sp0.hourly[sp0.hourly.length - 1].t : null;
+  const t1 = S.mode === "live" ? range()[1] : hl ? new Date(hl).getTime() : range()[1];   // the forecast model's last hour (the whole extended range in Forecast)
   let h = `<b>SUP launches · chop</b>`;
   for (const [name, lat, lon] of LAUNCHES) { const [x, y] = ll(lat, lon), r = chopRating(conditions(S.t, x, y, true));
     let strip = "";
@@ -2606,7 +2625,7 @@ function goCam(name, instant) {     // track views (optional)
       $("#track-note").textContent = `${tr.name}: no recorded weather for this paddle's time in the page yet, so the replay shows ${MODE_LABEL[S.mode] || S.mode} conditions. Ask Claude to add a history period for it.`; }
     setPlaying(true); }
 }
-const MODE_LABEL = { live: "live", forecast: "forecast", history: "historical", exp: "experimental", import: "screenshot" };
+const MODE_LABEL = { live: "live", history: "historical", exp: "experimental", import: "screenshot" };
 // the track position: on the page's clock when its weather period is loaded, else on the replay's own clock
 const trackTime = () => S.rideOwn ? S.rideT : S.t;
 function setExag(v) { S.exag = v; U.uExag.value = v; $("#exag").value = v; $("#exag-o").textContent = `×${v}`; }
@@ -2751,7 +2770,7 @@ const MMR = { view: "auto", x0: -62, x1: 58, y0: -86, y1: 92, base: null, rc: nu
 const DBZ_LUT = (() => { const t = new Uint8ClampedArray(256 * 4); for (let b = 0; b < 256; b++) { const dbz = b / 3 - 10; let c = null; for (const [lv, col] of DBZ_STOPS) if (dbz >= lv) c = col;   // the NWS colours, as the 3-D radar view
   if (c) { const k = parseInt(c.slice(1), 16); t.set([k >> 16, (k >> 8) & 255, k & 255, dbz < 15 ? 150 : 225], b * 4); } } return t; })();
 function mmRadarOn() { if (MMR.view === "local") return false; if (MMR.view === "radar") return true;
-  return S.mode === "live" || S.mode === "forecast" || S.mode === "history" || (S.mode === "exp" && S.x.type !== "clear" && S.x.type !== "cumulus"); }
+  return S.mode === "live" || S.mode === "history" || (S.mode === "exp" && S.x.type !== "clear" && S.x.type !== "cumulus"); }
 const mmRXY = (x, y) => { const W = MM.el.width, H = MM.el.height; return [(x - MMR.x0) / (MMR.x1 - MMR.x0) * W, (MMR.y1 - y) / (MMR.y1 - MMR.y0) * H]; };
 function mmRadarBase() { const W = MM.el.width, H = MM.el.height, c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d"), img = g.createImageData(W, H);
   // the lake from the satellite temperature grid's water cells (~1.4 km, the whole south basin); the rough outline outside it
@@ -2811,10 +2830,10 @@ function drawRadarMap() { const W = MM.el.width, H = MM.el.height, g = MM.el.get
   const v = viewState(), [qx, qy] = mmRXY(camera.position.x, -camera.position.z); g.fillStyle = "#f0b44c"; g.strokeStyle = "#1b1305"; g.lineWidth = 2; g.beginPath(); g.arc(clamp(qx, 6, W - 6), clamp(qy, 6, H - 6), 6, 0, 7); g.fill(); g.stroke();
   // status chip and caption
   const st = $("#mmstat"), rs = RS; st.hidden = false;
-  if (!rs) { st.className = "mmstat"; st.textContent = S.mode === "forecast" ? "Beyond the radar forecast" : "No radar for this time"; }
+  if (!rs) { st.className = "mmstat"; st.textContent = S.mode === "live" && SRC.live && S.t > SRC.live.frames[SRC.live.frames.length - 1].t ? "Beyond the radar nowcast" : S.mode === "live" ? "Before the radar window" : "No radar for this time"; }
   else if (S.mode === "exp") { st.className = "mmstat exp"; st.textContent = "Your storm"; }
   else if (S.mode === "history") { st.className = "mmstat hist"; st.textContent = `Radar ${fmtHM.format(new Date(rs.f < 0.5 ? rs.A.t : rs.B.t))}`; }
-  else if (rs.lead > 0) { st.className = "mmstat fc"; st.textContent = `Forecast +${rs.lead} min`; }
+  else if (rs.lead > 0) { st.className = "mmstat fc"; st.textContent = `Nowcast +${rs.lead} min`; }
   else { st.className = "mmstat"; st.textContent = `Radar ${fmtHM.format(new Date(rs.f < 0.5 ? rs.A.t : rs.B.t))}`; }
   $("#mmscale").textContent = T ? `${T.dbz} dBZ → ${compass(Math.atan2(T.m[0], T.m[1]) * 180 / Math.PI)} ${mph(Math.hypot(T.m[0], T.m[1]) * 1000 / 60)} mph` : `${((MMR.x1 - MMR.x0) * 0.621).toFixed(0)} mi across`;
 }
@@ -2881,8 +2900,8 @@ window.addEventListener("resize", resize);
 
 // ---------------------------------------------------------------- UI
 const MODE_NOTE = {
-  live: "Right now, minute by minute: the latest KLOT radar scans carried forward by the nowcast, the nearest lakefront wind station, waves for this hour, and satellite lake temperature. The page refreshes hourly; Refresh now gets new data on demand.",
-  forecast: "Radar extrapolated for 2 hours, then the 48-hour forecast: NWS wind and cloud cover, waves from the wind-wave model. Past 48 hours the timeline runs on Google DeepMind WeatherNext 3 (experimental; the hourly run in violet, its 6-hourly 15-day run in magenta): ensemble-mean wind, with waves grown from that wind over the fetch here. Beyond 2 hours clouds come from forecast sky cover; rain isn't placed.",
+  live: "One timeline. Pale blue: the past 12 h as the buoys and shore stations measured it. Blue: the latest KLOT radar scans; violet: the radar nowcast, then the 48-hour NWS forecast (wind, cloud cover, waves from the wind-wave model). Magenta: Google DeepMind WeatherNext 3 (experimental) as far as its 15-day run goes, ensemble-mean wind with waves grown from it over the fetch here. Drag or play to move through time; Back to now returns to the live minute. The page refreshes hourly.",
+  upsets: "The weather that takes the glass away, rated red / yellow / green: wind runs, leftover waves, wind shifts, storms and water-level swings over the past two days and the forecast. A card's buttons open the timeline at that event or set the weather lab to its wind.",
   history: "Archived KLOT radar, NDBC observations and satellite lake temperature for a past time.",
   import: "Conditions read from a forecast screenshot, hour by hour. Its waves are treated as the offshore sea and transformed to the shore by SWAN over the real lake bottom; local chop grows from its wind.",
   exp: "Set the weather yourself. Storm structure follows the same profiles as the demo storms; waves grow from your wind over the real fetch.",
@@ -2893,13 +2912,15 @@ function sessionTrack() { const H = S.mode === "history" ? SRC.hist[S.histIdx] :
   else if (!ss && DATA.track && DATA.track.session) setTrack(null);
   const note = $("#hist-note"); if (note && !note.dataset.def) note.dataset.def = note.textContent; if (note && !(ss && ss.observed)) note.textContent = note.dataset.def;
   if (note && ss && ss.observed) note.textContent = `On the water: ${ss.observed.rating}${ss.observed.quality ? ` (${ss.observed.quality})` : ""}. ${ss.observed.notes || ""}`; }
-function setMode(m) { S.mode = m; document.querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
-  $("#sec-history").hidden = m !== "history"; $("#sec-exp").hidden = !(m === "exp" || S.xtab === "upsets"); $("#sec-import").hidden = m !== "import"; $("#mode-note").textContent = MODE_NOTE[m];
+function setMode(m) { S.mode = m; const expish = m !== "live"; if (expish) S.xmode = m;
+  document.querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === (expish ? "exp" : "live"))));
+  if (m === "history") S.xtab = "hist"; else if (m === "import") S.xtab = "import"; else if (m === "exp") S.xtab = "lab";
+  $("#sec-exp").hidden = !(expish || S.xtab === "upsets"); syncXTab(); $("#mode-note").textContent = MODE_NOTE[m];
   const chip = $("#status"); chip.className = "chip " + m; const [t0, t1] = range();
   S.follow = m === "live"; $("#nowbtn").hidden = true; sessionTrack();
-  S.t = m === "import" ? clamp(Date.now(), t0, t1) : m === "live" ? Date.now() : m === "forecast" ? t0 : m === "history" ? (DATA.track && DATA.track.start ? new Date(DATA.track.start).getTime() : t0 + 10 * 60e3) : t0;
+  S.t = m === "import" ? clamp(Date.now(), t0, t1) : m === "live" ? Date.now() : m === "history" ? (DATA.track && DATA.track.start ? new Date(DATA.track.start).getTime() : t0 + 10 * 60e3) : t0;
   buildTicks(); WAVES.key = null; }
-document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode));
+document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode === "exp" ? (S.xmode || "exp") : "live"));
 document.querySelectorAll("[data-ov]").forEach((b) => b.onclick = () => { S.ov = b.dataset.ov; document.querySelectorAll("[data-ov]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.ov === S.ov)));
   U.uMode.value = S.ov === "radar" ? 1 : 0; U.uTempOn.value = S.ov === "temp" ? 1 : 0; U.uDepthOn.value = S.ov === "depth" ? 1 : 0; U.uHsOn.value = S.ov === "hs" ? 1 : 0; U.uChopOn.value = S.ov === "chop" ? 1 : 0; U.uFlowOn.value = S.ov === "flow" ? 1 : 0; setSat(); setSpots(); renderLegend(); });
 document.querySelectorAll("[data-spots]").forEach((b) => b.onclick = () => { S.spotsNow = b.dataset.spots === "now"; document.querySelectorAll("[data-spots]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); setSpots(); renderLegend(); });
@@ -2994,10 +3015,14 @@ function upsetEvents(rows) {
     for (const g of kept) { const t0 = (L.t0 + g.i * L.step_s) * 1000; ev.push({ kind: "level", level: g.d >= 25 ? "red" : "yellow", t0, t1: t0 + 2 * HOUR, hours: 2, title: `Water level swing ${g.sign >= 0 ? "+" : "−"}${Math.round(g.d / 2.54)} in`, detail: "In two hours or less, Calumet Harbor gauge", why: "A seiche or surge: the lake sloshes, currents run in the harbour mouths and the shoreline breathes.", src: "NOAA CO-OPS" }); } }
   return ev.sort((a, b) => a.t0 - b.t0);
 }
-S.xtab = "lab";
-function setXTab(tab) { S.xtab = tab; document.querySelectorAll("[data-xtab]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.xtab === tab)));
-  $("#exp-lab").hidden = tab !== "lab"; $("#exp-upsets").hidden = tab !== "upsets"; if (tab === "upsets") renderUpsets(); }
-document.querySelectorAll("[data-xtab]").forEach((b) => b.onclick = () => { setXTab(b.dataset.xtab); if (b.dataset.xtab === "lab" && S.mode !== "exp") setMode("exp"); });
+S.xtab = "lab"; S.xmode = "exp";
+// the Experimental section's tabs: the weather lab, Upsets, past periods and screenshots; three of them are modes of their own
+function syncXTab() { const tab = S.xtab; document.querySelectorAll("[data-xtab]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.xtab === tab)));
+  $("#exp-lab").hidden = tab !== "lab"; $("#exp-upsets").hidden = tab !== "upsets"; $("#exp-hist").hidden = tab !== "hist"; $("#exp-import").hidden = tab !== "import"; }
+function setXTab(tab) { S.xtab = tab; syncXTab();
+  const want = { lab: "exp", hist: "history", import: "import" }[tab]; if (want && S.mode !== want) setMode(want);
+  if (tab === "upsets") { renderUpsets(); $("#mode-note").textContent = MODE_NOTE.upsets; } }
+document.querySelectorAll("[data-xtab]").forEach((b) => b.onclick = () => setXTab(b.dataset.xtab));
 function renderUpsets() {
   const rows = upsetSeries(), ev = upsetEvents(rows), now = Date.now(), fmtWd = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" }), fmtH = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" });
   const a = now - 48 * HOUR, b = Math.max(now + 48 * HOUR, rows.length ? rows[rows.length - 1].t + HOUR : 0), X = (t) => `${(clamp((t - a) / (b - a), 0, 1) * 100).toFixed(2)}%`;
@@ -3014,18 +3039,18 @@ function renderUpsets() {
   $("#ups-strip").innerHTML = strip;
   const cur = rows.reduce((m, r) => Math.abs(r.t + HOUR / 2 - now) < Math.abs(m.t + HOUR / 2 - now) ? r : m, rows[0] || { t: 0 }), ahead = ev.filter((e) => e.t1 > now), worst = ["red", "yellow", "green"].find((l) => ahead.some((e) => e.level === l));
   $("#ups-now").innerHTML = rows.length ? `<b>Now:</b> ${cur.wind != null ? `${mph(cur.wind)} mph ${compass(cur.dir)}` : "no wind reading"}${cur.hs != null ? ` · ${ft(cur.hs)} ft` : ""} — ${glass(cur) ? "glass" : "not glass"}. ${ahead.length ? `${ahead.length} upset${ahead.length > 1 ? "s" : ""} now or ahead, worst <b style="color:${UPS_C[worst]}">${worst}</b>.` : "Nothing in the way of glass in the forecast."}` : "No wind or wave series on this page.";
-  const [f0, f1] = forecastRange();
+  const [f0, f1] = [Date.now() - 12 * HOUR, forecastRange()[1]];
   const rel = (e) => e.t0 <= now && e.t1 > now ? "now" : e.t1 <= now ? `ended ${Math.round((now - e.t1) / HOUR)} h ago` : e.t0 - now < 36 * HOUR ? `in ${Math.max(1, Math.round((e.t0 - now) / HOUR))} h` : `in ${Math.round((e.t0 - now) / HOUR / 24)} d`;
   $("#ups-list").innerHTML = ev.length ? ev.map((e, i) => `<div class="ups ${e.level}"><b>${e.title}</b><span class="tag">${rel(e)}</span>
     <span class="when">${fmtDH.format(e.t0)} → ${fmtDH.format(e.t1)}${e.hours > 1 ? ` · ${e.hours} h` : ""} · ${e.src}</span>
     <span class="why">${e.detail}${e.why ? `. ${e.why}` : ""}</span>
-    <span class="acts">${e.t1 > f0 && e.t0 < f1 ? `<button data-ups-fc="${i}" title="Open the forecast at the start of this event">Show in forecast</button>` : ""}${e.kind === "wind" ? `<button data-ups-lab="${i}" title="Set the weather lab to this wind">Recreate in the lab</button>` : ""}</span></div>`).join("")
+    <span class="acts">${e.t1 > f0 && e.t0 < f1 ? `<button data-ups-fc="${i}" title="Open the timeline at the start of this event">Show on the timeline</button>` : ""}${e.kind === "wind" ? `<button data-ups-lab="${i}" title="Set the weather lab to this wind">Recreate in the lab</button>` : ""}</span></div>`).join("")
     : `<p class="note">No upsets found: light wind and small waves through the series.</p>`;
   const used = Object.keys(UPS_SRC).filter((k) => rows.some((r) => srcKey(r) === k));
   $("#ups-note").innerHTML = `<span class="legend"><span><i style="background:${UPS_C.red}"></i>red</span><span><i style="background:${UPS_C.yellow}"></i>yellow</span><span><i style="background:${UPS_C.green}"></i>green</span><span><i style="background:rgba(95,201,168,.35)"></i>glass hours</span></span>
     <span class="legend" title="The band along the top of the strip: where each hour's wind comes from">${used.map((k) => `<span><i style="background:${UPS_SRC[k][0]};height:4px;vertical-align:2px"></i>${UPS_SRC[k][1]}</span>`).join("")}</span>
     Colour is how hard the event works against glass; the band along the top says where each hour comes from. Past two days from the Wilmette buoy (Dever Crib when the buoy is silent), then the NWS hourly forecast behind the SUP outlook${rows.some((r) => r.src === "wn3") ? `, then the WeatherNext 3 ensemble mean${seam ? ` (${rows.some((r) => r.src === "wn3" && !r.long) ? `the hourly run, then from ${fmtDH.format(seam.t)} ` : `its 6-hourly 15-day run from ${fmtDH.format(seam.t)}, `}${rows.some((r) => r.src === "wn3" && !r.long) ? "the 6-hourly 15-day run, " : ""}marked by the dotted line)` : ""} to ${fmtWd.format(rows[rows.length - 1].t)} ${new Date(rows[rows.length - 1].t).toLocaleDateString("en-US", { timeZone: TZ, month: "short", day: "numeric" })} (beyond ${UPS_SURE_D} days, treat it as a trend)` : ""}; water levels from the Calumet Harbor gauge.`;
-  document.querySelectorAll("[data-ups-fc]").forEach((btn) => btn.onclick = () => { const e = ev[+btn.dataset.upsFc]; setMode("forecast"); const [t0, t1] = range(); S.t = clamp(e.t0, t0, t1); buildTicks(); WAVES.key = null; });
+  document.querySelectorAll("[data-ups-fc]").forEach((btn) => btn.onclick = () => { const e = ev[+btn.dataset.upsFc]; if (S.mode !== "live") setMode("live"); S.follow = false; $("#nowbtn").hidden = false; setPlaying(false); const [t0, t1] = range(); S.t = clamp(e.t0, t0, t1); buildTicks(); WAVES.key = null; });
   document.querySelectorAll("[data-ups-lab]").forEach((btn) => btn.onclick = () => { const e = ev[+btn.dataset.upsLab];
     const set = { wspd: clamp(Math.round(e.peak * 2) / 2, 0, 25), wdir: Math.round(e.dir / 5) * 5 % 360, dur: clamp(e.hours, 1, 24) };
     for (const k of Object.keys(set)) { S.x[k] = set[k]; const el = $(`#x-${k}`); if (el) { el.value = set[k]; $(`#x-${k}-o`).textContent = XFMT[k](set[k]); } }
@@ -3033,8 +3058,8 @@ function renderUpsets() {
 }
 const ICON_PLAY = "M3 1.5v13l11-6.5z", ICON_PAUSE = "M3 1.5h3.5v13H3zM9.5 1.5H13v13H9.5z";
 function setPlaying(p) { S.playing = p; $("#play-icon").setAttribute("d", p ? ICON_PAUSE : ICON_PLAY); $("#play").setAttribute("aria-label", p ? "Pause" : "Play"); }
-$("#play").onclick = () => setPlaying(!S.playing);
-$("#scrub").oninput = (e) => { const [t0, t1] = range(); S.t = t0 + (t1 - t0) * (+e.target.value / 1000); setPlaying(false); if (S.mode === "live") { S.follow = false; $("#nowbtn").hidden = false; } };
+$("#play").onclick = () => { if (!S.playing && S.mode === "live" && S.follow) { S.follow = false; $("#nowbtn").hidden = false; } setPlaying(!S.playing); };
+$("#scrub").oninput = (e) => { S.t = tlT(+e.target.value / SCRUB_N); setPlaying(false); if (S.mode === "live") { S.follow = false; $("#nowbtn").hidden = false; } };
 $("#nowbtn").onclick = () => { S.follow = true; $("#nowbtn").hidden = true; };
 $("#showtrack").onchange = (e) => { S.showTrack = e.target.checked; if (S.ov === "spots") { SPOTS.built = ""; buildConfirmed(); } };
 $("#buoys").checked = BUOY.on; $("#buoys").onchange = (e) => { BUOY.on = e.target.checked; try { localStorage.setItem("lakelocal-buoys", BUOY.on ? "1" : "0"); } catch (err) {} };
@@ -3065,22 +3090,24 @@ $("#hist-go").onclick = async () => {
 // timeline: what's observed and what's forecast. Live: the last hour or so of radar scans (blue), then the radar nowcast carried
 // 2 h past the latest scan (purple), with now marked. Forecast: the radar's 2 h (purple), then the NWS-driven forecast (faint).
 function buildTicks() { const [t0, t1] = range(), tk = $("#ticks"), sg = $("#segs"), span = Math.max(t1 - t0, 1), f = span > 6 * 3600e3 ? fmtDH : fmtHM;
-  tk.innerHTML = ""; sg.innerHTML = ""; tk.classList.remove("abs"); const pc = (t) => clamp((t - t0) / span * 100, 0, 100);
+  tk.innerHTML = ""; sg.innerHTML = ""; tk.classList.remove("abs"); const pc = (t) => clamp(tlX(t) * 100, 0, 100);
   const seg = (a, b, cls) => { if (b <= a) return; const i = document.createElement("i"); i.className = cls; i.style.left = `${pc(a)}%`; i.style.width = `${pc(b) - pc(a)}%`; sg.appendChild(i); };
   const tick = (t, txt, cls) => { const s = document.createElement("span"); s.textContent = txt; const x = pc(t); s.style.left = `${x}%`; s.className = (cls || "") + (x < 8 ? " l" : x > 92 ? " r" : ""); tk.appendChild(s); return x; };
   const L = SRC.live, H = S.mode === "history" ? SRC.hist[S.histIdx] : null;
-  if (S.mode === "live" && L && L.frames.length) { const lastObs = L.frames[L.nObs - 1].t, lastF = L.frames[L.frames.length - 1].t, lead = Math.round((lastF - lastObs) / 60000);
-    tk.classList.add("abs"); seg(t0, lastObs, "o"); seg(lastObs, lastF, "f");
+  if (S.mode === "live" && L && L.frames.length) { const f0 = L.frames[0].t, lastObs = L.frames[L.nObs - 1].t, lastF = L.frames[L.frames.length - 1].t, lead = Math.round((lastF - lastObs) / 60000);
+    const se = Math.min(Math.max(supEnd(supSpots()[0]), lastF), t1), lf = DATA.wn3 && DATA.wn3.long_from ? Date.parse(DATA.wn3.long_from) : se;
+    // pale: the observed past; blue: radar scans; violet: nowcast then the NWS 48 h; magenta: WeatherNext 3 (hourly run, then the 15-day run)
+    tk.classList.add("abs"); seg(t0, f0, "p"); seg(f0, lastObs, "o"); seg(lastObs, lastF, "f"); seg(lastF, se, "f2"); seg(se, clamp(lf, se, t1), "f3h"); seg(Math.max(se, Math.min(lf, t1)), t1, "f3");
     const now = Date.now(); if (now > t0 && now < t1) { const b = document.createElement("b"); b.id = "segnow"; b.style.left = `${pc(now)}%`; sg.appendChild(b); }
-    const xs = [tick(t0, fmtHM.format(new Date(t0)))];
-    const xL = pc(lastObs); if (xL - xs[0] > 16) xs.push(tick(lastObs, `Latest scan ${fmtHM.format(new Date(lastObs))}`, "now"));
-    if (lead > 0 && pc(lastF) - xs[xs.length - 1] > 16) tick(lastF, `+${lead >= 90 ? Math.round(lead / 60) + " h" : lead + " min"} ${fmtHM.format(new Date(lastF))}`, "fct");
+    const xs = [tick(t0, `−12 h ${fmtHM.format(new Date(t0))}`, "past")], room = (t) => pc(t) - xs[xs.length - 1] > 11;
+    if (room(lastObs)) xs.push(tick(lastObs, `Latest scan ${fmtHM.format(new Date(lastObs))}`, "now"));
+    if (lead > 0 && room(lastF)) xs.push(tick(lastF, `+${lead >= 90 ? Math.round(lead / 60) + " h" : lead + " min"} nowcast`, "fct"));
+    if (se > lastF + 3600e3 && room(se)) xs.push(tick(se, `NWS → ${fmtDH.format(new Date(se))}`, "fct"));
+    if (t1 > se + 3600e3 && room(t1)) tick(t1, `WeatherNext → ${fmtDH.format(new Date(t1))}`, "wn3");
     return; }
-  if (S.mode === "forecast" && L && L.frames.length) { const lastF = L.frames[L.frames.length - 1].t, se = Math.min(Math.max(supEnd(supSpots()[0]), lastF), t1), lf = DATA.wn3 && DATA.wn3.long_from ? Date.parse(DATA.wn3.long_from) : se;
-    seg(t0, lastF, "f"); seg(lastF, se, "f2"); seg(se, clamp(lf, se, t1), "f3h"); seg(Math.max(se, Math.min(lf, t1)), t1, "f3"); }
   if (S.mode === "history" && H && H.scene && H.scene.frames.length) seg(H.scene.frames[0].t, H.scene.frames[H.scene.nObs - 1].t, "o");
   const fd = span > 4 * 86400e3 ? new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", month: "numeric", day: "numeric" }) : f, nT = span > 4 * 86400e3 ? 4 : 2;
-  for (let i = 0; i <= nT; i++) { const t = t0 + span * i / nT, s = document.createElement("span"); s.textContent = (i === 0 || i === nT ? f : fd).format(new Date(t)); tk.appendChild(s); } }
+  for (let i = 0; i <= nT; i++) { const t = tlT(i / nT), s = document.createElement("span"); s.textContent = (i === 0 || i === nT ? f : fd).format(new Date(t)); tk.appendChild(s); } }
 async function addHistory(raw) { const scene = raw.scene ? await decodeScene(raw.scene) : null; SRC.hist.push({ raw, scene });
   const sel = $("#hist-pick"), o = document.createElement("option"); o.value = String(SRC.hist.length - 1);
   o.textContent = `${raw.title ? raw.title + " · " : ""}${fmtFull.format(new Date(raw.window.start))}${scene ? ` · ${scene.frames.length} radar scans` : " · no radar"}`; sel.appendChild(o); }
@@ -3151,7 +3178,7 @@ function tick() {
   if (S.mode === "live" && S.follow) S.t = Date.now();
   if (S.ov === "spots") buildConfirmed();
   const [t0, t1] = range();
-  if (S.playing && !(S.mode === "live" && S.follow)) { const rate = S.mode === "forecast" ? Math.max(1800, (t1 - t0) / 100e3) : S.mode === "exp" ? 60 : 60; S.t += dt * 1000 * rate * S.speed; if (S.t > t1) S.t = t0; }
+  if (S.playing && !(S.mode === "live" && S.follow)) { /* radar minutes at 60x, the rest of the timeline in about 100 s */ const rate = S.mode === "live" && !inRadar(S.t) ? Math.max(1800, (t1 - t0) / 100e3) : 60; S.t += dt * 1000 * rate * S.speed; if (S.t > t1) S.t = t0; }
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   navStep(dt);
@@ -3194,7 +3221,7 @@ function tick() {
     U.uWaterC.value = C.waterC ?? 15; U.uIceExp.value = S.mode === "exp" ? S.x.ice : 0; U.uHasTemp.value = S.mode === "exp" ? 0 : GRIDS.temp ? 1 : 0;
     U.uHasIce.value = S.mode !== "exp" && GRIDS.ice ? 1 : 0; U.uSnowCover.value = C.snow && (C.airC ?? 5) < -1 ? 0.8 : 0; U.uSnow.value = C.snow ? 1 : 0;
     // clouds beyond radar: forecast sky cover, or the chosen fair-weather layer
-    U.uExtra.value = (S.mode === "forecast" || S.mode === "live" || S.mode === "import") && !RS ? clamp((C.sky - 10) / 90, 0, 1) * 0.95 : S.mode === "exp" && S.x.type === "cumulus" ? 0.55 * S.x.cov : 0;
+    U.uExtra.value = (S.mode === "live" || S.mode === "import") && !RS ? clamp((C.sky - 10) / 90, 0, 1) * 0.95 : S.mode === "exp" && S.x.type === "cumulus" ? 0.55 * S.x.cov : 0;
     // live, with a GOES image within 45 min: the satellite's cloud field (also over radar, which only sees clouds that rain)
     { const G = DATA.earth && DATA.earth.goes, on = S.goes && S.mode === "live" && EARTH.goes && G && Math.abs(new Date(G.time).getTime() - S.t) < 45 * 60e3;
       U.uGoesOn.value = on ? 1 : 0;
@@ -3289,35 +3316,40 @@ function updateHud(rr, tp) {
     el.textContent = age > 150 ? `Data is ${age > 2880 ? Math.round(age / 1440) + " days" : Math.round(age / 60) + " h"} old (radar ${fmtHM.format(new Date(lastObs))}); it refreshes hourly, or use Refresh now${gen}` :
       `Radar ${fmtHM.format(new Date(lastObs))} (${Math.round(age)} min ago)${S.t > lastObs + 60e3 ? ", carried forward by the nowcast" : ""}${gen}`;
     el.className = "age" + (age > 75 ? " stale" : ""); } else $("#age").textContent = "";
-  chip.textContent = { import: "From screenshot", live: S.follow ? "Live" : "Live · paused", forecast: `Forecast${S.t > t0 ? " +" + (S.t - t0 >= 72 * 3600e3 ? Math.round((S.t - t0) / 86400e3 * 10) / 10 + " d" : Math.round((S.t - t0) / 3600e3 * 10) / 10 + " h") : ""}${C.ext ? " · WeatherNext 3" : ""}`, history: "Historical", exp: "Experimental" }[S.mode];
-  const sc = $("#scrub"); if (document.activeElement !== sc) sc.value = Math.round((S.t - t0) / Math.max(t1 - t0, 1) * 1000);
+  const span = (ms) => ms >= 72 * 3600e3 ? Math.round(ms / 86400e3 * 10) / 10 + " d" : ms >= 3600e3 ? Math.round(ms / 3600e3 * 10) / 10 + " h" : Math.round(ms / 60e3) + " min";
+  const liveChip = () => { const L = SRC.live, now = Date.now(), lastObs = L ? L.frames[L.nObs - 1].t : now, lastF = L ? L.frames[L.frames.length - 1].t : now;
+    if (S.follow || Math.abs(S.t - now) < 90e3) return ["live", "Live"]; if (S.t < Math.min(lastObs, now) - 5 * 60e3) return ["live", `Observed −${span(now - S.t)}`];
+    if (S.t <= lastF) return ["forecast", `Nowcast +${span(S.t - lastObs)}`]; return [C.ext ? "wn3" : "forecast", `${C.ext ? "WeatherNext 3" : "Forecast"} +${span(S.t - lastObs)}`]; };
+  const [cc, ct] = S.mode === "live" ? liveChip() : [S.mode, { import: "From screenshot", history: "Historical", exp: "Experimental" }[S.mode]]; chip.className = "chip " + cc; chip.textContent = ct;
+  const sc = $("#scrub"); if (document.activeElement !== sc) sc.value = Math.round(tlX(S.t) * SCRUB_N);
   if (Date.now() - (MM.ticksAt || 0) > 60e3) { MM.ticksAt = Date.now(); buildTicks(); }   // live: the range grows with the clock; keep "now" and the ticks in place
   const tot = Math.sqrt(C.systems.reduce((a, q) => a + q.hs * q.hs, 0)), tpk = C.systems[0] ? C.systems[0].tp : 0;
   const sky = rr > 0.2 ? (C.snow ? "snow" : "rain") : U.uOvercast.value > 0.6 ? "cloud" : U.uOvercast.value > 0.25 ? "partly" : C.sun && C.sun.el < -6 ? "night" : "sun";
   const wx = rr > 0.2 ? `${C.snow ? "Snow" : "Rain"} ${rr.toFixed(1)} mm/h` : { cloud: "Overcast", partly: "Partly cloudy", night: "Clear night", sun: "Clear" }[sky];
-  const hs = C.fwHs != null ? C.fwHs : tot, live = S.mode === "live" || S.mode === "forecast", W = (DATA.lake && DATA.lake.wx) || {};
+  const hs = C.fwHs != null ? C.fwHs : tot, live = S.mode === "live", W = (DATA.lake && DATA.lake.wx) || {};
   const wdirW = C.systems[0] ? C.systems[0].dir : C.off ? C.off.dir : C.dir;   // where the main waves come from
   // the two numbers that matter on the water
-  $("#hero").innerHTML = `<div class="tile"><div class="k">Wind<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${(C.dir + 180) % 360}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg></div>
-      <div class="v"><span class="n">${mph(C.wind)}</span><span class="u">mph</span></div><div class="s">from <em>${compass(C.dir)}</em>${C.gust ? ` · G <em>${mph(C.gust)}</em>` : ""}</div></div>
-    <div class="tile"><div class="k">Waves${C.fwHs != null ? " · FUNWAVE" : ""}${hs > 0.01 ? `<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${(wdirW + 180) % 360}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg>` : ""}</div>
+  $("#hero-air").innerHTML = `<div class="tile"><div class="k">Wind<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${(C.dir + 180) % 360}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg></div>
+      <div class="v"><span class="n">${mph(C.wind)}</span><span class="u">mph</span></div><div class="s">from <em>${compass(C.dir)}</em>${C.gust ? ` · G <em>${mph(C.gust)}</em>` : ""}</div></div>`;
+  $("#hero-water").innerHTML = `<div class="tile"><div class="k">Waves${C.fwHs != null ? " · FUNWAVE" : ""}${hs > 0.01 ? `<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${(wdirW + 180) % 360}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg>` : ""}</div>
       <div class="v">${hs > 0.01 ? `<span class="n">${ft(hs)}</span><span class="u">ft</span>` : `<span class="n" style="font-size:22px">Calm</span>`}</div>
       <div class="s">${hs > 0.01 ? `from <em>${compass(wdirW)}</em> · <em>${tpk.toFixed(1)} s</em>` : "under 0.1 ft"}</div></div>`;
+  $("#vs").innerHTML = vsCompass(C, hs, wdirW);
   const pill = (icon, html, cls = "", st = "") => `<span class="p ${cls}"${st ? ` style="${st}"` : ""}>${icon ? WXI[icon] : ""}${html}</span>`;
-  let wl = pill(sky, wx) + (C.airC != null ? pill("", `<i>Air</i> ${Math.round(cToF(C.airC))}°`) : "");
-  if (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) wl += pill("", `<i>Ice</i> ${S.mode === "exp" ? Math.round(S.x.ice * 100) + "%" : "NOAA"}`);
+  let wl = pill(sky, wx) + (C.airC != null ? pill("", `<i>Air</i> ${Math.round(cToF(C.airC))}°`) : ""), ww = "";
+  if (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) ww += pill("", `<i>Ice</i> ${S.mode === "exp" ? Math.round(S.x.ice * 100) + "%" : "NOAA"}`);
   const E = DATA.earth || {}, UP = E.water && E.water.upwelling, NM = E.normals || {};
-  if (live && UP && UP.upwelling) wl += pill("", `Upwelling: shore water ${Math.round(UP.delta_c * 1.8)}° colder than offshore`, "spc", "background:#8fd0ff;color:#0b2540");
+  if (live && UP && UP.upwelling) ww += pill("", `Upwelling: shore water ${Math.round(UP.delta_c * 1.8)}° colder than offshore`, "spc", "background:#8fd0ff;color:#0b2540");
   if (live && NM.era5 && NM.era5.wind_ms && C.wind > NM.era5.wind_ms.p90) wl += pill("", "Windier than 9 in 10 hours this time of year", "spc", "background:#ffd38a;color:#3a2400");
   if (live && NM.era5 && NM.era5.air_c && C.airC != null) { const d = (C.airC - NM.era5.air_c.p50) * 1.8; if (Math.abs(d) >= 5) wl += pill("", `<i>Air</i> ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° vs usual`); }
-  const spc = W.spc, nowMs = Date.now(), tRef = S.mode === "forecast" ? S.t : nowMs;   // in Forecast, today's headlines only while the shown hour is inside them
+  const spc = W.spc, nowMs = Date.now(), tRef = S.mode === "live" ? S.t : nowMs;   // today's headlines only while the shown hour is inside them
   if (live && spc && spc.cat && (!spc.expire || new Date(spc.expire).getTime() > tRef) && (!spc.valid || new Date(spc.valid).getTime() < tRef + 24 * 3600e3))
     wl += pill("", spc.cat === "TSTM" ? "Thunder possible" : `Severe: ${spc.label.replace(/ risk$/i, "")} ${spc.level}/5`, "spc", `background:${spc.color || "#f6f67f"}`);
-  $("#wxline").innerHTML = wl;
+  $("#wx-air").innerHTML = wl; $("#wx-water").innerHTML = ww;
   renderAlerts(live ? (W.alerts || []) : [], tRef);
   // the readouts, by topic: wind (other stations and models), waves, water, your paddle
   const wind = [], waves = [], water = [], you = [];
-  if (S.mode === "live") for (const m of W.metar || []) { if (nowMs - new Date(m.t).getTime() > 3 * 3600e3 || m.wspd_kt == null) continue;
+  if (S.mode === "live" && Math.abs(S.t - nowMs) < 90 * 60e3) for (const m of W.metar || []) { if (nowMs - new Date(m.t).getTime() > 3 * 3600e3 || m.wspd_kt == null) continue;
     const k = (v) => Math.round(v * 1.15078); wind.push([m.name, `${m.wspd_kt < 1 ? "calm" : `${k(m.wspd_kt)} mph ${m.vrb ? "var" : compass(m.wdir)}${m.wgst_kt ? ` · G ${k(m.wgst_kt)}` : ""}`}`]); }
   if (live && C.gfs) wind.push(["GFS model", `${mph(C.gfs.wspd)} mph ${compass(C.gfs.wdir)}`]);
   if (live && C.wn3) wind.push(["WeatherNext 3", `${mph(C.wn3.wspd)} mph ${C.wn3.wdir != null ? compass(C.wn3.wdir) : ""}${C.wn3.lo != null && C.wn3.hi != null ? ` · ${mph(C.wn3.lo)}–${mph(C.wn3.hi)} likely` : ""}`]);
@@ -3337,10 +3369,28 @@ function updateHud(rr, tp) {
   // presentation rules for all of the above: speeds "N mph DIR · G N"; waves "N.N ft DIR · N.N s"; temperatures "N°" (F);
   // ranges "N–N"; a middle dot separates the parts of one reading
   const grp = (name, rs) => rs.length ? `<dt class="grp">${name}</dt><dd class="grp"></dd>` + rs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("") : "";
-  $("#readouts").innerHTML = grp("Wind", wind) + grp("Waves", waves) + grp("Water", water) + grp("Your paddle", you);
-  $("#source").textContent = [RS ? RS.label + lead : S.mode === "forecast" ? "Clouds from forecast sky cover" : "No radar for this time", ...C.src].join(" · ");
+  const rows = (rs) => rs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  $("#ro-air").innerHTML = rows(wind); $("#ro-water").innerHTML = rows(waves.concat(water)); $("#readouts").innerHTML = grp("Your paddle", you);
+  $("#source").textContent = [RS ? RS.label + lead : S.mode === "live" && SRC.live && S.t > SRC.live.frames[SRC.live.frames.length - 1].t ? "Clouds from forecast sky cover" : S.mode === "live" ? "Observed hour, no radar archived" : "No radar for this time", ...C.src].join(" · ");
 }
 
+// air versus water as two pushes on the same compass: the wind's stress on the surface and the waves' energy, each drawn
+// the way it travels (an arrow's length is its strength); the angle between them says whether the sea is wind-driven or crossed
+function vsCompass(C, hs, wdirW) {
+  const cx = 48, cy = 48, R = 40, AIR = "#90c841", WATER = "#05a0cb", U10 = C.wind || 0, mphW = U10 * MPH, hft = hs * FT;
+  const tau = 1.2 * (0.001 * (1 + 0.07 * U10)) * U10 * U10, E = 613 * hs * hs;   // wind stress (N/m2, Cd ~ Smith), wave energy (J/m2)
+  const toA = (C.dir + 180) % 360, toW = (wdirW + 180) % 360, la = R * clamp(mphW / 30, 0, 1), lw = hs > 0.01 ? R * clamp(hft / 4, 0.06, 1) : 0;
+  const arrow = (deg, len, col) => { if (len < 2) return `<circle cx="${cx}" cy="${cy}" r="3" fill="${col}"/>`; const a = deg * Math.PI / 180, x = cx + Math.sin(a) * len, y = cy - Math.cos(a) * len, ux = Math.sin(a), uy = -Math.cos(a);
+    const hx = x - ux * 7, hy = y - uy * 7; return `<line x1="${cx}" y1="${cy}" x2="${hx.toFixed(1)}" y2="${hy.toFixed(1)}" stroke="${col}" stroke-width="3.5" stroke-linecap="round"/><polygon points="${x.toFixed(1)},${y.toFixed(1)} ${(hx - uy * 4.5).toFixed(1)},${(hy + ux * 4.5).toFixed(1)} ${(hx + uy * 4.5).toFixed(1)},${(hy - ux * 4.5).toFixed(1)}" fill="${col}"/>`; };
+  let ticks = ""; for (let d = 0; d < 360; d += 30) { const a = d * Math.PI / 180, r0 = d % 90 ? R + 1 : R - 2; ticks += `<line x1="${(cx + Math.sin(a) * r0).toFixed(1)}" y1="${(cy - Math.cos(a) * r0).toFixed(1)}" x2="${(cx + Math.sin(a) * (R + 4)).toFixed(1)}" y2="${(cy - Math.cos(a) * (R + 4)).toFixed(1)}" stroke="rgba(220,230,238,.45)" stroke-width="1"/>`; }
+  const lbl = (t, dx, dy) => `<text x="${cx + dx}" y="${cy + dy}" fill="rgba(220,230,238,.7)" font-size="8" font-family="IBM Plex Mono, monospace" text-anchor="middle" dominant-baseline="middle">${t}</text>`;
+  const svg = `<svg viewBox="0 0 96 96" aria-label="Air and water pushes on a compass"><circle cx="${cx}" cy="${cy}" r="${R}" fill="rgba(255,255,255,.03)" stroke="rgba(220,230,238,.25)"/>${ticks}${lbl("N", 0, -R + 6)}${lbl("S", 0, R - 6)}${lbl("E", R - 6, 0)}${lbl("W", -R + 6, 0)}
+    ${arrow(toA, la, AIR)}${arrow(toW, lw, WATER)}<circle cx="${cx}" cy="${cy}" r="2" fill="#dce6ee"/></svg>`;
+  const d = Math.abs(angd(toA, toW)), rel = mphW < 3 && hs <= 0.01 ? "Still air, flat water." : mphW < 3 ? "Hardly any wind: the waves are left over, running on their own." : hs <= 0.01 ? "The wind has not raised waves here yet." :
+    d < 30 ? "Pushing together: a wind sea, the waves running with the wind." : d <= 120 ? `Crossed by ${Math.round(d)}°: the wind pushes across the waves, a confused surface.` : "Opposed: the wind blows against the waves and steepens them.";
+  return `${svg}<div><div class="row"><b style="color:${AIR}">Air</b><span>${mph(U10)} mph → ${compass(toA)} · ${tau < 0.01 ? "<0.01" : tau.toFixed(2)} N/m²</span></div>
+    <div class="row"><b style="color:${WATER}">Water</b><span>${hs > 0.01 ? `${ft(hs)} ft → ${compass(toW)} · ${Math.round(E)} J/m²` : "calm"}</span></div></div><div class="rel">${rel}</div>`;
+}
 function renderModels() {
   const rows = [];
   rows.push(["Lake bottom", BATHY.ok ? `USACE 2020 lidar (1 m)${BATHY.cov ? ` ${Math.round(BATHY.cov.lidar * 100)}%` : ""}, NOAA chart beyond` : "idealized slope"]);
