@@ -238,24 +238,67 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
   #timeline { grid-template-columns: auto 1fr; } .speed { display: none; }
   #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 128px + env(safe-area-inset-bottom, 0px)) !important; width: auto; max-width: 420px; padding: 6px 9px; gap: 3px; cursor: pointer; }
 }
+/* ---- the information toolbar: a header strip and a row of cards (radar map, Air, Air vs water, Water) above the timeline */
+:root { --barh: 212px; }
+#bar { position: absolute; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 84px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 6px; pointer-events: none; z-index: 3; }
+#bar > * { pointer-events: auto; }
+#hud { position: static; width: auto !important; max-height: none !important; overflow: visible !important; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 6px 12px !important; }
+#hud h1 { font-size: 17px; margin-right: 2px; } #hud .age { white-space: nowrap; }
+#hud .src { border: 0; padding: 0; flex: 1 1 160px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#hud .alerts { display: flex; flex-wrap: wrap; gap: 4px; } #hud .alerts[hidden] { display: none; } #hud .alerts .al { padding: 2px 7px; }
+#toggle { position: static !important; display: block !important; margin-left: auto; padding: 5px 10px; font-size: 12px; background: transparent; }
+#cards { display: flex; gap: 8px; align-items: flex-end; overflow: visible; padding-top: 2px; }
+#cards .card { flex: none; position: static; padding: 8px 10px; box-sizing: border-box; }
+#minimap { width: auto; padding: 6px; display: block; } #minimap canvas { width: 120px; height: 178px; }
+#cards .cat { width: 236px; margin: 0; border-left: 3px solid var(--cat); background: var(--panel); border-radius: 6px; }
+#cards .cat::before { content: ""; position: absolute; inset: 0; border-radius: 6px; pointer-events: none; }
+#cards .cat.air { background: linear-gradient(180deg, rgba(144, 200, 65, .09), var(--panel) 60%); } #cards .cat.water { background: linear-gradient(180deg, rgba(5, 160, 203, .11), var(--panel) 60%); }
+.cathead { all: unset; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; font: 700 11px var(--font-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--cat); }
+button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter-spacing: 0; text-transform: none; color: var(--muted); } .card.open button.cathead::after { content: "less ▾"; }
+.card .more { display: none; } #cards .cat, #vsbox { position: relative; }
+/* an open card's readouts float above it, so the toolbar keeps its height */
+.card.open .more { display: block; position: absolute; left: -3px; right: 0; bottom: calc(100% + 6px); max-height: 46vh; overflow-y: auto; padding: 8px 10px; background: var(--panel-solid); border: 1px solid var(--line); border-left: 3px solid var(--cat); border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, .4); }
+.cat.water.open .more { width: 330px; right: auto; }
+.card .launches { border-top: 0; padding-top: 4px; }
+#vsbox { width: 270px; } #vsbox .cathead { cursor: default; }
+.vs { grid-template-columns: 108px 1fr; gap: 4px 8px; padding: 2px 0 0; } .vs svg { width: 108px; height: 108px; cursor: grab; touch-action: none; user-select: none; } .vs.drag svg { cursor: grabbing; }
+.vs .row span { white-space: normal; } .vs .hdg { grid-column: 1 / -1; font: 10px var(--font-data); color: var(--muted); }
+#legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; bottom: calc(var(--gut) + 92px + var(--barh) + env(safe-area-inset-bottom, 0px)) !important; }
+#goto, #nav, #attr { bottom: calc(var(--gut) + 90px + var(--barh) + env(safe-area-inset-bottom, 0px)); }
+#hint { bottom: calc(var(--gut) + 150px + var(--barh) + env(safe-area-inset-bottom, 0px)); }
+#app.flying #bar { opacity: .3; }
+#controls { max-height: calc(100% - 2 * var(--gut) - 46px - 96px - var(--barh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important; }
+@media (max-width: 760px) {
+  #bar { bottom: calc(var(--gut) + 78px + env(safe-area-inset-bottom, 0px)); }
+  #hud { padding: 5px 10px !important; gap: 4px 8px; } #hud .src { display: none; } #hud h1 { font-size: 15px; }
+  #cards { overflow-x: auto; scrollbar-width: thin; } #cards .cat, #vsbox { width: 210px; }
+  .ticks.abs span.fct, .ticks.abs span.wn3 { display: none; }   /* the phone's timeline keeps only the ends and the latest scan */
+  .card.open .more { position: static; width: auto !important; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: 4px 0 0; margin-top: 4px; max-height: 30vh; }
+  #controls { bottom: calc(var(--gut) + 92px + env(safe-area-inset-bottom, 0px)); max-height: 58% !important; z-index: 4; }
+}
 </style>
 
 <div id="app">
   <canvas id="gl" tabindex="0" aria-label="3D Chicago lakefront world: radar weather, lake waves and your paddle track. Drag to orbit, scroll to zoom, right-drag to pan."></canvas>
   <div id="labels"></div>
-  <div id="hud" class="panel" aria-live="polite">
-    <div class="hudhead"><h1><span class="lk">Lake</span><span class="vw">View</span></h1><button id="hudmin" aria-expanded="true" aria-controls="readouts" title="Minimize" aria-label="Minimize the conditions box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button></div>
-    <div class="timebox"><span id="clock">--:--</span><span class="chip live" id="status">Live</span><button id="nowbtn" hidden style="padding:4px 8px;font-size:11px">Back to now</button></div>
-    <div class="age" id="age"></div>
-    <div id="refreshbox" hidden style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button id="refreshbtn" style="padding:6px 10px;font-size:12px">Refresh now</button><span class="age" id="refreshmsg"></span></div>
-    <div class="alerts" id="alerts" hidden></div>
-    <div class="cat air" id="cat-air"><div class="cathead">Air</div><div class="hero" id="hero-air"></div><div class="wxline" id="wx-air"></div><dl class="readouts" id="ro-air"></dl></div>
-    <div class="vs" id="vs" title="Air and water as two pushes: each arrow points the way that force travels, its length is its strength"></div>
-    <div class="cat water" id="cat-water"><div class="cathead">Water</div><div class="hero" id="hero-water"></div><div class="wxline" id="wx-water"></div><dl class="readouts" id="ro-water"></dl><div class="launches" id="launches" hidden></div></div>
-    <dl class="readouts" id="readouts"></dl>
-    <div class="src" id="source">Loading…</div>
+  <div id="bar" aria-label="Conditions">
+    <div id="hud" class="panel" aria-live="polite">
+      <h1><span class="lk">Lake</span><span class="vw">View</span></h1>
+      <span id="clock">--:--</span><span class="chip live" id="status">Live</span><button id="nowbtn" hidden style="padding:4px 8px;font-size:11px">Back to now</button>
+      <span class="age" id="age"></span>
+      <span id="refreshbox" hidden style="display:flex;gap:8px;align-items:center"><button id="refreshbtn" style="padding:4px 8px;font-size:11px">Refresh now</button><span class="age" id="refreshmsg"></span></span>
+      <div class="alerts" id="alerts" hidden></div>
+      <span class="src" id="source">Loading…</span>
+      <button id="toggle" aria-expanded="false" aria-controls="controls">Settings</button>
+    </div>
+    <div id="cards">
+      <div id="minimap" class="panel card"><canvas id="mm" width="300" height="444" aria-label="Map: click to go there"></canvas><div class="mmstat" id="mmstat" hidden></div><div class="cap"><button id="mmview" type="button" title="Switch between the radar map and the local map">Local map</button><span id="mmscale"></span></div></div>
+      <div class="panel card cat air" id="cat-air"><button class="cathead" type="button" aria-expanded="false">Air</button><div class="hero" id="hero-air"></div><div class="wxline" id="wx-air"></div><dl class="readouts" id="ro-air-top"></dl><div class="more"><dl class="readouts" id="ro-air"></dl></div></div>
+      <div class="panel card" id="vsbox"><div class="cathead" style="color:var(--muted)">Air vs water · drag to turn</div><div class="vs" id="vs" title="Air and water as two pushes on the compass you are looking at: each arrow points the way that force travels, its length is its strength. Drag the rose to turn the view; double-click to face north."></div></div>
+      <div class="panel card cat water" id="cat-water"><button class="cathead" type="button" aria-expanded="false">Water</button><div class="hero" id="hero-water"></div><div class="wxline" id="wx-water"></div><dl class="readouts" id="ro-water-top"></dl><div class="more"><dl class="readouts" id="ro-water"></dl><div class="launches" id="launches" hidden></div></div></div>
+      <dl class="readouts panel card" id="readouts" hidden></dl>
+    </div>
   </div>
-  <button id="toggle" aria-expanded="true" aria-controls="controls">Settings</button>
   <div id="goto"><div id="goto-list" class="panel" role="menu" aria-label="Places" hidden></div><button id="goto-btn" class="panel" aria-label="Go to a place" title="Go to a place" aria-haspopup="menu" aria-expanded="false" aria-controls="goto-list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.4-6-11a6 6 0 0 1 12 0c0 5.6-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg><span>Go to a place</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button></div>
   <div id="nav" aria-label="Navigation">
     <button id="navtoggle" class="solo" aria-expanded="true" aria-controls="nav" title="Hide the navigation controls" aria-label="Hide the navigation controls"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg></button>
@@ -274,7 +317,6 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
     </div>
     <div class="row2" style="display:flex;gap:6px"><button class="solo" data-nav="tilt" title="Top-down / back to angled (T)" aria-label="Toggle top-down view"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M5 12h14M12 5v14"/></svg></button><button class="solo" id="helpbtn" title="Controls help (?)" aria-label="Controls help">?</button></div>
   </div>
-  <div id="minimap" class="panel"><canvas id="mm" width="300" height="444" aria-label="Map: click to go there"></canvas><div class="mmstat" id="mmstat" hidden></div><div class="cap"><button id="mmview" type="button" title="Switch between the radar map and the local map">Local map</button><span id="mmscale"></span></div></div>
   <div id="help" class="panel" hidden role="dialog" aria-label="Controls">
     <button class="x" id="helpx" aria-label="Close">×</button>
     <h2>Getting around</h2>
@@ -2750,7 +2792,8 @@ function clampView() {    // keep the camera in the local world and above the wa
   if (c.y < 0.0018) c.y = 0.0018;
 }
 // --- compass, mini-map, hint, help
-function updateCompass() { const hdg = NAV.move === "paddle" ? NAV.pad.yaw : viewState().hdg; $("#needle").setAttribute("transform", `rotate(${-hdg} 26 26)`); }
+function updateCompass() { const hdg = NAV.move === "paddle" ? NAV.pad.yaw : viewState().hdg; $("#needle").setAttribute("transform", `rotate(${-hdg} 26 26)`);
+  const rose = $("#vsrose"); if (rose) rose.setAttribute("transform", `rotate(${-hdg} 48 48)`); const ht = $("#vshdg"); if (ht) ht.textContent = `View ${compass(hdg)} ${Math.round(hdg)}° · up is where you look`; }
 const MM = { el: $("#mm"), base: null };
 function mmXY(x, y) { const W = MM.el.width, H = MM.el.height; return [(x - LB.x0) / (LB.x1 - LB.x0) * W, (LB.y1 - y) / (LB.y1 - LB.y0) * H]; }
 function buildMinimap() {
@@ -2867,9 +2910,19 @@ function showHintOnce() { let seen = false; try { seen = localStorage.getItem("l
     if (e.key === "Escape") { openGoto(false); btn.focus(); e.stopPropagation(); } else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); e.stopPropagation(); items[(k + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); } });
   document.addEventListener("pointerdown", (e) => { if (!list.hidden && !$("#goto").contains(e.target)) openGoto(false); }); }
 // the conditions box folds down to title, time and status (remembered per browser)
-{ const hud = $("#hud"), b = $("#hudmin"), set = (m) => { hud.classList.toggle("min", m); b.setAttribute("aria-expanded", String(!m)); b.title = m ? "Show conditions" : "Minimize";
-    b.setAttribute("aria-label", m ? "Show the conditions box" : "Minimize the conditions box"); try { localStorage.setItem("lakelocal-hudmin", m ? "1" : "0"); } catch (e) {} };
-  let m0 = false; try { m0 = localStorage.getItem("lakelocal-hudmin") === "1"; } catch (e) {} set(m0); b.onclick = () => set(!hud.classList.contains("min")); }
+// the toolbar's height sets where the legend, the place button and the navigation sit
+{ const bar = $("#bar"), fit = () => document.documentElement.style.setProperty("--barh", `${bar.offsetHeight}px`); fit(); if (window.ResizeObserver) new ResizeObserver(fit).observe(bar); else addEventListener("resize", fit); }
+// the Air and Water cards open to their full readouts
+document.querySelectorAll("button.cathead").forEach((b) => b.onclick = () => { const c = b.closest(".card"), o = !c.classList.contains("open"); c.classList.toggle("open", o); b.setAttribute("aria-expanded", String(o)); });
+// the vector compass turns with the view; dragging its rose turns the view, a double-click faces north
+function setHeading(h) { h = ((h % 360) + 360) % 360; if (NAV.move === "paddle") { NAV.pad.yaw = h; return; } const v = viewState(), c = camFor(v.tx, v.ty, v.dist, h, v.pitch); camera.position.copy(c.p); controls.target.copy(c.t); controls.update(); camTween = null; }
+{ const vs = $("#vs"); let d = null; const ang = (e) => { const r = vs.querySelector("svg").getBoundingClientRect(); return Math.atan2(e.clientX - (r.left + r.width / 2), -(e.clientY - (r.top + r.height / 2))) * 180 / Math.PI; };
+  let lastTap = 0;   // preventDefault on pointerdown keeps the page from scrolling but also swallows dblclick, so the double tap is counted here
+  vs.onpointerdown = (e) => { if (!e.target.closest("svg")) return; const now = performance.now(); if (now - lastTap < 350) { lastTap = 0; setHeading(0); return; } lastTap = now;
+    d = { a0: ang(e), h0: NAV.move === "paddle" ? NAV.pad.yaw : viewState().hdg, moved: false }; vs.setPointerCapture(e.pointerId); vs.classList.add("drag"); e.preventDefault(); };
+  vs.onpointermove = (e) => { if (!d) return; const da = ang(e) - d.a0; if (Math.abs(da) > 1) d.moved = true; setHeading(d.h0 - da); };
+  vs.onpointerup = vs.onpointercancel = (e) => { d = null; vs.classList.remove("drag"); };
+  vs.onpointermove = ((f) => (e) => { if (d && Math.abs(ang(e) - d.a0) > 1) lastTap = 0; f(e); })(vs.onpointermove); }
 // panels step back while the world is being dragged or zoomed, and return a moment after
 { let idle = 0; const app = $("#app"), fly = () => { app.classList.add("flying"); clearTimeout(idle); idle = setTimeout(() => app.classList.remove("flying"), 1300); };
   canvas.addEventListener("pointermove", (e) => { if (e.buttons) fly(); }); canvas.addEventListener("wheel", fly, { passive: true }); }
@@ -3064,7 +3117,7 @@ $("#nowbtn").onclick = () => { S.follow = true; $("#nowbtn").hidden = true; };
 $("#showtrack").onchange = (e) => { S.showTrack = e.target.checked; if (S.ov === "spots") { SPOTS.built = ""; buildConfirmed(); } };
 $("#buoys").checked = BUOY.on; $("#buoys").onchange = (e) => { BUOY.on = e.target.checked; try { localStorage.setItem("lakelocal-buoys", BUOY.on ? "1" : "0"); } catch (err) {} };
 $("#toggle").onclick = () => { const c = $("#controls"); c.dataset.open = c.hidden ? "1" : "0"; applyPanel(); };
-function applyPanel() { const narrow = matchMedia("(max-width: 760px)").matches, c = $("#controls"), open = c.dataset.open ? c.dataset.open === "1" : !narrow; c.hidden = !open; $("#toggle").setAttribute("aria-expanded", String(open)); $("#toggle").textContent = open ? "Hide settings" : "Settings"; }
+function applyPanel() { const narrow = matchMedia("(max-width: 760px)").matches, c = $("#controls"), open = c.dataset.open ? c.dataset.open === "1" : false; c.hidden = !open; $("#toggle").setAttribute("aria-expanded", String(open)); $("#toggle").textContent = open ? "Hide settings" : "Settings"; }
 matchMedia("(max-width: 760px)").addEventListener("change", applyPanel); applyPanel();
 $("#gpx-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { const tr = parseGPX(await f.text(), f.name.replace(/\.gpx$/i, "")); setTrack(tr); S.rideOwn = false;
     try { localStorage.setItem("lakelocal-track", JSON.stringify(tr)); } catch (e2) {} } catch (err) { $("#track-note").textContent = `Couldn't read that file: ${err.message}`; } };
@@ -3334,7 +3387,7 @@ function updateHud(rr, tp) {
   $("#hero-water").innerHTML = `<div class="tile"><div class="k">Waves${C.fwHs != null ? " · FUNWAVE" : ""}${hs > 0.01 ? `<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${(wdirW + 180) % 360}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg>` : ""}</div>
       <div class="v">${hs > 0.01 ? `<span class="n">${ft(hs)}</span><span class="u">ft</span>` : `<span class="n" style="font-size:22px">Calm</span>`}</div>
       <div class="s">${hs > 0.01 ? `from <em>${compass(wdirW)}</em> · <em>${tpk.toFixed(1)} s</em>` : "under 0.1 ft"}</div></div>`;
-  $("#vs").innerHTML = vsCompass(C, hs, wdirW);
+  { const key = `${Math.round(C.wind * 10)}|${Math.round(C.dir)}|${Math.round(hs * 100)}|${Math.round(wdirW)}`; if (key !== VS_KEY) { VS_KEY = key; $("#vs").innerHTML = vsCompass(C, hs, wdirW); } }
   const pill = (icon, html, cls = "", st = "") => `<span class="p ${cls}"${st ? ` style="${st}"` : ""}>${icon ? WXI[icon] : ""}${html}</span>`;
   let wl = pill(sky, wx) + (C.airC != null ? pill("", `<i>Air</i> ${Math.round(cToF(C.airC))}°`) : ""), ww = "";
   if (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) ww += pill("", `<i>Ice</i> ${S.mode === "exp" ? Math.round(S.x.ice * 100) + "%" : "NOAA"}`);
@@ -3370,12 +3423,15 @@ function updateHud(rr, tp) {
   // ranges "N–N"; a middle dot separates the parts of one reading
   const grp = (name, rs) => rs.length ? `<dt class="grp">${name}</dt><dd class="grp"></dd>` + rs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("") : "";
   const rows = (rs) => rs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
-  $("#ro-air").innerHTML = rows(wind); $("#ro-water").innerHTML = rows(waves.concat(water)); $("#readouts").innerHTML = grp("Your paddle", you);
+  const topW = waves.concat(water).filter(([k]) => k === "Energy" || k === "Temperature" || k === "Depth here"), moreW = waves.concat(water).filter((r) => !topW.includes(r));
+  $("#ro-air-top").innerHTML = rows(wind.slice(0, 2)); $("#ro-air").innerHTML = rows(wind.slice(2)); $("#ro-water-top").innerHTML = rows(topW); $("#ro-water").innerHTML = rows(moreW);
+  $("#readouts").innerHTML = grp("Your paddle", you); $("#readouts").hidden = !you.length;
   $("#source").textContent = [RS ? RS.label + lead : S.mode === "live" && SRC.live && S.t > SRC.live.frames[SRC.live.frames.length - 1].t ? "Clouds from forecast sky cover" : S.mode === "live" ? "Observed hour, no radar archived" : "No radar for this time", ...C.src].join(" · ");
 }
 
 // air versus water as two pushes on the same compass: the wind's stress on the surface and the waves' energy, each drawn
 // the way it travels (an arrow's length is its strength); the angle between them says whether the sea is wind-driven or crossed
+let VS_KEY = "";
 function vsCompass(C, hs, wdirW) {
   const cx = 48, cy = 48, R = 40, AIR = "#90c841", WATER = "#05a0cb", U10 = C.wind || 0, mphW = U10 * MPH, hft = hs * FT;
   const tau = 1.2 * (0.001 * (1 + 0.07 * U10)) * U10 * U10, E = 613 * hs * hs;   // wind stress (N/m2, Cd ~ Smith), wave energy (J/m2)
@@ -3384,12 +3440,14 @@ function vsCompass(C, hs, wdirW) {
     const hx = x - ux * 7, hy = y - uy * 7; return `<line x1="${cx}" y1="${cy}" x2="${hx.toFixed(1)}" y2="${hy.toFixed(1)}" stroke="${col}" stroke-width="3.5" stroke-linecap="round"/><polygon points="${x.toFixed(1)},${y.toFixed(1)} ${(hx - uy * 4.5).toFixed(1)},${(hy + ux * 4.5).toFixed(1)} ${(hx + uy * 4.5).toFixed(1)},${(hy - ux * 4.5).toFixed(1)}" fill="${col}"/>`; };
   let ticks = ""; for (let d = 0; d < 360; d += 30) { const a = d * Math.PI / 180, r0 = d % 90 ? R + 1 : R - 2; ticks += `<line x1="${(cx + Math.sin(a) * r0).toFixed(1)}" y1="${(cy - Math.cos(a) * r0).toFixed(1)}" x2="${(cx + Math.sin(a) * (R + 4)).toFixed(1)}" y2="${(cy - Math.cos(a) * (R + 4)).toFixed(1)}" stroke="rgba(220,230,238,.45)" stroke-width="1"/>`; }
   const lbl = (t, dx, dy) => `<text x="${cx + dx}" y="${cy + dy}" fill="rgba(220,230,238,.7)" font-size="8" font-family="IBM Plex Mono, monospace" text-anchor="middle" dominant-baseline="middle">${t}</text>`;
-  const svg = `<svg viewBox="0 0 96 96" aria-label="Air and water pushes on a compass"><circle cx="${cx}" cy="${cy}" r="${R}" fill="rgba(255,255,255,.03)" stroke="rgba(220,230,238,.25)"/>${ticks}${lbl("N", 0, -R + 6)}${lbl("S", 0, R - 6)}${lbl("E", R - 6, 0)}${lbl("W", -R + 6, 0)}
-    ${arrow(toA, la, AIR)}${arrow(toW, lw, WATER)}<circle cx="${cx}" cy="${cy}" r="2" fill="#dce6ee"/></svg>`;
+  const hdg = NAV.move === "paddle" ? NAV.pad.yaw : viewState().hdg;
+  const svg = `<svg viewBox="0 0 96 96" aria-label="Air and water pushes on a compass"><circle cx="${cx}" cy="${cy}" r="${R}" fill="rgba(255,255,255,.03)" stroke="rgba(220,230,238,.25)"/>
+    <g id="vsrose" transform="rotate(${-hdg} ${cx} ${cy})">${ticks}${lbl("N", 0, -R + 6)}${lbl("S", 0, R - 6)}${lbl("E", R - 6, 0)}${lbl("W", -R + 6, 0)}${arrow(toA, la, AIR)}${arrow(toW, lw, WATER)}</g>
+    <polygon points="${cx},${cy - R - 6} ${cx - 4},${cy - R + 1} ${cx + 4},${cy - R + 1}" fill="#f0b44c"/><circle cx="${cx}" cy="${cy}" r="2" fill="#dce6ee"/></svg>`;
   const d = Math.abs(angd(toA, toW)), rel = mphW < 3 && hs <= 0.01 ? "Still air, flat water." : mphW < 3 ? "Hardly any wind: the waves are left over, running on their own." : hs <= 0.01 ? "The wind has not raised waves here yet." :
     d < 30 ? "Pushing together: a wind sea, the waves running with the wind." : d <= 120 ? `Crossed by ${Math.round(d)}°: the wind pushes across the waves, a confused surface.` : "Opposed: the wind blows against the waves and steepens them.";
   return `${svg}<div><div class="row"><b style="color:${AIR}">Air</b><span>${mph(U10)} mph → ${compass(toA)} · ${tau < 0.01 ? "<0.01" : tau.toFixed(2)} N/m²</span></div>
-    <div class="row"><b style="color:${WATER}">Water</b><span>${hs > 0.01 ? `${ft(hs)} ft → ${compass(toW)} · ${Math.round(E)} J/m²` : "calm"}</span></div></div><div class="rel">${rel}</div>`;
+    <div class="row"><b style="color:${WATER}">Water</b><span>${hs > 0.01 ? `${ft(hs)} ft → ${compass(toW)} · ${Math.round(E)} J/m²` : "calm"}</span></div></div><div class="rel">${rel}</div><div class="hdg" id="vshdg">View ${compass(hdg)} ${Math.round(hdg)}° · up is where you look</div>`;
 }
 function renderModels() {
   const rows = [];
