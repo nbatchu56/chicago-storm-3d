@@ -562,6 +562,10 @@ try { renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPrefer
 catch (e) { fail("WebGL isn't available", "This world needs WebGL 2. Try a current version of Chrome, Edge, Firefox or Safari."); return; }
 if (!renderer.capabilities.isWebGL2) { fail("WebGL 2 isn't available", "This world needs WebGL 2 for 3D textures."); return; }
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+// a shader the GPU rejects would just leave its mesh undrawn (the ground, say); surface the compiler's first line in the About note
+const GPU = (() => { const gl = renderer.getContext(), dbg = gl.getExtension("WEBGL_debug_renderer_info");
+  return { name: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "", tex: gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS), fvec: gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS), errs: [] }; })();
+{ const ce = console.error.bind(console); console.error = (...a) => { const s = a.map(String).join(" "); if (/WebGLProgram|Shader Error|Program Info Log/i.test(s) && GPU.errs.length < 3) { const msg = s.replace(/\s+/g, " ").slice(0, 320); GPU.errs.push(msg); const n = $("#about"); if (n && n.textContent) n.textContent += ` Shader problem: ${msg}`; } ce(...a); }; }
 // far well beyond the sky dome: with a 0.3 m near plane, clip-space z for distant points rounds past 1 and gets clipped
 const camera = new THREE.PerspectiveCamera(50, 1, 0.0003, 50000);
 const controls = new THREE.OrbitControls(camera, canvas);
@@ -631,7 +635,7 @@ const U = {
   // chop overlay: wave energy everywhere; inside a bound FUNWAVE tile also its crossing/rebound index (tex R = Hs m, G = crossing 0..1)
   uSatOn: { value: 0 }, uSatMin: { value: new THREE.Vector2() }, uSatSize: { value: new THREE.Vector2(1, 1) },
   uSpotsOn: { value: 0 }, uSpotHas: { value: 0 }, uSpotTex: { value: blank2D }, uSpotMin: { value: new THREE.Vector2() }, uSpotSize: { value: new THREE.Vector2(1, 1) },
-  uChopOn: { value: 0 }, uFlowOn: { value: 0 }, uSwanDir: { value: blank2D }, uFlowDir: { value: new THREE.Vector2(0, 1) }, uFlowTp: { value: 3 }, uChopTex: { value: blank2D }, uChopMin: { value: new THREE.Vector2() }, uChopSize: { value: new THREE.Vector2(1, 1) }, uChopCore: { value: new THREE.Vector4(1e6, 1e6, -1e6, -1e6) }, uChopHas: { value: 0 },
+  uChopOn: { value: 0 }, uFlowOn: { value: 0 }, uFlowDir: { value: new THREE.Vector2(0, 1) }, uFlowTp: { value: 3 }, uChopTex: { value: blank2D }, uChopMin: { value: new THREE.Vector2() }, uChopSize: { value: new THREE.Vector2(1, 1) }, uChopCore: { value: new THREE.Vector4(1e6, 1e6, -1e6, -1e6) }, uChopHas: { value: 0 },
   uFw: { value: null }, uFwHs: { value: blank2D }, uFwMin: { value: new THREE.Vector2() }, uFwSize: { value: new THREE.Vector2(1, 1) }, uFwOn: { value: 0 }, uFwT: { value: 0 },
   uTempOn: { value: 0 }, uTRamp: { value: tRamp }, uLocalC: { value: new THREE.Vector2() }, uWaterC: { value: 15 }, uIceExp: { value: 0 }, uSnowCover: { value: 0 },
 };
@@ -741,9 +745,9 @@ vec3 chopColor(float hs) { float t = clamp(log(max(613.0 * hs * hs, 1.0) / 10.0)
   c = mix(c, vec3(0.97, 0.85, 0.25), smoothstep(0.3, 0.6, t)); return pow(mix(c, vec3(0.92, 0.30, 0.15), smoothstep(0.6, 1.0, t)), vec3(2.2)); }
 // Energy flow: the chop colours with streaks running the way the wave energy travels (SWAN's mean direction per cell
 // where it runs, bent by refraction and reflection; the offshore direction elsewhere), at the waves' group speed
-uniform sampler2D uSwanDir; uniform float uFlowOn, uFlowTp; uniform vec2 uFlowDir;
+uniform float uFlowOn, uFlowTp; uniform vec2 uFlowDir;
 vec2 swanTravel(vec2 pk) { if (uSwanOn > 0.5) { vec2 f = (pk - uSwanMin) / uSwanSize;
-    if (f.x >= 0.0 && f.y >= 0.0 && f.x <= 1.0 && f.y <= 1.0) { vec2 d = texture2D(uSwanDir, f).xy; if (dot(d, d) > 0.01) return -normalize(d); } }
+    if (f.x >= 0.0 && f.y >= 0.0 && f.x <= 1.0 && f.y <= 1.0) { vec2 d = texture2D(uSwan, f).gb; if (dot(d, d) > 0.01) return -normalize(d); } }
   return uFlowDir; }
 vec3 flowTint(float hs, vec2 pk, float w) {
   vec3 c = chopColor(hs); vec2 d = swanTravel(pk), pm = pk * 1000.0;
@@ -1554,11 +1558,12 @@ function swanUpdate(xk, yk, off) {   // off: {hs, tp, dir} offshore; returns loc
     if (!b.ok) { U.uSwanOn.value = 0; SWAN.cur = { D, none: true }; return null; }
     // SWAN's opaque obstacles can seal small pockets (harbour basins, groyne pockets) completely; where it says
     // exactly zero on wet water, fall back to the sheltered-water estimate instead (marked -1 = no SWAN value)
-    const half = new Uint16Array(D.n); for (let i = 0; i < D.n; i++) half[i] = THREE.DataUtils.toHalfFloat(b.ratio[i] > 0.005 ? b.ratio[i] : -1);
-    if (SWAN.tex) SWAN.tex.dispose(); SWAN.tex = new THREE.DataTexture(half, D.g.nx, D.g.ny, THREE.RedFormat, THREE.HalfFloatType); SWAN.tex.minFilter = SWAN.tex.magFilter = THREE.LinearFilter; SWAN.tex.needsUpdate = true;
-    const dh = new Uint16Array(D.n * 2); for (let i = 0; i < D.n * 2; i++) dh[i] = THREE.DataUtils.toHalfFloat(b.dir[i]);   // mean "from" direction as (sin, cos), for the energy-flow streaks
-    if (SWAN.dirTex) SWAN.dirTex.dispose(); SWAN.dirTex = new THREE.DataTexture(dh, D.g.nx, D.g.ny, THREE.RGFormat, THREE.HalfFloatType); SWAN.dirTex.minFilter = SWAN.dirTex.magFilter = THREE.LinearFilter; SWAN.dirTex.needsUpdate = true;
-    U.uSwan.value = SWAN.tex; U.uSwanDir.value = SWAN.dirTex; U.uSwanMin.value.set(D.x0, D.y0); U.uSwanSize.value.set(D.w, D.h); SWAN.cur = { D, ...b }; }
+    // one RGBA texture: ratio in R, the mean "from" direction as (sin, cos) in G and B (for the energy-flow streaks). One sampler, not two:
+    // the ground shader is close to the 16-texture limit of some GPUs, and a shader over it silently stops drawing the ground
+    const hf = THREE.DataUtils.toHalfFloat, one = hf(1), half = new Uint16Array(D.n * 4);
+    for (let i = 0; i < D.n; i++) { half[i * 4] = hf(b.ratio[i] > 0.005 ? b.ratio[i] : -1); half[i * 4 + 1] = hf(b.dir[i * 2]); half[i * 4 + 2] = hf(b.dir[i * 2 + 1]); half[i * 4 + 3] = one; }
+    if (SWAN.tex) SWAN.tex.dispose(); SWAN.tex = new THREE.DataTexture(half, D.g.nx, D.g.ny, THREE.RGBAFormat, THREE.HalfFloatType); SWAN.tex.minFilter = SWAN.tex.magFilter = THREE.LinearFilter; SWAN.tex.needsUpdate = true;
+    U.uSwan.value = SWAN.tex; U.uSwanMin.value.set(D.x0, D.y0); U.uSwanSize.value.set(D.w, D.h); SWAN.cur = { D, ...b }; }
   if (!SWAN.cur || SWAN.cur.none) return null;
   U.uSwanOn.value = 1; U.uHsOff.value = off.hs;
   const C = SWAN.cur, g = D.g, i = clamp(Math.round((xk - D.x0) / D.w * (g.nx - 1)), 0, g.nx - 1), j = clamp(Math.round((yk - D.y0) / D.h * (g.ny - 1)), 0, g.ny - 1), k = j * g.nx + i;
@@ -3483,7 +3488,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
       for (const h of DATA.hist) await addHistory(h);
       if (!SRC.hist.length) { const o = document.createElement("option"); o.textContent = "No historical periods in this page"; $("#hist-pick").appendChild(o); } };
     { const o = document.createElement("option"); o.id = "hist-wait"; o.disabled = true; o.textContent = "Loading historical periods…"; $("#hist-pick").appendChild(o); }
-    const about = () => { $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""}`; };
+    const about = () => { $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""} GPU: ${GPU.name || "unknown"}, ${GPU.tex} textures, ${GPU.fvec} uniform vectors.${GPU.errs.length ? ` Shader problem: ${GPU.errs.join(" | ")}` : ""}`; };
     await setBathy(DATA.bathy); await yieldUI();
     if (DATA.lake) { await buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
     buildMinimap(); await yieldUI();
