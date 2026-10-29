@@ -54,6 +54,8 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .upsets .strip i { position: absolute; top: 0; bottom: 14px; opacity: .85; } .upsets .strip i.glass { background: rgba(95, 201, 168, .22); }
 .upsets .strip i.ev { top: 4px; bottom: 16px; border-radius: 2px; opacity: 1; }
 .upsets .strip .now { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--fg); opacity: .8; }
+.upsets .strip i.src { top: 0; bottom: auto; height: 3px; opacity: .9; }
+.upsets .strip .seam { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px dotted; opacity: .9; }
 .upsets .strip s { position: absolute; bottom: 0; font: 9px var(--font-data); color: var(--muted); text-decoration: none; transform: translateX(-50%); }
 .upsets .strip s::before { content: ""; position: absolute; left: 50%; top: -4px; height: 3px; border-left: 1px solid var(--line); }
 #ups-list { display: grid; gap: 6px; }
@@ -2907,6 +2909,8 @@ $("#x-seed").onclick = () => { S.x.seed = Math.floor(Math.random() * 1e6); };
 // each row carries dt, the hours it stands for, in case the far leads come coarser than hourly). Events are rated
 // red / yellow / green by how hard they work against glass.
 const UPS_C = { red: "#eb4d26", yellow: "#f7d940", green: "#5fc9a8" }, HOUR = 3600e3;
+const UPS_SRC = { obs: ["#9aa3ad", "observed"], nws: ["#4ea3ff", "NWS hourly"], wn3: ["#8b7cf6", "WeatherNext 3, hourly run"], wn3l: ["#f06bd0", "WeatherNext 3, 15-day run"] };   // source band along the top of the strip
+const srcKey = (r) => r.src === "wn3" && r.long ? "wn3l" : r.src;
 function upsetSeries() {
   const now = Date.now(), hr = (t) => Math.floor(t / HOUR) * HOUR, since = now - 50 * HOUR;
   const st = (DATA.lake && DATA.lake.stations) || [], pick = (ids) => ids.map((id) => st.find((s) => s.id === id)).find((s) => s && s.history && s.history.length);
@@ -2924,7 +2928,8 @@ function upsetSeries() {
     rows.push({ t, src: "nws", wind: h.wind, gust: h.gust, dir: h.dir, hs: h.hs_offshore, tp: h.tp, pop: h.pop, rating: h.rating }); }
   last = rows.reduce((m, r) => Math.max(m, r.t), now);
   const W = DATA.wn3 && DATA.wn3.points && (DATA.wn3.points["45174"] || Object.values(DATA.wn3.points)[0]);
-  if (W && W.t) W.t.forEach((ts, i) => { const t = Date.parse(ts); if (t > last) rows.push({ t, src: "wn3", wind: W.wspd[i], gust: W.wspd_p90 ? W.wspd_p90[i] : null, dir: W.wdir[i], hs: null, pop: W.precip_mm_p90 && W.precip_mm_p90[i] >= 1 ? 50 : 0 }); });
+  const longFrom = DATA.wn3 && DATA.wn3.long_from ? Date.parse(DATA.wn3.long_from) : Infinity;   // where the 6-hourly 15-day run takes over from the hourly one
+  if (W && W.t) W.t.forEach((ts, i) => { const t = Date.parse(ts); if (t > last) rows.push({ t, src: "wn3", long: t >= longFrom, wind: W.wspd[i], gust: W.wspd_p90 ? W.wspd_p90[i] : null, dir: W.wdir[i], hs: null, pop: W.precip_mm_p90 && W.precip_mm_p90[i] >= 1 ? 50 : 0 }); });
   rows.sort((a, b) => a.t - b.t);
   rows.forEach((r, i) => { const n = rows[i + 1]; r.dt = n ? clamp(Math.round((n.t - r.t) / HOUR), 1, 6) : (i ? rows[i - 1].dt : 1); });
   return rows;
@@ -2938,7 +2943,8 @@ function upsetEvents(rows) {
   const peakHs = (t0, t1) => rows.reduce((m, r) => r.t >= t0 && r.t <= t1 + 6 * HOUR && r.hs != null ? Math.max(m, r.hs) : m, 0);
   const meanDir = (rs) => { let x = 0, y = 0; for (const r of rs) { const a = r.dir * Math.PI / 180; x += Math.sin(a) * r.wind; y += Math.cos(a) * r.wind; } return (Math.atan2(x, y) * 180 / Math.PI + 360) % 360; };
   const far = (t) => t - now > UPS_SURE_D * 24 * HOUR ? ` · day ${Math.floor((t - now) / 864e5) + 1}, less certain` : "";
-  const srcOf = (rs) => rs.some((r) => r.src === "obs") ? (rs.some((r) => r.src !== "obs") ? "observed, then forecast" : "observed") : rs.every((r) => r.src === "wn3") ? `WeatherNext 3${far(rs[0].t)}` : rs.some((r) => r.src === "wn3") ? "NWS, then WeatherNext 3" : "NWS forecast";
+  const wnName = (rs) => rs.every((r) => r.long) ? "WeatherNext 3 15-day run" : rs.some((r) => r.long) ? "WeatherNext 3, hourly then 15-day run" : "WeatherNext 3";
+  const srcOf = (rs) => rs.some((r) => r.src === "obs") ? (rs.some((r) => r.src !== "obs") ? "observed, then forecast" : "observed") : rs.every((r) => r.src === "wn3") ? `${wnName(rs)}${far(rs[0].t)}` : rs.some((r) => r.src === "wn3") ? `NWS, then ${wnName(rs.filter((r) => r.src === "wn3"))}` : "NWS forecast";
   // wind runs: 10 mph or more, one quiet hour allowed inside a run
   const windRuns = runs((r) => r.wind >= 4.5, 1);
   for (const rs of windRuns) { const s = span(rs), peak = Math.max(...rs.map((r) => r.wind)), gust = Math.max(...rs.map((r) => r.gust || 0)), dir = meanDir(rs), hs = peakHs(s.t0, s.t1), P = peak * MPH, on = onshore(dir);
@@ -2955,7 +2961,7 @@ function upsetEvents(rows) {
   let lastShift = -Infinity;
   for (let i = 1; i < rows.length; i++) { const a = rows[i - 1], b = rows[i]; if (b.t - a.t > 6 * HOUR || a.wind < 3 || b.wind < 3 || a.dir == null || b.dir == null || Math.abs(angd(b.dir, a.dir)) < 90) continue;
     const after = Math.max(...rows.filter((r) => r.t >= b.t && r.t < b.t + 3 * HOUR).map((r) => r.wind)); if (after < 4.5 || b.t - lastShift < 6 * HOUR) continue; lastShift = b.t;
-    ev.push({ kind: "shift", level: after >= 9 ? "red" : after >= 6.7 ? "yellow" : "green", t0: b.t, t1: b.t + HOUR, hours: 1, title: `Wind shift ${compass(a.dir)} → ${compass(b.dir)}`, detail: `${mph(a.wind)} → ${mph(after)} mph`, why: "A front or the lake breeze: the old chop keeps running while new chop crosses it.", src: b.src === "obs" ? "observed" : b.src === "wn3" ? `WeatherNext 3${far(b.t)}` : "NWS forecast" }); }
+    ev.push({ kind: "shift", level: after >= 9 ? "red" : after >= 6.7 ? "yellow" : "green", t0: b.t, t1: b.t + HOUR, hours: 1, title: `Wind shift ${compass(a.dir)} → ${compass(b.dir)}`, detail: `${mph(a.wind)} → ${mph(after)} mph`, why: "A front or the lake breeze: the old chop keeps running while new chop crosses it.", src: b.src === "obs" ? "observed" : b.src === "wn3" ? `${wnName([b])}${far(b.t)}` : "NWS forecast" }); }
   // rain and storms in the hourly forecast
   for (const rs of runs((r) => r.pop != null && r.pop >= 50, 0)) { const s = span(rs), pop = Math.max(...rs.map((r) => r.pop)), g = Math.max(...rs.map((r) => r.gust || 0));
     ev.push({ kind: "storm", level: pop >= 70 && g >= 11 ? "red" : "yellow", ...s, title: `Showers or storms, ${s.hours} h`, detail: `${pop}% chance${g ? ` · gusts to ${mph(g)} mph` : ""}`, why: "Rain pocks the surface and gust fronts raise sudden chop; lightning ends the paddle.", src: srcOf(rs) }); }
@@ -2985,6 +2991,9 @@ function renderUpsets() {
   for (const lv of ["green", "yellow", "red"]) for (const e of ev) if (e.level === lv) strip += `<i class="ev" style="left:${X(e.t0)};width:${Math.max(0.6, 100 * (Math.min(e.t1, b) - Math.max(e.t0, a)) / (b - a)).toFixed(2)}%;background:${UPS_C[lv]}" title="${e.title}"></i>`;
   const every = Math.max(1, Math.ceil((b - a) / 864e5 / 8)); let nDay = 0;   // at most ~8 day labels, however long the series
   for (let t = Math.ceil(a / HOUR) * HOUR; t < b; t += HOUR) if (fmtH.format(t) === "00" && nDay++ % every === 0) strip += `<s style="left:${X(t)}">${fmtWd.format(t)}</s>`;
+  const bands = []; for (const r of rows) { const k = srcKey(r), z = bands[bands.length - 1]; if (z && z.k === k && r.t - z.t1 <= 3 * HOUR) z.t1 = r.t + (r.dt || 1) * HOUR; else bands.push({ k, t0: r.t, t1: r.t + (r.dt || 1) * HOUR }); }
+  for (const z of bands) if (UPS_SRC[z.k]) strip += `<i class="src" style="left:${X(z.t0)};width:${(100 * (Math.min(z.t1, b) - Math.max(z.t0, a)) / (b - a)).toFixed(2)}%;background:${UPS_SRC[z.k][0]}" title="${UPS_SRC[z.k][1]}: ${fmtDH.format(z.t0)} → ${fmtDH.format(z.t1)}"></i>`;
+  const seam = rows.find((r) => r.long); if (seam) strip += `<div class="seam" style="left:${X(seam.t)};border-color:${UPS_SRC.wn3l[0]}" title="WeatherNext 3 15-day run takes over ${fmtDH.format(seam.t)}"></div>`;
   strip += `<div class="now" style="left:${X(now)}" title="Now"></div>`;
   $("#ups-strip").innerHTML = strip;
   const cur = rows.reduce((m, r) => Math.abs(r.t + HOUR / 2 - now) < Math.abs(m.t + HOUR / 2 - now) ? r : m, rows[0] || { t: 0 }), ahead = ev.filter((e) => e.t1 > now), worst = ["red", "yellow", "green"].find((l) => ahead.some((e) => e.level === l));
@@ -2996,8 +3005,10 @@ function renderUpsets() {
     <span class="why">${e.detail}${e.why ? `. ${e.why}` : ""}</span>
     <span class="acts">${e.t1 > f0 && e.t0 < f1 ? `<button data-ups-fc="${i}" title="Open the forecast at the start of this event">Show in forecast</button>` : ""}${e.kind === "wind" ? `<button data-ups-lab="${i}" title="Set the weather lab to this wind">Recreate in the lab</button>` : ""}</span></div>`).join("")
     : `<p class="note">No upsets found: light wind and small waves through the series.</p>`;
+  const used = Object.keys(UPS_SRC).filter((k) => rows.some((r) => srcKey(r) === k));
   $("#ups-note").innerHTML = `<span class="legend"><span><i style="background:${UPS_C.red}"></i>red</span><span><i style="background:${UPS_C.yellow}"></i>yellow</span><span><i style="background:${UPS_C.green}"></i>green</span><span><i style="background:rgba(95,201,168,.35)"></i>glass hours</span></span>
-    Colour is how hard the event works against glass. Past two days from the Wilmette buoy (Dever Crib when the buoy is silent), then the NWS hourly forecast behind the SUP outlook${rows.some((r) => r.src === "wn3") ? `, then the WeatherNext 3 ensemble mean to ${fmtWd.format(rows[rows.length - 1].t)} ${new Date(rows[rows.length - 1].t).toLocaleDateString("en-US", { timeZone: TZ, month: "short", day: "numeric" })} (beyond ${UPS_SURE_D} days, treat it as a trend)` : ""}; water levels from the Calumet Harbor gauge.`;
+    <span class="legend" title="The band along the top of the strip: where each hour's wind comes from">${used.map((k) => `<span><i style="background:${UPS_SRC[k][0]};height:4px;vertical-align:2px"></i>${UPS_SRC[k][1]}</span>`).join("")}</span>
+    Colour is how hard the event works against glass; the band along the top says where each hour comes from. Past two days from the Wilmette buoy (Dever Crib when the buoy is silent), then the NWS hourly forecast behind the SUP outlook${rows.some((r) => r.src === "wn3") ? `, then the WeatherNext 3 ensemble mean${seam ? ` (${rows.some((r) => r.src === "wn3" && !r.long) ? `the hourly run, then from ${fmtDH.format(seam.t)} ` : `its 6-hourly 15-day run from ${fmtDH.format(seam.t)}, `}${rows.some((r) => r.src === "wn3" && !r.long) ? "the 6-hourly 15-day run, " : ""}marked by the dotted line)` : ""} to ${fmtWd.format(rows[rows.length - 1].t)} ${new Date(rows[rows.length - 1].t).toLocaleDateString("en-US", { timeZone: TZ, month: "short", day: "numeric" })} (beyond ${UPS_SURE_D} days, treat it as a trend)` : ""}; water levels from the Calumet Harbor gauge.`;
   document.querySelectorAll("[data-ups-fc]").forEach((btn) => btn.onclick = () => { const e = ev[+btn.dataset.upsFc]; setMode("forecast"); const [t0, t1] = range(); S.t = clamp(e.t0, t0, t1); buildTicks(); WAVES.key = null; });
   document.querySelectorAll("[data-ups-lab]").forEach((btn) => btn.onclick = () => { const e = ev[+btn.dataset.upsLab];
     const set = { wspd: clamp(Math.round(e.peak * 2) / 2, 0, 25), wdir: Math.round(e.dir / 5) * 5 % 360, dur: clamp(e.hours, 1, 24) };
