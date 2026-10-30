@@ -257,7 +257,7 @@ def merge_earth(lakefront, earth):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
-    for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track", "levels", "earth", "wn3"):
+    for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track", "levels", "earth", "wn3", "ortho"):
         ap.add_argument("--" + k)
     ap.add_argument("--learn", help="correction.json from the learn branch (experimental learned wave correction)")
     ap.add_argument("--scorecard", help="scorecard.json from the learn branch (forecast vs buoy by lead time)")
@@ -285,7 +285,7 @@ def main():
         "funwave-data": quantize_funwave([load(p) for p in a.funwave]) or None, "validate-data": summarize_validation(load(a.validate)),
         "import-data": [d for d in (load(p) for p in a.imports) if d] or None,
         "learn-data": summarize_learn(load(a.learn), load(a.scorecard)),
-        "chopspots-data": None, "levels-data": load(a.levels),
+        "chopspots-data": None, "levels-data": load(a.levels), "ortho-data": load(a.ortho),   # app.ortho: the aerial photo beside the page (data/ortho/)
     }
     generated = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     pages = [(a.out, a.start)] + [(x.split("=", 1)[0], x.split("=", 1)[1]) for x in a.also]
