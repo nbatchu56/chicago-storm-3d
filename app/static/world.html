@@ -2578,6 +2578,7 @@ function stationAt(stations, field, tMs, xk, yk) {
 }
 function range() {   // [t0, t1] ms for the current mode
   const L = SRC.live, now = Date.now();
+  if (S.kiosk && S.mode === "live") return [S.kiosk.t0 - 60e3, S.kiosk.t1];   // the kiosk's timeline is its loop: now to 3 h after the next sunrise
   // live: one timeline, 12 h of observations back, the radar scans and nowcast, the NWS 48 h, then WeatherNext 3 as far as it goes
   if (S.mode === "live") { const t0 = Math.min(L ? L.frames[0].t : now, now - 12 * 3600e3); return [t0, Math.max(forecastRange()[1], now + 3600e3)]; }
   if (S.mode === "history") { const H = SRC.hist[S.histIdx]; if (!H) return [now - 3600e3, now]; const w = H.raw.window; return [new Date(w.start).getTime() - 10 * 60e3, new Date(w.end).getTime() + 5 * 60e3]; }
@@ -3251,7 +3252,7 @@ function buildTicks() { const [t0, t1] = range(), tk = $("#ticks"), sg = $("#seg
     // pale: the observed past; blue: radar scans; violet: nowcast then the NWS 48 h; magenta: WeatherNext 3 (hourly run, then the 15-day run)
     tk.classList.add("abs"); seg(t0, f0, "p"); seg(f0, lastObs, "o"); seg(lastObs, lastF, "f"); seg(lastF, se, "f2"); seg(se, clamp(lf, se, t1), "f3h"); seg(Math.max(se, Math.min(lf, t1)), t1, "f3");
     const now = Date.now(); if (now > t0 && now < t1) { const b = document.createElement("b"); b.id = "segnow"; b.style.left = `${pc(now)}%`; sg.appendChild(b); }
-    const xs = [tick(t0, `−12 h ${fmtHM.format(new Date(t0))}`, "past")], room = (t) => pc(t) - xs[xs.length - 1] > 11;
+    const xs = [tick(t0, S.kiosk ? `Now ${fmtHM.format(new Date(t0))}` : `−12 h ${fmtHM.format(new Date(t0))}`, "past")], room = (t) => pc(t) - xs[xs.length - 1] > 11;
     if (room(lastObs)) xs.push(tick(lastObs, `Latest scan ${fmtHM.format(new Date(lastObs))}`, "now"));
     if (lead > 0 && room(lastF)) xs.push(tick(lastF, `+${lead >= 90 ? Math.round(lead / 60) + " h" : lead + " min"} nowcast`, "fct"));
     if (se > lastF + 3600e3 && room(se)) xs.push(tick(se, `NWS → ${fmtDH.format(new Date(se))}`, "fct"));
@@ -3342,7 +3343,7 @@ function tick() {
   if (S.ov === "spots") buildConfirmed();
   const [t0, t1] = range();
   if (S.playing && !(S.mode === "live" && S.follow)) { S.t += dt * 1000 * S.speed; if (S.t > t1) S.t = t0; }   // one steady rate: S.speed seconds of the timeline per real second
-  if (S.kiosk && (S.t > S.kiosk.t1 || S.t < S.kiosk.t0 - 60e3)) { S.kiosk.t0 = Date.now(); S.t = S.kiosk.t0; }   // the loop starts over at the present
+  if (S.kiosk && (S.t > S.kiosk.t1 || S.t < S.kiosk.t0 - 60e3)) { S.kiosk.t0 = Date.now(); S.kiosk.t1 = kioskEnd(S.kiosk.t0); S.t = S.kiosk.t0; S.speed = Math.max(60, (S.kiosk.t1 - S.kiosk.t0) / 1000 / S.kiosk.loopSec); buildTicks(); }   // the loop starts over at the present
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   navStep(dt);
@@ -3693,7 +3694,7 @@ async function initRefresh() {
 function kioskEnd(now) {   // the end of the loop: 3 h after sunrise, today's if that is still ahead, else tomorrow's
   const k = S.kiosk, after = (k.hours ?? 3) * 3600e3;
   let r = sunTimes(now).rise; if (r == null || r + after <= now + 30 * 60e3) r = sunTimes(now + 86400e3).rise;
-  return r == null ? now + 12 * 3600e3 : r + after;
+  return Math.min(r == null ? now + 12 * 3600e3 : r + after, now + 24 * 3600e3);   // never more than a day ahead
 }
 function kiosk(k) {
   S.kiosk = Object.assign({ name: "Diversey Outlook", hours: 3, loopSec: 90, reloadMin: 30, staleH: 6 }, k || {});
@@ -3702,7 +3703,7 @@ function kiosk(k) {
   controls.enabled = false; camTween = null; S.follow = false; $("#nowbtn").hidden = true; hideHint();
   document.querySelectorAll("#vsbox .cathead span").forEach((el) => { if (/drag to turn/i.test(el.textContent)) el.lastChild.textContent = el.lastChild.textContent.replace(/\s*·\s*drag to turn/i, ""); });
   const now = Date.now(); S.kiosk.t0 = now; S.kiosk.t1 = kioskEnd(now);
-  S.t = now; S.speed = Math.max(60, (S.kiosk.t1 - now) / 1000 / S.kiosk.loopSec); setPlaying(true);
+  S.t = now; S.speed = Math.max(60, (S.kiosk.t1 - now) / 1000 / S.kiosk.loopSec); setPlaying(true); buildTicks();
   // a fresh copy of the page every so often (the artifact is republished a few times a day), at the top of a loop
   setInterval(() => { if (document.visibilityState !== "hidden" && navigator.onLine !== false) location.reload(); }, Math.max(5, S.kiosk.reloadMin) * 60e3);
 }
