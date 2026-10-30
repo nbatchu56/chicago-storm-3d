@@ -4,6 +4,9 @@ Real lake bottom for the Chicago lakefront.
   nearshore  2020 USACE NCMP topobathy lidar DEM (1 m, IGLD85 metres; ~1 km offshore or laser extinction),
              NOAA Digital Coast dataset 9970 on the public S3 bucket noaa-nos-coastal-lidar-pds
   offshore   NOAA NCEI bathymetry mosaic (ArcGIS ImageServer export), aligned to the lidar where they overlap
+  harbour    the 2023 USGS / Cook County echo-sounder survey of Diversey Harbor, the Fullerton channel, the South
+             Lagoon, North Pond and South Pond (app.cookcounty): inside its shoreline polygons it is the bottom
+             (the lidar reads moored boats and docks as land there, and sees nothing through the lagoon's water)
   lake level NOAA CO-OPS water level (IGLD85) at Calumet Harbor, so depth = level - bed elevation
 
     python -m app.bathymetry --out bathy.json           # world grid (10 m over the lakefront map)
@@ -11,7 +14,7 @@ Real lake bottom for the Chicago lakefront.
 
 Output grids are in the shared local frame (metres east/north of State & Madison). Bed elevation is stored
 relative to Lake Michigan low water datum (176.0 m IGLD85) in centimetres (int16), with a source map
-(0 none, 1 lidar, 2 NCEI, 3 filled).
+(0 none, 1 lidar, 2 NCEI, 3 filled, 4 survey). The file also carries the survey's polygons (survey.polys, local metres).
 """
 
 import argparse
@@ -30,6 +33,7 @@ import urllib.request
 
 import numpy as np
 
+from . import cookcounty as cook
 from . import lakefront as lf
 
 log = logging.getLogger("klot.bathy")
@@ -50,7 +54,10 @@ MODEL_BBOX = (41.905, -87.648, 41.945, -87.598)
 # out to the Harrison-Dever crib)
 # (north past Montrose to Kathy Osterman Beach, so the SWAN trail domain's north boundary sits ~2 km from Montrose Beach)
 CORRIDOR_BBOX = (41.866, -87.656, 41.988, -87.578)
-MODEL_BBOXES = {"route": MODEL_BBOX, "montrose": (41.950, -87.648, 41.975, -87.600), "corridor": CORRIDOR_BBOX}
+# harbor = Diversey Harbor, the Fullerton channel and the South Lagoon at 2 m (the inlet under Lake Shore Drive is ~16 m
+# wide: 8 cells, enough for SWAN's diffraction; 4 at 4 m is where it goes unstable)
+MODEL_BBOXES = {"route": (MODEL_BBOX, 4.0), "montrose": ((41.950, -87.648, 41.975, -87.600), 4.0), "corridor": (CORRIDOR_BBOX, 4.0),
+                "harbor": (cook.BBOX, 2.0)}
 ISGS_PAGES = ["https://clearinghouse.isgs.illinois.edu/data/coastal/chicago-beaches-chicago-park-district-topobathymetric-models"]
 ISGS_DIR = os.environ.get("ISGS_DIR", "isgs_cache")
 
@@ -310,11 +317,17 @@ def nearest_fill(z, mask):
     return out
 
 
-def blend(lidar, ncei, level, lake_mask=None):
-    """Bed elevation (m IGLD85) and source map. NCEI is shifted to agree with the lidar where both exist."""
+def blend(lidar, ncei, level, lake_mask=None, survey=None):
+    """Bed elevation (m IGLD85) and source map. NCEI is shifted to agree with the lidar where both exist; the harbour
+    survey (bed elevation inside its polygons, NaN elsewhere) replaces both where it has a value."""
     z = lidar.copy()
     src = np.where(np.isfinite(lidar), 1, 0).astype(np.uint8)
     info = {}
+    if survey is not None:
+        sv = np.isfinite(survey)
+        z[sv] = survey[sv]; src[sv] = 4
+        info["survey_cells"] = int(sv.sum())
+        lidar = np.where(sv, np.nan, lidar)    # the NCEI alignment below should not learn from the survey's cells
     if ncei is not None:
         both = np.isfinite(lidar) & np.isfinite(ncei) & (lidar < level - 3.0)
         if both.sum() > 200:
@@ -348,9 +361,9 @@ def blend(lidar, ncei, level, lake_mask=None):
 
 
 def smooth_seam(z, src, passes=6):
-    """Light diffusion across the lidar/NCEI seam only."""
+    """Light diffusion across the lidar/NCEI seam only (never across the survey's edge: that is a wall)."""
     from scipy import ndimage
-    seam = ndimage.binary_dilation(src == 1, iterations=4) & ndimage.binary_dilation(src != 1, iterations=4)
+    seam = ndimage.binary_dilation(src == 1, iterations=4) & ndimage.binary_dilation((src != 1) & (src != 4), iterations=4) & (src != 4)
     for _ in range(passes):
         zs = ndimage.uniform_filter(z, 5)
         z = np.where(seam, zs, z)
@@ -394,7 +407,15 @@ def build_grid(bbox, d, level, probe, tag):
     nc = ncei_grid(g, p)
     if not np.isfinite(lid).any() and nc is None:
         raise RuntimeError("no bathymetry source reachable")
-    z, src, info = blend(lid, nc, level)
+    sv = None
+    if overlaps(g, cook.BBOX):
+        try:
+            sv, _, meta = cook.bed_elevation(g, p)
+            if meta:
+                SURVEY.setdefault("meta", meta)
+        except Exception as e:  # noqa: BLE001
+            p["cook_error"] = str(e)[:300]; sv = None
+    z, src, info = blend(lid, nc, level, survey=sv)
     z = smooth_seam(z, src)
     p.update(info)
     depth = level - z
@@ -403,6 +424,13 @@ def build_grid(bbox, d, level, probe, tag):
 
 
 ISGS_PATHS = []
+SURVEY = {}
+
+
+def overlaps(g, bbox):
+    s, w, n, e = bbox
+    (xa, ya), (xb, yb) = lf.xy(s, w), lf.xy(n, e)
+    return g["x0"] < xb and g["x0"] + (g["nx"] - 1) * g["dx"] > xa and g["y0"] < yb and g["y0"] + (g["ny"] - 1) * g["dx"] > ya
 
 
 def build(model=False):
@@ -414,7 +442,7 @@ def build(model=False):
     out = {"version": 1, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds"),
            "datum": "bed elevation, cm relative to LWD 176.0 m IGLD85", "lwd_m": LWD,
            "level": {"m_igld85": round(level, 3), "station": st, "t": lt},
-           "sources": ["2020 USACE NCMP topobathy lidar DEM (NOAA Digital Coast 9970)", "NOAA NCEI DEM mosaic", "NOAA CO-OPS water level"]}
+           "sources": ["2020 USACE NCMP topobathy lidar DEM (NOAA Digital Coast 9970)", "NOAA NCEI DEM mosaic", "NOAA CO-OPS water level", cook.SOURCE]}
     global ISGS_PATHS
     try:
         ISGS_PATHS = isgs_rasters(probe)
@@ -422,7 +450,9 @@ def build(model=False):
         probe["isgs_error"] = str(e)[:300]
     out["world"] = build_grid(lf.MAP_BBOX, 10.0, level, probe, "world")
     if model:
-        out["models"] = {k: build_grid(b, 4.0, level, probe, k) for k, b in MODEL_BBOXES.items()}
+        out["models"] = {k: build_grid(b, d, level, probe, k) for k, (b, d) in MODEL_BBOXES.items()}
+    if SURVEY.get("meta"):
+        out["survey"] = SURVEY["meta"]
     out["probe"] = probe
     return out
 
