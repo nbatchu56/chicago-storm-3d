@@ -3,8 +3,8 @@
   "events": [
     {"label": "blizzard-2022-12-22", "start": "2022-12-22T20:00", "end": "2022-12-22T21:30", "type": "blizzard", "title": "Dec 22 2022 blizzard: the front",
      "headline": "Pre-Christmas bomb cyclone: the arctic front crossed the city (27 to 9 F in four hours) under the heaviest snow", "radar": "snow", "source": "https://weather.gov/lot/2022dec2223"},
-    {"label": "blizzard-2022-12-23", "fdd": 20, "start": "2022-12-23T20:00", "end": "2022-12-23T21:45", "type": "blizzard", "title": "Dec 23 2022 blizzard winds",
-     "headline": "Blizzard conditions in blowing snow: Harrison-Dever Crib 56 mph, Montrose Beach light 56 mph, -8 F, wind chill -37", "radar": "quiet", "source": "https://weather.gov/lot/2022dec2223"},
+    {"label": "blizzard-2022-12-23", "fdd": 20, "start": "2022-12-23T20:00", "end": "2022-12-23T21:45", "type": "blizzard", "title": "Dec 23 2022 blizzard winds", "site": "KMKX",
+     "headline": "Blizzard conditions in blowing snow: Harrison-Dever Crib 56 mph, Montrose Beach light 56 mph, -8 F, wind chill -37 (KLOT was down that afternoon: Milwaukee's radar)", "radar": "quiet", "source": "https://weather.gov/lot/2022dec2223"},
     {"label": "flood-2023-07-02", "start": "2023-07-02T14:30", "end": "2023-07-02T16:00", "type": "flood", "title": "Jul 2 2023 flood",
      "headline": "Training storms: Lincoln Park 7.4-7.9 in, Garfield Park 8.1 in, 1.6 in in one hour at Midway; 70,000 flooded basements", "radar": "rain", "source": "https://www.weather.gov/lot/2023_07_02_Flooding"},
     {"label": "tornado-2023-07-12", "start": "2023-07-12T23:45", "end": "2023-07-13T01:00", "type": "tornado", "title": "Jul 12 2023 O'Hare tornadoes",
