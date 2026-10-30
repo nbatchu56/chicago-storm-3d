@@ -41,6 +41,9 @@ page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") 
 page.on("pageerror", (e) => logs.push(`pageerror: ${e.message}`));
 await page.goto(url, { waitUntil: "load" });
 await page.waitForFunction(() => window.__world && window.__world.MAP && window.__world.MAP.ok, null, { timeout: 180000 });
+// the wave libraries load in the background after the first view: wait for them when the page has any
+try { await page.waitForFunction(() => { const W = window.__world; const has = document.getElementById("swan-data") && (document.getElementById("swan-data").dataset.src || document.getElementById("swan-data").textContent.trim());
+  return !has || (W.SWAN.domains.length > 0 && W.FW); }, null, { timeout: 90000 }); } catch (e) { console.log("note: wave libraries not loaded in 90 s"); }
 await page.waitForTimeout(1500);
 let failed = false;
 const fail = (m) => { console.log("FAIL " + m); failed = true; };
