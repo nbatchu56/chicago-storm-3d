@@ -207,7 +207,7 @@ Files: `README.md`, `plans/`
 | --- | --- |
 | 1 survey in the lake bottom | done (bathy.yml run 41096808739 on the branch) |
 | 2 rigid walls | done (probe: 99.2% inside / 99.4% outside, from 19% / 88%) |
-| 3 aerial imagery | pending |
+| 3 aerial imagery | done (0.55 m JPEG, 2.0 MB; Aerial 2024 button) |
 | 4 harbor SWAN | pending |
 | 5 FUNWAVE to the sill | pending |
 | 6 harbor waves on the page | pending |

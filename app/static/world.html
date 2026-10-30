@@ -444,7 +444,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
     </section>
     <section id="sec-sat">
       <h2>Satellite</h2>
-      <div class="seg" role="group" aria-label="Satellite overlay" id="sat-seg" hidden><button data-ov="natural" aria-pressed="true">None</button><button data-ov="s1" aria-pressed="false">Wind on the water</button><button data-ov="s2" aria-pressed="false">Water clarity</button></div>
+      <div class="seg" role="group" aria-label="Satellite overlay" id="sat-seg" hidden><button data-ov="natural" aria-pressed="true">None</button><button data-ov="s1" aria-pressed="false">Wind on the water</button><button data-ov="s2" aria-pressed="false">Water clarity</button><button data-ov="ortho" aria-pressed="false" title="Cook County's 2024 aerial photo over Diversey Harbor and the lagoon">Aerial 2024</button></div>
       <label class="check" title="Live mode: the cloud field seen by the GOES-19 satellite (within 45 min of its image) drawn beyond the radar's rain. Off: only the radar's clouds and the forecast sky cover."><input type="checkbox" id="goes"> GOES-19 clouds (live)</label>
       <p class="note" id="sat-note">One image at a time: each is a snapshot from that satellite's pass, and today's clouds, rain and lightning are hidden while it is shown.</p>
     </section>
@@ -502,6 +502,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
 <script id="validate-data" type="application/json"></script>
 <script id="learn-data" type="application/json"></script>
 <script id="levels-data" type="application/json"></script>
+<script id="ortho-data" type="application/json"></script>
 <script id="earth-data" type="application/json"></script>
 <script id="wn3-data" type="application/json"></script>
 <script id="meta-data" type="application/json"></script>
@@ -724,7 +725,7 @@ const U = {
   uSwan: { value: blank2D }, uSwanMin: { value: new THREE.Vector2() }, uSwanSize: { value: new THREE.Vector2(1, 1) }, uSwanOn: { value: 0 }, uSwanRef: { value: 1 }, uHsOff: { value: 0 },
   uDepthOn: { value: 0 }, uHsOn: { value: 0 },
   // chop overlay: wave energy everywhere; inside a bound FUNWAVE tile also its crossing/rebound index (tex R = Hs m, G = crossing 0..1)
-  uSatOn: { value: 0 }, uSatMin: { value: new THREE.Vector2() }, uSatSize: { value: new THREE.Vector2(1, 1) },
+  uSatOn: { value: 0 }, uSatMin: { value: new THREE.Vector2() }, uSatSize: { value: new THREE.Vector2(1, 1) }, uSatKind: { value: 0 },   // kind 1: an aerial photo (drawn over land too)
   uSpotsOn: { value: 0 }, uSpotHas: { value: 0 }, uSpotTex: { value: blank2D }, uSpotMin: { value: new THREE.Vector2() }, uSpotSize: { value: new THREE.Vector2(1, 1) },
   uChopOn: { value: 0 }, uFlowOn: { value: 0 }, uFlowDir: { value: new THREE.Vector2(0, 1) }, uFlowTp: { value: 3 }, uChopTex: { value: blank2D }, uChopMin: { value: new THREE.Vector2() }, uChopSize: { value: new THREE.Vector2(1, 1) }, uChopCore: { value: new THREE.Vector4(1e6, 1e6, -1e6, -1e6) }, uChopHas: { value: 0 },
   uFw: { value: null }, uFwHs: { value: blank2D }, uFwMin: { value: new THREE.Vector2() }, uFwSize: { value: new THREE.Vector2(1, 1) }, uFwOn: { value: 0 }, uFwT: { value: 0 },
@@ -859,7 +860,7 @@ vec3 chopTint(vec2 hc, vec2 pk, float w) { vec3 c = chopColor(hc.x);
 uniform sampler2D uSpotTex; uniform vec2 uSpotMin, uSpotSize; uniform float uSpotsOn, uSpotHas;
 // satellite overlays (Sentinel-1 roughness, Sentinel-2 clarity): colours made in JS, alpha 0 = no data. They're read through
 // uSpotTex (only one overlay shows at a time; setSat binds it): the ground shader is at 16 textures, the most phones allow
-uniform vec2 uSatMin, uSatSize; uniform float uSatOn;
+uniform vec2 uSatMin, uSatSize; uniform float uSatOn, uSatKind;
 vec3 satTint(vec2 pk) { vec2 f = (pk - uSatMin) / uSatSize; vec3 none = pow(vec3(0.16, 0.18, 0.22), vec3(2.2));
   if (f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0) return none; vec4 c = texture2D(uSpotTex, f); return c.a < 0.5 ? none : pow(c.rgb, vec3(2.2)); }
 uniform sampler2D uOcFG, uOcF2; uniform float uOcLG, uOcOnG, uOcVarG, uOcL2;
@@ -1082,7 +1083,8 @@ void main(){
   } else {
     vec3 base;
     float urban;
-    if (inMap) { base = pow(texture2D(uMapCol, muv).rgb, vec3(2.2)) * 0.55; urban = 1.0; }
+    if (inMap) { base = pow(texture2D(uMapCol, muv).rgb, vec3(2.2)) * 0.55; urban = 1.0;
+      if (uSatOn > 0.5 && uSatKind > 0.5) { vec2 f = (p - uSatMin) / uSatSize; if (f.x >= 0.0 && f.y >= 0.0 && f.x <= 1.0 && f.y <= 1.0) base = pow(texture2D(uSpotTex, f).rgb, vec3(2.2)) * 0.55; } }
     else { float n = vnoise(p * 0.9) * 0.6 + vnoise(p * 4.0) * 0.4; base = uLand * (0.75 + 0.5 * n);
       urban = smoothstep(46.0, 18.0, length((p - vec2(-14.0, 2.0)) * vec2(1.0, 0.8)));
       urban = max(urban, smoothstep(14.0, 4.0, length(p - vec2(-16.0, -28.0))) * 0.7) * (0.75 + 0.25 * vnoise(p * 1.7));
@@ -1628,7 +1630,7 @@ async function satTexture(g, colorOf) {
   const [ax, ay] = ll(g.lat0, g.lon0), [bx, by] = ll(g.lat1, g.lon1); return { tex: t, min: [ax, ay], size: [bx - ax, by - ay], q, g };
 }
 async function setEarth(E) {
-  if (!E) return;
+  E = E || {};
   try { if (E.s1 && E.s1.b64) { const med = E.s1.median_db ?? -18; EARTH.s1 = await satTexture(E.s1, (db) => rampAt(S1_STOPS, (db - med + S1_SPAN_DB) / (2 * S1_SPAN_DB))); } } catch (e) { console.warn("s1", e); }
   try { if (E.s2 && E.s2.b64) { const lo = Math.log10(E.s2.lo + 1), hi = Math.log10(E.s2.hi + 1); EARTH.s2 = await satTexture(E.s2, (v) => rampAt(S2_STOPS, (Math.log10(v + 1) - lo) / (hi - lo))); } } catch (e) { console.warn("s2", e); }
   try { const g = E.goes && E.goes.grid; if (g && g.b64) { const q = await gunzipB64(g.b64), n = g.nlat * g.nlon;
@@ -1636,13 +1638,18 @@ async function setEarth(E) {
         const t = new THREE.DataTexture(d, g.nlon, g.nlat, THREE.RedFormat, THREE.UnsignedByteType); t.minFilter = t.magFilter = THREE.LinearFilter; t.needsUpdate = true;
         const [ax, ay] = ll(g.lat0, g.lon0), [bx, by] = ll(g.lat1, g.lon1); EARTH.goes = { tex: t };
         U.uGoesTex.value = t; U.uGoesMin.value.set(ax, ay); U.uGoesSize.value.set(bx - ax, by - ay); } } } catch (e) { console.warn("goes", e); }
-  $("#sat-seg").hidden = !EARTH.s1 && !EARTH.s2;
-  for (const k of ["s1", "s2"]) { const b = document.querySelector(`[data-ov="${k}"]`); if (b) b.disabled = !EARTH[k]; }
+  // the aerial photo (ortho-data: Cook County's orthophoto over the harbour and the lagoon), a JPEG beside the page
+  const O = (parseJSON("ortho-data") || [])[0];
+  if (O && O.src && !EARTH.ortho) { try { const t = await new THREE.TextureLoader().loadAsync(O.src); t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); t.needsUpdate = true;
+      const [ax, ay] = ll(O.lat0, O.lon0), [bx, by] = ll(O.lat1, O.lon1); EARTH.ortho = { tex: t, min: [ax, ay], size: [bx - ax, by - ay], meta: O }; } catch (e) { console.warn("ortho", e); } }
+  $("#sat-seg").hidden = !EARTH.s1 && !EARTH.s2 && !EARTH.ortho;
+  for (const k of ["s1", "s2", "ortho"]) { const b = document.querySelector(`[data-ov="${k}"]`); if (b) b.disabled = !EARTH[k]; }
   { const parts = []; if (E.s1) parts.push(`${E.s1.label} radar roughness`); if (E.s2) parts.push(`${E.s2.label} clarity`); if (E.goes && E.goes.time) parts.push(`GOES-19 clouds ${E.goes.time.slice(5, 16).replace("T", " ")} UTC`);
-    $("#sat-note").textContent = (parts.length ? `Passes: ${parts.join(" · ")}. ` : "") + "One image at a time: each is a snapshot from that satellite's pass, and today's clouds, rain and lightning are hidden while it is shown."; }
+    $("#sat-note").textContent = (parts.length ? `Passes: ${parts.join(" · ")}. ` : "") + (EARTH.ortho ? `Aerial: ${EARTH.ortho.meta.source}. ` : "") + "One image at a time: each is a snapshot from that satellite's pass, and today's clouds, rain and lightning are hidden while it is shown."; }
   setSat();
 }
-function setSat() { const L = (S.ov === "s1" || S.ov === "s2") && EARTH[S.ov]; U.uSatOn.value = L ? 1 : 0;
+const SAT_OVS = ["s1", "s2", "ortho"];
+function setSat() { const L = SAT_OVS.includes(S.ov) && EARTH[S.ov]; U.uSatOn.value = L ? 1 : 0; U.uSatKind.value = L && S.ov === "ortho" ? 1 : 0;
   U.uSpotTex.value = L ? L.tex : (SPOTS.tex || blank2D);   // the satellite layers share the chop spots' texture slot
   if (L) { U.uSatMin.value.set(...L.min); U.uSatSize.value.set(...L.size); } }
 function satAt(L, xk, yk) { if (!L) return null; const g = L.g, fx = (xk - L.min[0]) / L.size[0] * (g.nlon - 1), fy = (yk - L.min[1]) / L.size[1] * (g.nlat - 1);
@@ -3373,6 +3380,7 @@ function renderLegend() {
       <div class="zones"><span style="width:27%">clear</span><span style="width:17%">slightly cloudy</span><span style="width:23%">murky</span><span style="width:33%">very murky</span></div>
       <span class="lead">How cloudy the water is (sediment stirred up by storms, river and outfall plumes). Under 2 FNU you can see well down; over 15 the water looks brown.</span>
       <span>${E2 ? `${E2.label} (clear-sky water pixels; Nechad red-band turbidity). ${Object.entries(E2.launches || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v} FNU`).join(" · ")}` : "No clear Sentinel-2 pass in the last 10 days"}</span><span>A satellite snapshot from that pass, not live; today's clouds, rain and lightning are hidden while it is shown.</span>`; }
+  else if (S.ov === "ortho") { const M = EARTH.ortho && EARTH.ortho.meta; h = `<b>Aerial photo</b><span class="lead">${M ? `${M.source} (${M.year}, 6 in / 0.15 m), drawn over Diversey Harbor, the Fullerton channel and the South Lagoon at about 0.55 m per pixel.` : "No aerial photo in this page."}</span><span>The photo is one day's snapshot: today's clouds, rain and lightning are hidden while it is shown; the water's surface is still drawn live over it.</span>`; }
   else if (S.ov === "radar") { h = `<b>Radar reflectivity</b><div class="bar" style="background:linear-gradient(90deg,${DBZ_STOPS.slice(0, 13).map(([, c]) => c).join(",")})"></div><div class="tk"><span>5</span><span>35</span><span>65 dBZ</span></div>`; }
   if (!el.dataset.init) { el.dataset.init = "1"; el.classList.add("min"); let tiny = false; try { tiny = localStorage.getItem("lakeview-legend") === "tiny"; } catch (e) {} el.classList.toggle("tiny", tiny);
     el.onclick = (ev) => { const fold = ev.target.closest(".lgx");
@@ -3497,7 +3505,7 @@ function tick() {
   // radar volume
   RS = radarState(S.t);
   // the satellite layers are one pass's snapshot: no radar clouds, rain, lightning or satellite cloud field over them
-  const satView = S.ov === "s1" || S.ov === "s2", RV = satView ? null : RS;
+  const satView = SAT_OVS.includes(S.ov) && !!EARTH[S.ov], RV = satView ? null : RS;
   if (satView) { U.uExtra.value = 0; U.uGoesOn.value = 0; }
   if (RV) { const g = RS.grid; U.uCloudA.value = RS.A.tc; U.uCloudB.value = RS.B.tc; U.uDbzA.value = RS.A.td; U.uDbzB.value = RS.B.td; U.uMix.value = RS.f;
     U.uShiftA.value.set(...RS.shiftA); U.uShiftB.value.set(...RS.shiftB); U.uGridMin.value.set(g.x0_km, g.y0_km, 0); U.uGridN.value.set(g.nx, g.ny, g.nz); U.uGridD.value.set(g.dx_km, g.dz_km); }
