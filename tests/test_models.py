@@ -247,6 +247,8 @@ def test_swan_wind_inputs(tmp_path):
     txt = (tmp_path / "runs" / "test_harbor" / "w090_u07p0" / "INPUT").read_text()
     assert "WIND 7.00 90.0" in txt and "GEN3 KOMEN AGROW" in txt and "PROJECT 'chicago' 'w090'" in txt and "DIFFRACTION 1 0.2\n" in txt
     assert "DIFFRACTION 1 0.2 3" in sc.swn({"nx": 4, "ny": 4, "dx": 2.0}, 0.4, 45, 4.0, 1.0, [], diffr_smooth=3)
+    assert "DIFFRACTION" not in sc.swn({"nx": 4, "ny": 4, "dx": 2.0}, 0.4, 45, 4.0, 1.0, [], diffraction=False)
+    assert sc.DOMAINS["harbor"]["diffr_offshore"] is False
     assert "BOUNDSPEC" not in txt and "OFF QUADRUPL" not in txt and "RTP" in txt and "OBSTACLE TRANSM 0.00 REFL 0.50" in txt
     assert sc.case_id(45, 4.0, 1.0) == "d045_t4p0_h1p0" and len(sc.CASE_GROUPS["wind"]) == 4 and len(sc.WIND_DIRS) == 24
 
