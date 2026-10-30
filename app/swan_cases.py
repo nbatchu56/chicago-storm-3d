@@ -59,7 +59,8 @@ DOMAINS = {
     "montrose": {"grid": "montrose", "dx": SWAN_DX},
     # Diversey Harbor to the lagoon's south end, with the lake east of Lake Shore Drive so the offshore cases enter the
     # mouth from the boundary; the inlet under LSD is ~16 m wide (8 cells), so openings need only be 12 m
-    "harbor": {"grid": "harbor", "bbox": (41.9159, -87.6362, 41.9372, -87.6260), "dx": 2.0, "min_opening": 12.0, "wind": True},
+    # (diffraction's phase-decoupled term goes unstable at 2 m among the walls without smoothing: 3 smoothing steps)
+    "harbor": {"grid": "harbor", "bbox": (41.9159, -87.6362, 41.9372, -87.6260), "dx": 2.0, "min_opening": 12.0, "wind": True, "diffr_smooth": 3},
 }
 REFL_QUAY, REFL_BANK = 0.5, 0.25           # the surveyed harbour walls (concrete, docks along them); the lagoon's banks
 REFL = {"breakwater": 0.35, "groyne": 0.35, "pier": 0.5, "revetment": 0.45, "vertical": 0.85,
@@ -108,11 +109,25 @@ def _area(pts):
     return abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))) / 2
 
 
-def survey_obstacles(bathy, g, lagoon_y=4830.0):
+def survey_obstacles(bathy, g, depth=None, lagoon_y=4830.0):
     """The surveyed shoreline of Diversey Harbor as reflecting walls: the basin's quay walls (REFL_QUAY), the lagoon's
-    banks south of the Fullerton bridge (REFL_BANK). Ponds are left out (no wave domain)."""
+    banks south of the Fullerton bridge (REFL_BANK). Ponds are left out (no wave domain). A ring edge with water on both
+    sides (the survey polygon closes across the mouth, where the echo sounder stopped) is an opening, not a wall;
+    depth is the domain's still-water depth (m) on grid g."""
     polys = (bathy.get("survey") or {}).get("polys") or []
     x0, y0, x1, y1 = g["x0"], g["y0"], g["x0"] + (g["nx"] - 1) * g["dx"], g["y0"] + (g["ny"] - 1) * g["dx"]
+
+    def wet(px, py):
+        if depth is None:
+            return False
+        i, j = int(round((px - x0) / g["dx"])), int(round((py - y0) / g["dx"]))
+        return 0 <= j < depth.shape[0] and 0 <= i < depth.shape[1] and depth[j, i] > 0.3
+
+    def over_water(a, b):
+        L = math.dist(a, b) or 1.0
+        nx, ny = (b[1] - a[1]) / L, -(b[0] - a[0]) / L
+        mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+        return all(wet(mx + nx * t, my + ny * t) and wet(mx - nx * t, my - ny * t) for t in (4.0, 8.0))
     out = []
     for poly in polys:
         if re.search(r"pond", poly.get("name") or "", re.I):
@@ -120,7 +135,7 @@ def survey_obstacles(bathy, g, lagoon_y=4830.0):
         for ring in poly["rings"]:
             run, kind = [], None
             for a, b in zip(ring, ring[1:]):
-                if not (x0 < a[0] < x1 and y0 < a[1] < y1 and x0 < b[0] < x1 and y0 < b[1] < y1):
+                if not (x0 < a[0] < x1 and y0 < a[1] < y1 and x0 < b[0] < x1 and y0 < b[1] < y1) or over_water(a, b):
                     if len(run) >= 2:
                         out.append({"kind": kind, "name": poly.get("name"), "refl": REFL_QUAY if kind == "quay" else REFL_BANK, "trans": 0.0, "pts": run})
                     run, kind = [], None
@@ -277,7 +292,7 @@ def obstacles(lakefront, g, depth, fine=None, min_opening=60.0):
     return out
 
 
-def swn(g, level_above_lwd, d, tp, hs, obst):
+def swn(g, level_above_lwd, d, tp, hs, obst, diffr_smooth=0):
     """SWAN input for one case: an offshore sea (tp s, hs m from direction d) entering on the E, N and S sides, or, when
     tp == "wind", no incoming waves and a U10 of hs m/s from d growing its own sea over the grid."""
     wind = tp == "wind"
@@ -308,7 +323,7 @@ def swn(g, level_above_lwd, d, tp, hs, obst):
         "BREAKING CONSTANT 1.0 0.73",
         "FRICTION JONSWAP CONSTANT 0.038",
         "TRIAD",
-        "DIFFRACTION 1 0.2",
+        f"DIFFRACTION 1 0.2 {diffr_smooth}" if diffr_smooth else "DIFFRACTION 1 0.2",
         "NUMERIC STOPC 0.005 0.01 0.005 99.5 STAT 40",
         "BLOCK 'COMPGRID' NOHEAD 'out.mat' LAY 3 XP YP HSIGN DIR TM01 RTP DEPTH",
         "COMPUTE",
@@ -334,7 +349,7 @@ def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=None, hei
         fz, fsrc = bm.unpack(bathy["models"]["corridor"]); fine = (bathy["models"]["corridor"], level - fz, fsrc)
     obst = obstacles(lakefront, g, level - zz, fine or (gr, level - z), min_opening=spec.get("min_opening", 60.0))
     if spec.get("wind"):
-        obst += survey_obstacles(bathy, g)
+        obst += survey_obstacles(bathy, g, level - zz)
     meta = {"domain": domain, "grid": g, "level_m_igld85": level, "obstacles": [{"kind": o["kind"], "n": len(o["pts"])} for o in obst]}
     os.makedirs(out_dir, exist_ok=True)
     bottom = "\n".join(" ".join(f"{v:.2f}" for v in row) for row in depth_lwd) + "\n"
@@ -348,7 +363,7 @@ def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=None, hei
             cdir = os.path.join(out_dir, domain, cid)
             os.makedirs(cdir, exist_ok=True)
             with open(os.path.join(cdir, "INPUT"), "w") as fh:
-                fh.write(swn(g, level - bm.LWD, d, tp, hs, obst))
+                fh.write(swn(g, level - bm.LWD, d, tp, hs, obst, spec.get("diffr_smooth", 0)))
             cases.append({"id": cid, "dir": d, "u10": hs} if tp == "wind" else {"id": cid, "dir": d, "tp": tp, "hs": hs})
     meta["cases"] = cases
     with open(os.path.join(out_dir, domain, "meta.json"), "w") as fh:

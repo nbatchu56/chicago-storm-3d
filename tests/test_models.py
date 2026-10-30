@@ -245,7 +245,8 @@ def test_swan_wind_inputs(tmp_path):
     kinds = [o["kind"] for o in meta["obstacles"]]
     assert "quay" in kinds and "bank" in kinds and len(meta["obstacles"]) >= 2          # the pond is left out
     txt = (tmp_path / "runs" / "test_harbor" / "w090_u07p0" / "INPUT").read_text()
-    assert "WIND 7.00 90.0" in txt and "GEN3 KOMEN AGROW" in txt and "PROJECT 'chicago' 'w090'" in txt
+    assert "WIND 7.00 90.0" in txt and "GEN3 KOMEN AGROW" in txt and "PROJECT 'chicago' 'w090'" in txt and "DIFFRACTION 1 0.2\n" in txt
+    assert "DIFFRACTION 1 0.2 3" in sc.swn({"nx": 4, "ny": 4, "dx": 2.0}, 0.4, 45, 4.0, 1.0, [], diffr_smooth=3)
     assert "BOUNDSPEC" not in txt and "OFF QUADRUPL" not in txt and "RTP" in txt and "OBSTACLE TRANSM 0.00 REFL 0.50" in txt
     assert sc.case_id(45, 4.0, 1.0) == "d045_t4p0_h1p0" and len(sc.CASE_GROUPS["wind"]) == 4 and len(sc.WIND_DIRS) == 24
 
@@ -280,3 +281,12 @@ def test_swan_collect_wind(tmp_path):
     out["domains"]["trail"] = {"grid": {"x0": 0, "y0": 0, "dx": 8, "nx": 2, "ny": 2}, "cases": [], "ratio": "", "dir": ""}   # another domain, not rerun
     out2 = sc.collect(str(tmp_path / "r"), str(tmp_path / "s2.json"), merge=out)
     assert [c["u10"] for c in out2["domains"]["harbor"]["wind"]["cases"]] == [4.0, 7.0] and "trail" in out2["domains"]
+
+
+def test_survey_obstacles_leave_the_mouth_open():
+    g = {"x0": 0.0, "y0": 0.0, "dx": 2.0, "nx": 100, "ny": 100}
+    depth = np.full((100, 100), -1.0, np.float32); depth[20:80, 20:80] = 3.0; depth[20:80, 80:] = 5.0   # a basin open to the east
+    ring = [[40, 40], [160, 40], [160, 160], [40, 160], [40, 40]]                                      # its survey ring, closing across the open east side
+    obs = sc.survey_obstacles({"survey": {"polys": [{"name": "Diversey Harbor", "rings": [ring]}]}}, g, depth, lagoon_y=0)
+    segs = [(tuple(a), tuple(b)) for o in obs for a, b in zip(o["pts"], o["pts"][1:])]
+    assert ((160.0, 40.0), (160.0, 160.0)) not in segs and len(segs) == 3                             # the east edge is water both sides: no wall
