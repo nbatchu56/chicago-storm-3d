@@ -1,0 +1,38 @@
+name: El Niño composites
+# The 1979+ Lake Michigan composites by ENSO phase (app.enso climate): O'Hare, GLERL ice (annual max and gridded), GLSEA,
+# Calumet Harbor levels, ERA5 wind at buoy 45198. Monthly (a new winter's numbers or a revised ONI), or by hand.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 9 3 * *"
+permissions:
+  contents: write
+concurrency:
+  group: enso
+  cancel-in-progress: false
+jobs:
+  climate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install numpy
+      - name: ERA5 wind at the buoys (learn branch cache)
+        continue-on-error: true
+        run: |
+          git fetch -q --depth 1 origin learn && mkdir -p era5 && for f in $(git ls-tree --name-only origin/learn era5/); do git show "origin/learn:$f" > "$f"; done; ls era5 | wc -l
+      - name: Composites
+        run: |
+          mkdir -p out && python -m app.enso climate --out out/enso_climate.json --era5 era5 2>&1 | tail -60
+          python3 -c "import json,sys; d=json.load(open('out/enso_climate.json')); n=len(d['winters']); print(n, 'winters'); sys.exit(0 if n > 30 else 1)"
+      - name: Publish to the enso branch
+        run: |
+          cd out
+          git init -q -b enso
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -q -m "El Niño composites $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" enso
