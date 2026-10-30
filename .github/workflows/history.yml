@@ -1,19 +1,24 @@
 name: History snapshot
 
-# Builds the radar scene, station observations and lake temperature for a past time window and
-# publishes it to the `history` branch as history-<label>.json.
+# Builds the radar scene, station observations and lake temperature for past time windows and
+# publishes them to the `history` branch as history-<label>.json: one window from the inputs, or
+# every event in tools/events.json (optionally only the labels listed), several at a time.
 on:
   workflow_dispatch:
     inputs:
       start:
-        description: "Start, UTC (e.g. 2026-10-23T12:20)"
-        required: true
+        description: "Start, UTC (e.g. 2026-10-23T12:20); leave empty to build the events catalog"
+        required: false
       end:
         description: "End, UTC (optional, default start + 30 min)"
         required: false
       label:
-        description: "File label (letters, digits, dashes)"
-        required: true
+        description: "File label (letters, digits, dashes); with no start: a comma list of catalog labels to build (empty = all)"
+        required: false
+      max_scans:
+        description: "Most radar volumes per window"
+        required: false
+        default: "12"
 
 permissions:
   contents: write
@@ -23,9 +28,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  history:
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    outputs:
+      windows: ${{ steps.plan.outputs.windows }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: plan
+        env:
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
+          LABEL: ${{ inputs.label }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, os, re
+          start, end, label = os.environ["START"].strip(), os.environ["END"].strip(), os.environ["LABEL"].strip()
+          if start:
+              if not re.fullmatch(r"[A-Za-z0-9-]+", label): raise SystemExit("bad label")
+              wins = [{"label": label, "start": start, "end": end}]
+          else:
+              cat = json.load(open("tools/events.json"))["events"]
+              want = {x.strip() for x in label.split(",") if x.strip()}
+              wins = [{"label": e["label"], "start": e["start"], "end": e["end"]} for e in cat if not want or e["label"] in want]
+              missing = want - {w["label"] for w in wins}
+              if missing: raise SystemExit(f"not in the catalog: {sorted(missing)}")
+          print("windows=" + json.dumps(wins))
+          EOF
+
+  history:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        window: ${{ fromJSON(needs.plan.outputs.windows) }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -39,18 +77,34 @@ jobs:
           PYART_QUIET: "1"
           MPLBACKEND: Agg
           NWS_USER_AGENT: "chicago-storm-3d (github.com/${{ github.repository }})"
-          START: ${{ inputs.start }}
-          END: ${{ inputs.end }}
-          LABEL: ${{ inputs.label }}
+          START: ${{ matrix.window.start }}
+          END: ${{ matrix.window.end }}
+          LABEL: ${{ matrix.window.label }}
+          MAX_SCANS: ${{ inputs.max_scans }}
         run: |
-          case "$LABEL" in *[!A-Za-z0-9-]*|"") echo "bad label"; exit 1;; esac
           mkdir -p "$RUNNER_TEMP/out"
           if [ -n "$END" ]; then E="--end $END"; else E=""; fi
-          python -m app.history --start "$START" $E --out "$RUNNER_TEMP/out/history-$LABEL.json"
+          python -m app.history --start "$START" $E --max-scans "${MAX_SCANS:-12}" --out "$RUNNER_TEMP/out/history-$LABEL.json"
+          ls -la "$RUNNER_TEMP/out"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: history-${{ matrix.window.label }}
+          path: ${{ runner.temp }}/out/history-*.json
+          retention-days: 3
+
+  publish:
+    needs: history
+    if: ${{ always() && needs.history.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: history-*
+          path: ${{ runner.temp }}/out
+          merge-multiple: true
       - name: Publish to the history branch
-        env:
-          LABEL: ${{ inputs.label }}
         run: |
+          ls -la "$RUNNER_TEMP/out" || { echo "nothing built"; exit 1; }
           mkdir -p "$RUNNER_TEMP/pub" && cd "$RUNNER_TEMP/pub"
           git init -q -b history
           git config user.name "github-actions[bot]"
@@ -59,7 +113,7 @@ jobs:
             git checkout -q FETCH_HEAD -- . 2>/dev/null || true
             git reset -q --soft FETCH_HEAD
           fi
-          cp "$RUNNER_TEMP"/out/*.json .            # new build replaces an earlier one with the same label
+          cp "$RUNNER_TEMP"/out/*.json .            # a new build replaces an earlier one with the same label
           git add -A
-          git commit -q -m "history $LABEL" || echo "unchanged"
+          git commit -q -m "history $(ls "$RUNNER_TEMP"/out | sed 's/^history-//; s/\.json$//' | tr '\n' ' ')" || echo "unchanged"
           git push -q "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:history

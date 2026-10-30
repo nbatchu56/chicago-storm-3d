@@ -21,7 +21,16 @@ import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATE = os.path.join(ROOT, "app", "static", "world.html")
-TITLES = {"derecho-2026-08-11": "Aug 11 derecho", "paddle-2026-10-23": "Your paddle, Oct 23"}
+TITLES = {"paddle-2026-10-23": "Your paddle, Oct 23"}
+EVENTS = os.path.join(ROOT, "tools", "events.json")   # severe-weather periods: title, type and headline by label
+
+
+def events_catalog(path=EVENTS):
+    try:
+        with open(path) as fh:
+            return {e["label"]: e for e in json.load(fh)["events"]}
+    except (OSError, ValueError, KeyError):
+        return {}
 
 
 def paddle_title(label):
@@ -262,6 +271,9 @@ def main():
     ap.add_argument("--split", action="store_true",
                     help="write the big, slow-changing blocks (" + ", ".join(SPLIT) + ") to data/*.json beside the page instead of inline")
     ap.add_argument("--start", help='open on a history period: JSON {"label":..,"t":ISO,"view":[lat,lon,km,heading,pitch]}')
+    ap.add_argument("--also", nargs="*", default=[], metavar="PATH=START",
+                    help='more pages from the same data, each with its own start JSON, e.g. outlook.html={"mode":"live","kiosk":{...},"view":[...]} '
+                         "(the side files are shared, so write them beside --out)")
     a = ap.parse_args()
     html = open(TEMPLATE).read()
     lakefront, earth = load(a.lakefront), load(a.earth)
@@ -274,17 +286,27 @@ def main():
         "import-data": [d for d in (load(p) for p in a.imports) if d] or None,
         "learn-data": summarize_learn(load(a.learn), load(a.scorecard)),
         "chopspots-data": None, "levels-data": load(a.levels),
-        "meta-data": {"generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), **({"start": json.loads(a.start)} if a.start else {})},
     }
+    generated = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    pages = [(a.out, a.start)] + [(x.split("=", 1)[0], x.split("=", 1)[1]) for x in a.also]
+    for path, start in pages:
+        json.loads(start) if start else None      # a bad start JSON fails before anything is written
     blocks["chopspots-data"] = chop_spots(blocks["swan-data"], load(a.chop_climate))
-    hist = []
+    hist, catalog = [], events_catalog()
     for p in a.history:
         h = load(p)
         if not h:
             continue
         name = os.path.basename(p)
         h.setdefault("label", name[len("history-"):-len(".json")] if name.startswith("history-") else name)
-        h.setdefault("title", TITLES.get(h["label"]) or paddle_title(h["label"]))
+        ev = catalog.get(h["label"])
+        if ev:   # a severe-weather period: what happened, for the picker and the note under it
+            h["title"] = ev.get("title") or h.get("title")
+            h["event"] = {k: ev[k] for k in ("type", "headline", "radar", "ice", "source") if k in ev}
+            h["kind"] = "event"
+        else:
+            h.setdefault("title", TITLES.get(h["label"]) or paddle_title(h["label"]))
+            h["kind"] = "paddle" if h["label"].startswith("paddle-") else "event"
         hist.append(h)
     for p in a.sessions:
         sess = load(p)
@@ -293,7 +315,9 @@ def main():
             h["session"] = sess
             if sess.get("title"):
                 h["title"] = sess["title"]
-    hist.sort(key=lambda h: 0 if "derecho" in h["label"] else 1)
+    # events first, newest first, then the paddles, newest first
+    hist = sorted([h for h in hist if h["kind"] == "event"], key=lambda h: h.get("window", {}).get("start", ""), reverse=True) + \
+        sorted([h for h in hist if h["kind"] != "event"], key=lambda h: h.get("window", {}).get("start", ""), reverse=True)
     if hist:
         blocks["history-data"] = hist
     sizes = {}
@@ -326,6 +350,15 @@ def main():
                 idx["domains"][name] = {k: x for k, x in v.items() if k not in ("ratio", "dir")} | {"parts": parts, "lib": lib}
             sizes["data/swan.json"] = write_side(a.out, "data/swan.json", idx)
             html = html.replace(f'<script id="{tag}" type="application/json">', f'<script id="{tag}" type="application/json" data-src="data/swan.json">', 1)
+        elif a.split and tag == "history-data":   # one file per period (the radar scene is most of it), fetched when it is picked
+            stubs = []
+            for h in obj:
+                rel = f"data/history/{h['label']}.json"
+                sizes[rel] = write_side(a.out, rel, h)
+                sc = h.get("scene") or {}
+                stubs.append({k: v for k, v in h.items() if k not in ("scene", "stations", "lake", "probe")}
+                             | {"src": rel, "scans": len(sc.get("frames", [])) if sc else 0, "kb": sizes[rel]})
+            html = put(html, f'<script id="{tag}" type="application/json">', stubs)
         elif a.split and tag in SPLIT:
             rel = f"data/{tag[:-len('-data')]}.json"
             os.makedirs(os.path.join(os.path.dirname(os.path.abspath(a.out)), "data"), exist_ok=True)
@@ -335,10 +368,16 @@ def main():
             html = html.replace(old, f'<script id="{tag}" type="application/json" data-src="{rel}">', 1)
         else:
             html = put(html, f'<script id="{tag}" type="application/json">', obj)
-    with open(a.out, "w") as fh:
-        fh.write(html)
+    for path, start in pages:
+        meta = {"generated": generated, **({"start": json.loads(start)} if start else {})}
+        page = put(html, '<script id="meta-data" type="application/json">', meta)
+        name = ((meta.get("start") or {}).get("kiosk") or {}).get("name")
+        if name:   # a kiosk page is named after its view (the artifact takes its name from the title)
+            page = page.replace("<title>LakeView</title>", f"<title>{name}</title>", 1)
+        with open(path, "w") as fh:
+            fh.write(page)
     print(f"built {a.out}: {len(html) // 1000} KB; " + ", ".join(k for k, v in blocks.items() if v is not None)
-          + "".join(f"; {k} {v} KB" for k, v in sizes.items()))
+          + "".join(f"; {k} {v} KB" for k, v in sizes.items()) + "".join(f"; also {p}" for p, _ in pages[1:]))
 
 
 if __name__ == "__main__":

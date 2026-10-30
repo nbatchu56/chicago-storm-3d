@@ -154,7 +154,7 @@ def lake_for_date(t, get=lf.http_get):
     return out, probe
 
 
-def build(start, end, site="KLOT", cache="radar_cache", get=lf.http_get):
+def build(start, end, site="KLOT", cache="radar_cache", get=lf.http_get, max_scans=12):
     notes = []
     data = {"version": 1, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds"),
             "window": {"start": start.isoformat(), "end": end.isoformat()}, "site": site}
@@ -166,7 +166,7 @@ def build(start, end, site="KLOT", cache="radar_cache", get=lf.http_get):
         h = min((h for h in w["history"] if h["wspd"] is not None), key=lambda h: abs(_parse_time(h["t"]) - mid))
         wind = {"speed": h["wspd"], "dir": h["wdir"], "duration_h": 8, "source": f"NDBC {w['id']} {h['t']}"}
     try:
-        data["scene"] = radar_scene(start, end, site, cache, wind=wind)
+        data["scene"] = radar_scene(start, end, site, cache, max_scans=max_scans, wind=wind)
     except Exception as e:  # noqa: BLE001
         notes.append(f"radar unavailable: {e}")
     data["lake"], probe = lake_for_date(start, get)
@@ -185,10 +185,11 @@ if __name__ == "__main__":
     ap.add_argument("--site", default="KLOT")
     ap.add_argument("--cache", default="radar_cache")
     ap.add_argument("--out", default="history.json")
+    ap.add_argument("--max-scans", type=int, default=12, help="most radar volumes gridded for the window")
     a = ap.parse_args()
     t0 = _parse_time(a.start)
     t1 = _parse_time(a.end) if a.end else t0 + dt.timedelta(minutes=30)
-    d = build(t0, t1, a.site, a.cache)
+    d = build(t0, t1, a.site, a.cache, max_scans=a.max_scans)
     with open(a.out, "w") as fh:
         json.dump(d, fh, separators=(",", ":"))
     sc = d.get("scene")

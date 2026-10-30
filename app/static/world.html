@@ -27,6 +27,11 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .lbl.lake { padding-bottom: 0; } .lbl.lake span { font-family: var(--font-ui); font-style: italic; letter-spacing: .12em; text-transform: uppercase; color: #a9cde0; background: none; border: 0; box-shadow: none; text-shadow: 0 0 6px rgba(0,0,0,.9), 0 1px 2px #000; }
 .lbl.lake::after, .lbl.lake::before { display: none; }
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+/* kiosk (Diversey Outlook): a view to leave on a monitor or open on a phone; nothing to click, the clock runs by itself */
+body.kiosk #controls, body.kiosk #toggle, body.kiosk #nav, body.kiosk #hint, body.kiosk #help, body.kiosk #legend, body.kiosk #refreshbox, body.kiosk #nowbtn, body.kiosk .cathead .more, body.kiosk #mmview, body.kiosk #timeline .speed { display: none !important; }
+body.kiosk #play { visibility: hidden; }
+body.kiosk canvas#gl, body.kiosk #bar, body.kiosk #timeline, body.kiosk #hud { pointer-events: none; } body.kiosk #timeline .track { pointer-events: none; }
+body.kiosk #timeline #scrub { pointer-events: none; } body.kiosk #hud .sub { font: 500 13px/1.2 var(--font-ui); color: var(--muted); margin: -2px 0 6px; letter-spacing: .01em; }
 #hud { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); left: calc(var(--gut) + env(safe-area-inset-left, 0px)); padding: 12px 14px; width: min(330px, calc(100vw - 2 * var(--gut))); display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 #hud h1 { margin: 0; font-size: 20px; font-weight: 700; } #hud h1 .lk { color: #05a0cb; } #hud h1 .vw { color: #90c841; }   /* Lake = water, View = air */
 .hudhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -159,18 +164,11 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 [hidden] { display: none !important; }
 /* navigation */
 /* Go to: one compact button that opens a list of places (keeps the bottom of the world clear) */
-#goto { position: absolute; bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); padding: 0; background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; z-index: 3; }
-#goto-btn { position: relative; display: flex; align-items: center; gap: 7px; background: var(--panel); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding: 9px 14px; font-size: 13px; border-radius: 999px; }
-#goto-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-#goto-btn .chev { transition: transform .15s; } #goto-btn[aria-expanded="true"] .chev { transform: rotate(180deg); }
-#goto-list { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: max-content; min-width: 220px; max-height: min(60vh, 420px); overflow-y: auto; padding: 6px; display: grid; gap: 2px; }
-#goto-list button { text-align: left; border: 0; padding: 9px 12px; font-size: 13px; white-space: nowrap; }
-#goto-list button:hover, #goto-list button:focus-visible { background: rgba(255,255,255,.07); outline-offset: -2px; }
 /* while you drag or zoom the world, the panels step back */
-.panel, #nav, #goto { transition: opacity .35s ease, transform .35s ease; }
+.panel, #nav { transition: opacity .35s ease, transform .35s ease; }
 #app.flying #controls { opacity: .12; transform: translateX(16px); }
-#app.flying #hud, #app.flying #minimap, #app.flying #goto, #app.flying #nav, #app.flying #legend { opacity: .3; }
-@media (prefers-reduced-motion: reduce) { .panel, #nav, #goto { transition: none; } #app.flying #controls { transform: none; } }
+#app.flying #hud, #app.flying #minimap, #app.flying #nav, #app.flying #legend { opacity: .3; }
+@media (prefers-reduced-motion: reduce) { .panel, #nav { transition: none; } #app.flying #controls { transform: none; } }
 #nav { position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: auto auto; gap: 6px 8px; align-items: end; }
 #nav > #modeseg { grid-column: 1; grid-row: 1; } #nav > #compass { grid-column: 1; grid-row: 2; justify-self: center; } #nav > .grp { grid-column: 2; grid-row: 1 / span 3; } #nav > .row2 { grid-column: 1; grid-row: 3; justify-self: center; }
 #nav > #navtoggle { grid-column: 2; grid-row: 4; justify-self: end; }
@@ -212,9 +210,6 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 .age { font: 11.5px var(--font-data); color: var(--muted); }
 .age.stale { color: var(--danger); }
 @media (max-width: 760px) {
-  #goto { left: var(--gut); transform: none; bottom: calc(var(--gut) + 74px + env(safe-area-inset-bottom, 0px)); }
-  #goto-list { left: 0; transform: none; }
-  #goto-btn { width: 44px; height: 44px; padding: 0; justify-content: center; } #goto-btn span, #goto-btn .chev { display: none; } #goto-btn svg { width: 19px; height: 19px; }
   #minimap { display: none; }
   #nav { bottom: calc(var(--gut) + 74px + env(safe-area-inset-bottom, 0px)); }
   #controls { top: auto !important; max-height: 55% !important; }
@@ -273,7 +268,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
 .vs { grid-template-columns: 108px 1fr; gap: 4px 8px; padding: 2px 0 0; } .vs svg { width: 108px; height: 108px; cursor: grab; touch-action: none; user-select: none; } .vs.drag svg { cursor: grabbing; }
 .vs .row span { white-space: nowrap; line-height: 1.3; } .vs .row { grid-template-columns: 1fr; gap: 0; align-items: start; } .vs .row + .row { margin-top: 4px; } .vs .hdg { grid-column: 1 / -1; font: 10px var(--font-data); color: var(--muted); }
 #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; bottom: calc(var(--gut) + 92px + var(--barh) + env(safe-area-inset-bottom, 0px)) !important; }
-#goto, #nav, #attr { bottom: calc(var(--gut) + 90px + var(--barh) + env(safe-area-inset-bottom, 0px)); }
+#nav, #attr { bottom: calc(var(--gut) + 90px + var(--barh) + env(safe-area-inset-bottom, 0px)); }
 #hint { bottom: calc(var(--gut) + 150px + var(--barh) + env(safe-area-inset-bottom, 0px)); }
 #app.flying #bar { opacity: .3; }
 #controls { max-height: calc(100% - 2 * var(--gut) - 46px - 96px - var(--barh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important; }
@@ -311,7 +306,6 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
       <dl class="readouts panel card" id="readouts" hidden></dl>
     </div>
   </div>
-  <div id="goto"><div id="goto-list" class="panel" role="menu" aria-label="Places" hidden></div><button id="goto-btn" class="panel" aria-label="Go to a place" title="Go to a place" aria-haspopup="menu" aria-expanded="false" aria-controls="goto-list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.4-6-11a6 6 0 0 1 12 0c0 5.6-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg><span>Go to a place</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button></div>
   <div id="nav" aria-label="Navigation">
     <button id="navtoggle" class="solo" aria-expanded="true" aria-controls="nav" title="Hide the navigation controls" aria-label="Hide the navigation controls"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg></button>
     <div id="modeseg" role="group" aria-label="Movement mode"><button data-move="fly" aria-pressed="true" title="Fly: drag to orbit, scroll to zoom">Fly</button><button data-move="paddle" aria-pressed="false" title="Paddle: first person on the water">Paddle</button></div>
@@ -350,6 +344,10 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
   <div id="hint" class="panel" hidden>Drag to look around · scroll to zoom · double-click to go somewhere · press ? for all controls</div>
   <aside id="controls" class="panel" aria-label="World controls">
     <section>
+      <h2>Go to a place</h2>
+      <select id="goto" aria-label="Go to a place"><option value="">Choose a place…</option></select>
+    </section>
+    <section>
       <h2>Conditions from</h2>
       <div class="seg modes" role="group" aria-label="Conditions source">
         <button data-mode="live" aria-pressed="true">Live &amp; forecast</button>
@@ -362,6 +360,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
       <div class="seg" role="group" aria-label="Experimental tab" id="exp-tabs"><button data-xtab="lab" aria-pressed="true">Weather lab</button><button data-xtab="upsets" aria-pressed="false" title="The weather that takes the glass away: wind runs, wave events, wind shifts, storms and water-level swings, past two days and the forecast">Upsets</button><button data-xtab="hist" aria-pressed="false" title="Archived radar, observations and lake temperature for a past time">Historical</button><button data-xtab="import" aria-pressed="false" title="Conditions read from a forecast app's screenshot">Screenshot</button></div>
       <div id="exp-hist" class="xpanel" hidden>
       <select id="hist-pick" aria-label="Historical period"></select>
+      <p class="note" id="hist-note" hidden></p>
       <div id="hist-build" hidden>
         <div class="row"><label for="hist-start">Start (your time)</label></div><input type="datetime-local" id="hist-start">
         <div class="row"><label for="hist-dur">Length</label><output id="hist-dur-o">30 min</output></div><input type="range" id="hist-dur" min="10" max="360" step="10" value="30">
@@ -2706,7 +2705,7 @@ document.querySelectorAll("[data-move]").forEach((b) => b.onclick = () => setMov
 const KEYMAP = { KeyW: "fwd", ArrowUp: "fwd", KeyS: "back", ArrowDown: "back", KeyA: "left", ArrowLeft: "left", KeyD: "right", ArrowRight: "right", KeyQ: "rotl", KeyE: "rotr", KeyR: "in", Equal: "in", NumpadAdd: "in", KeyF: "out", Minus: "out", NumpadSubtract: "out" };
 const typing = (e) => /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || "") && e.target.type !== "range" && e.target.type !== "checkbox";
 window.addEventListener("keydown", (e) => {
-  if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (S.kiosk || typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
   const a = KEYMAP[e.code];
   if (a) { NAV.keys.add(a); NAV.shift = e.shiftKey; e.preventDefault(); hideHint(); return; }
   if (e.code === "KeyH") { gotoPreset(0); } else if (e.code === "KeyT") { toggleTop(); } else if (e.code === "KeyP") { setMove(NAV.move === "fly" ? "paddle" : "fly"); }
@@ -2923,13 +2922,9 @@ function toggleHelp() { $("#help").hidden = !$("#help").hidden; hideHint(); }
 $("#helpbtn").onclick = toggleHelp; $("#helpx").onclick = () => { $("#help").hidden = true; };
 function hideHint() { const h = $("#hint"); if (!h.hidden) { h.style.opacity = "0"; setTimeout(() => { h.hidden = true; }, 600); try { localStorage.setItem("lakelocal-hint", "1"); } catch (e) {} } }
 function showHintOnce() { let seen = false; try { seen = localStorage.getItem("lakelocal-hint") === "1"; } catch (e) {} if (seen) return; const h = $("#hint"); h.hidden = false; h.style.opacity = "1"; setTimeout(hideHint, 9000); }
-{ const list = $("#goto-list"), btn = $("#goto-btn");
-  const openGoto = (o) => { list.hidden = !o; btn.setAttribute("aria-expanded", String(o)); if (o) { const f = list.querySelector("button"); f && f.focus(); } };
-  GOTO.forEach((g, i) => { const b = document.createElement("button"); b.setAttribute("role", "menuitem"); b.textContent = g[0]; b.onclick = () => { gotoPreset(i); hideHint(); openGoto(false); btn.focus(); }; list.appendChild(b); });
-  btn.onclick = (e) => { e.stopPropagation(); openGoto(list.hidden); };
-  list.addEventListener("keydown", (e) => { const items = [...list.querySelectorAll("button")], k = items.indexOf(document.activeElement);
-    if (e.key === "Escape") { openGoto(false); btn.focus(); e.stopPropagation(); } else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); e.stopPropagation(); items[(k + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); } });
-  document.addEventListener("pointerdown", (e) => { if (!list.hidden && !$("#goto").contains(e.target)) openGoto(false); }); }
+{ const sel = $("#goto");
+  GOTO.forEach((g, i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = g[0]; sel.appendChild(o); });
+  sel.onchange = () => { if (sel.value === "") return; gotoPreset(+sel.value); hideHint(); sel.value = ""; sel.blur(); }; }
 // the conditions box folds down to title, time and status (remembered per browser)
 // the toolbar's height sets where the legend, the place button and the navigation sit
 { const bar = $("#bar"), fit = () => document.documentElement.style.setProperty("--barh", `${bar.offsetHeight}px`); fit(); if (window.ResizeObserver) new ResizeObserver(fit).observe(bar); else addEventListener("resize", fit); }
@@ -2989,12 +2984,12 @@ function sessionTrack() { const H = S.mode === "history" ? SRC.hist[S.histIdx] :
   if (note && ss && ss.observed) note.textContent = `On the water: ${ss.observed.rating}${ss.observed.quality ? ` (${ss.observed.quality})` : ""}. ${ss.observed.notes || ""}`; }
 function setMode(m) { S.mode = m; const expish = m !== "live"; if (expish) S.xmode = m;
   document.querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === (expish ? "exp" : "live"))));
-  if (m === "history") S.xtab = "hist"; else if (m === "import") S.xtab = "import"; else if (m === "exp") S.xtab = "lab";
+  if (m === "history") { S.xtab = "hist"; ensureHist(S.histIdx); } else if (m === "import") S.xtab = "import"; else if (m === "exp") S.xtab = "lab";
   $("#sec-exp").hidden = !(expish || S.xtab === "upsets"); syncXTab(); $("#mode-note").textContent = MODE_NOTE[m];
   const chip = $("#status"); chip.className = "chip " + m; const [t0, t1] = range();
   S.follow = m === "live"; $("#nowbtn").hidden = true; sessionTrack();
   S.t = m === "import" ? clamp(Date.now(), t0, t1) : m === "live" ? Date.now() : m === "history" ? (DATA.track && DATA.track.start ? new Date(DATA.track.start).getTime() : t0 + 10 * 60e3) : t0;
-  buildTicks(); WAVES.key = null; }
+  buildTicks(); WAVES.key = null; histNote(); }
 document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode === "exp" ? (S.xmode || "exp") : "live"));
 document.querySelectorAll("[data-ov]").forEach((b) => b.onclick = () => { S.ov = b.dataset.ov; document.querySelectorAll("[data-ov]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.ov === S.ov)));
   U.uMode.value = S.ov === "radar" ? 1 : 0; U.uTempOn.value = S.ov === "temp" ? 1 : 0; U.uDepthOn.value = S.ov === "depth" ? 1 : 0; U.uHsOn.value = S.ov === "hs" ? 1 : 0; U.uChopOn.value = S.ov === "chop" ? 1 : 0; U.uFlowOn.value = S.ov === "flow" ? 1 : 0; setSat(); setSpots(); renderLegend(); });
@@ -3144,7 +3139,7 @@ matchMedia("(max-width: 760px)").addEventListener("change", applyPanel); applyPa
 $("#gpx-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { const tr = parseGPX(await f.text(), f.name.replace(/\.gpx$/i, "")); setTrack(tr); S.rideOwn = false;
     try { localStorage.setItem("lakelocal-track", JSON.stringify(tr)); } catch (e2) {} } catch (err) { $("#track-note").textContent = `Couldn't read that file: ${err.message}`; } };
 $("#hist-file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { await addHistory(JSON.parse(await f.text())); S.histIdx = SRC.hist.length - 1; $("#hist-pick").value = String(S.histIdx); setMode("history"); } catch (err) { $("#hist-note").textContent = `Couldn't load that file: ${err.message}`; } };
-$("#hist-pick").onchange = (e) => { S.histIdx = +e.target.value; setMode("history"); };
+$("#hist-pick").onchange = (e) => { S.histIdx = +e.target.value; ensureHist(S.histIdx); setMode("history"); };
 $("#fw-pick").onchange = (e) => { selectFunwave(e.target.value || null); };
 let SERVED = false;
 const localInput = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60e3).toISOString().slice(0, 16);
@@ -3183,9 +3178,20 @@ function buildTicks() { const [t0, t1] = range(), tk = $("#ticks"), sg = $("#seg
   if (S.mode === "history" && H && H.scene && H.scene.frames.length) seg(H.scene.frames[0].t, H.scene.frames[H.scene.nObs - 1].t, "o");
   const fd = span > 4 * 86400e3 ? new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", month: "numeric", day: "numeric" }) : f, nT = span > 4 * 86400e3 ? 4 : 2;
   for (let i = 0; i <= nT; i++) { const t = tlT(i / nT), s = document.createElement("span"); s.textContent = (i === 0 || i === nT ? f : fd).format(new Date(t)); tk.appendChild(s); } }
-async function addHistory(raw) { const scene = raw.scene ? await decodeScene(raw.scene) : null; SRC.hist.push({ raw, scene });
-  const sel = $("#hist-pick"), o = document.createElement("option"); o.value = String(SRC.hist.length - 1);
-  o.textContent = `${raw.title ? raw.title + " · " : ""}${fmtFull.format(new Date(raw.window.start))}${scene ? ` · ${scene.frames.length} radar scans` : " · no radar"}`; sel.appendChild(o); }
+// a period's radar scene is most of its file; a period built into the page (raw.src) is fetched the first time it is picked
+async function addHistory(raw) { const scene = raw.scene && !raw.src ? await decodeScene(raw.scene) : null; const H = { raw, scene, src: raw.src || null }; SRC.hist.push(H);
+  const sel = $("#hist-pick"), kind = raw.kind || (raw.label && raw.label.startsWith("paddle-") ? "paddle" : "event");
+  let grp = sel.querySelector(`optgroup[data-kind="${kind}"]`); if (!grp) { grp = document.createElement("optgroup"); grp.dataset.kind = kind; grp.label = kind === "paddle" ? "Your paddles" : "Severe weather"; sel.appendChild(grp); }
+  const o = document.createElement("option"); o.value = String(SRC.hist.length - 1); H.option = o; histOption(H); grp.appendChild(o); }
+function histOption(H) { const raw = H.raw, n = H.scene ? H.scene.frames.length : raw.scans, t0 = new Date(raw.window.start);   // an event's title carries its date: just the time after it
+  H.option.textContent = `${raw.title ? raw.title + " · " : ""}${raw.title && raw.event ? fmtHM.format(t0) : fmtFull.format(t0)}${n ? ` · ${n} radar scans` : H.src && !H.scene ? "" : " · no radar"}`; }
+async function ensureHist(i) { const H = SRC.hist[i]; if (!H || H.scene || !H.src || H.loading) return H && H.loading;
+  H.loading = (async () => { try { const r = await fetch(H.src); if (r.ok) { const full = await r.json(); Object.assign(H.raw, full); H.scene = full.scene ? await decodeScene(full.scene) : null; } }
+    catch (e) { console.warn("history period", H.raw.label, e); } H.src = null; H.loading = null; histOption(H); if (S.mode === "history" && S.histIdx === i) { WAVES.key = null; buildTicks(); histNote(); } })();
+  return H.loading; }
+function histNote() { const H = SRC.hist[S.histIdx], el = $("#hist-note"); if (!H) { el.hidden = true; return; } const ev = H.raw.event; let t = ev && ev.headline ? ev.headline : "";
+  if (H.src && !H.scene) t += (t ? " · " : "") + "Loading the radar scans…"; else if (ev && ev.radar === "quiet") t += " · Little or nothing on radar: watch the wind, waves" + (ev.ice ? " and ice" : "") + ".";
+  if (ev && ev.source) t += ` <a href="${ev.source}" target="_blank" rel="noopener">NWS summary</a>`; el.innerHTML = t; el.hidden = !t; }
 function renderLegend() {
   const el = $("#legend"); let h = "";
   if (S.ov === "temp") { const grad = TSTOPS.map(([f, c]) => `rgb(${c}) ${((f - 32) / 48 * 100).toFixed(0)}%`).join(",");
@@ -3254,6 +3260,7 @@ function tick() {
   if (S.ov === "spots") buildConfirmed();
   const [t0, t1] = range();
   if (S.playing && !(S.mode === "live" && S.follow)) { S.t += dt * 1000 * S.speed; if (S.t > t1) S.t = t0; }   // one steady rate: S.speed seconds of the timeline per real second
+  if (S.kiosk && (S.t > S.kiosk.t1 || S.t < S.kiosk.t0 - 60e3)) { S.kiosk.t0 = Date.now(); S.t = S.kiosk.t0; }   // the loop starts over at the present
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   navStep(dt);
@@ -3576,11 +3583,15 @@ async function initRefresh() {
   if (!window.claude || typeof window.claude.use !== "function") return;           // not inside Claude (e.g. the service): nothing to fire
   const mcp = await window.claude.use("mcp").catch(() => null); if (!mcp) return;
   $("#refreshbox").hidden = false; refreshUi();
+  REFRESH.fire = async (why) => {
+    await mcp.callTool(REFRESH.server, REFRESH.tool, { trigger_id: REFRESH.trigger, text: `${why || "On-demand refresh from the page"} at ${new Date().toISOString()}. Fetch new data if the snapshot is over 20 minutes old.` });
+    try { localStorage.setItem("lakelocal-refresh", String(Date.now())); } catch (e) {}
+  };
+  if (S.kiosk) kioskRefresh();
   $("#refreshbtn").onclick = async () => {
     const btn = $("#refreshbtn"), msg = $("#refreshmsg"); btn.disabled = true; msg.textContent = "Starting a refresh…";
     try {
-      await mcp.callTool(REFRESH.server, REFRESH.tool, { trigger_id: REFRESH.trigger, text: `On-demand refresh from the page at ${new Date().toISOString()}. Fetch new data if the snapshot is over 20 minutes old.` });
-      try { localStorage.setItem("lakelocal-refresh", String(Date.now())); } catch (e) {}
+      await REFRESH.fire();
       refreshUi();
     } catch (err) {
       const c = err && err.code; btn.disabled = false;
@@ -3592,6 +3603,31 @@ async function initRefresh() {
         : "This view can't start a refresh (only the page's owner can). It also refreshes hourly on its own.";
     }
   };
+}
+
+// ---------------------------------------------------------------- kiosk: a fixed view that plays the next hours by itself
+// meta.start.kiosk = { name, hours: 3 (loop ends this long after sunrise), loopSec: 90 (one loop, real seconds), reloadMin: 30, staleH: 6 }
+function kioskEnd(now) {   // the end of the loop: 3 h after sunrise, today's if that is still ahead, else tomorrow's
+  const k = S.kiosk, after = (k.hours ?? 3) * 3600e3;
+  let r = sunTimes(now).rise; if (r == null || r + after <= now + 30 * 60e3) r = sunTimes(now + 86400e3).rise;
+  return r == null ? now + 12 * 3600e3 : r + after;
+}
+function kiosk(k) {
+  S.kiosk = Object.assign({ name: "Diversey Outlook", hours: 3, loopSec: 90, reloadMin: 30, staleH: 6 }, k || {});
+  document.body.classList.add("kiosk"); document.title = S.kiosk.name;
+  const h1 = $("#hud h1"); if (h1 && !$("#hud .sub")) { const sub = document.createElement("div"); sub.className = "sub"; sub.textContent = S.kiosk.name; h1.after(sub); }
+  controls.enabled = false; camTween = null; S.follow = false; $("#nowbtn").hidden = true; hideHint();
+  document.querySelectorAll("#vsbox .cathead span").forEach((el) => { if (/drag to turn/i.test(el.textContent)) el.lastChild.textContent = el.lastChild.textContent.replace(/\s*·\s*drag to turn/i, ""); });
+  const now = Date.now(); S.kiosk.t0 = now; S.kiosk.t1 = kioskEnd(now);
+  S.t = now; S.speed = Math.max(60, (S.kiosk.t1 - now) / 1000 / S.kiosk.loopSec); setPlaying(true);
+  // a fresh copy of the page every so often (the artifact is republished a few times a day), at the top of a loop
+  setInterval(() => { if (document.visibilityState !== "hidden" && navigator.onLine !== false) location.reload(); }, Math.max(5, S.kiosk.reloadMin) * 60e3);
+}
+function kioskRefresh() {   // the build is old: ask for a new one, once per build (this only works for the page's owner, signed in to claude.ai)
+  if (!REFRESH.fire || !DATA.generated) return;
+  const gen = new Date(DATA.generated).getTime(), age = Date.now() - gen; let last = 0; try { last = +(localStorage.getItem("lakelocal-refresh") || 0); } catch (e) {}
+  if (age < (S.kiosk.staleH || 6) * 3600e3 || last > gen || REFRESH.firing) return;
+  REFRESH.firing = true; REFRESH.fire(`Outlook page: the build is ${Math.round(age / 3600e3)} h old; refresh`).catch(() => {});
 }
 
 // ---------------------------------------------------------------- forecast screenshots -> conditions (proof of concept)
@@ -3692,7 +3728,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
       if (!DATA.hist.length) { const h = await split("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
       const ph = $("#hist-wait"); if (ph) ph.remove();
       for (const h of DATA.hist) await addHistory(h);
-      if (!SRC.hist.length) { const o = document.createElement("option"); o.textContent = "No historical periods in this page"; $("#hist-pick").appendChild(o); } };
+      if (!SRC.hist.length) { const o = document.createElement("option"); o.textContent = "No historical periods in this page"; $("#hist-pick").appendChild(o); } else histNote(); };
     { const o = document.createElement("option"); o.id = "hist-wait"; o.disabled = true; o.textContent = "Loading historical periods…"; $("#hist-pick").appendChild(o); }
     const about = () => { $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""} GPU: ${GPU.name || "unknown"}, ${GPU.tex} textures, ${GPU.fvec} uniform vectors.${GPU.errs.length ? ` Shader problem: ${GPU.errs.join(" | ")}` : ""}`; };
     await setBathy(DATA.bathy); await yieldUI();
@@ -3713,8 +3749,9 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
     if (st && st.mode === "import" && IMP.list.length) { setMode("import"); if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }
     else if (st && st.mode === "live") { if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }   // live is set above (when there's radar); the mini map shows the radar in live mode
     else if (st) { const i = SRC.hist.findIndex((h) => h.raw.label === st.label || (h.raw.window && h.raw.window.start.startsWith(st.label || "~")));
-      if (i >= 0) { S.histIdx = i; $("#hist-pick").value = String(i); setMode("history"); if (st.t) S.t = new Date(st.t).getTime(); }
+      if (i >= 0) { S.histIdx = i; $("#hist-pick").value = String(i); await ensureHist(i); setMode("history"); if (st.t) S.t = new Date(st.t).getTime(); }
       if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }
+    if (st && st.kiosk) { kiosk(st.kiosk); if (REFRESH.fire) kioskRefresh(); }
     // second stage, in the background
     try {
       await setSwan(await swanP); await setFunwave(await fwP); renderModels();
@@ -3724,6 +3761,6 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
     } catch (e) { console.warn("background load", e); }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { conditions, chopRating, NAV, setMove, gotoPreset, viewState, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
+window.__world = { conditions, chopRating, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
 })();
 </script>
