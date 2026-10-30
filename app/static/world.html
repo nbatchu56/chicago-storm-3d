@@ -1009,7 +1009,8 @@ void main(){
     float Lp = max(9.81 * uTp * uTp / 6.2832, 1.0); vec2 wd = uWaveDir; vec2 grad = vec2(0.0); float unres = 0.0;
     float rel[8]; rel[0]=1.6; rel[1]=1.0; rel[2]=0.74; rel[3]=0.55; rel[4]=0.38; rel[5]=0.26; rel[6]=0.17; rel[7]=0.11;
     float ang[8]; ang[0]=-0.45; ang[1]=0.2; ang[2]=-0.15; ang[3]=0.6; ang[4]=-0.75; ang[5]=0.35; ang[6]=0.95; ang[7]=-0.5;
-    float calm = cls > 1.5 ? 0.25 : 1.0;                       // harbours and ponds: sheltered
+    float krC = swanRatio(p);                                    // the library's height here, relative to the reference offshore height
+    float calm = cls > 1.5 ? (krC >= 0.0 ? clamp(krC * uHsOff / max(uHs, 0.03), 0.08, 1.0) : 0.25) : 1.0;   // harbours and ponds: sheltered, or as modelled
     float shel = inMap && cls < 1.5 ? texture2D(uShelter, muv).r : 1.0; calm *= mix(0.35, 1.0, shel);   // and the lee of piers, walls and points
     vec4 iceK = ice > 0.02 ? iceKinds(ice, shoreD, uHs * calm, cls, uFdd) : vec4(0.0);
     calm *= 1.0 - 0.95 * clamp(iceK.x + iceK.z + 0.7 * iceK.w + 0.5 * iceK.y, 0.0, 1.0);   // a sheet or pack kills the waves; grease the ripples; pancakes damp them
@@ -1724,27 +1725,75 @@ async function setSwan(sw) {
         ratio = new Uint8Array(nc * n); dir = new Uint8Array(nc * n);
         for (const q of parts) { if (d.lib && q.lib !== d.lib) throw new Error("part from another build"); const o = q.cases[0] * n; ratio.set(await gunzipB64(q.ratio), o); dir.set(await gunzipB64(q.dir), o); } }
       catch (e) { console.warn("SWAN", name, e.message); continue; } }
-    else { ratio = await gunzipB64(d.ratio); dir = await gunzipB64(d.dir); }
+    else if (d.ratio) { ratio = await gunzipB64(d.ratio); dir = await gunzipB64(d.dir); }
+    else { ratio = new Uint8Array(0); dir = new Uint8Array(0); }   // a domain with only a wind library (yet)
     // the heights run for each (direction, period): storm heights only with the longer periods
-    const hsBy = new Map(); for (const c of d.cases) { const k = `${c.dir}|${c.tp}`; if (!hsBy.has(k)) hsBy.set(k, []); hsBy.get(k).push(c.hs); }
+    const hsBy = new Map(); for (const c of d.cases || []) { const k = `${c.dir}|${c.tp}`; if (!hsBy.has(k)) hsBy.set(k, []); hsBy.get(k).push(c.hs); }
     for (const v of hsBy.values()) v.sort((a, b) => a - b);
+    // the wind library (the harbor domain): Hs (cm), Tp (0.1 s) and direction for a U10 from each direction, no incoming waves
+    let wind = null;
+    if (d.wind && d.wind.cases && d.wind.cases.length) { const W = d.wind, nw = W.cases.length; try {
+        let hs, tp, wdir;
+        if (W.parts) { const parts = await Promise.all(W.parts.map(async (q) => { const r = await fetch(q.src); if (!r.ok) throw new Error(`${q.src}: ${r.status}`); return r.json(); }));
+          hs = new Uint8Array(nw * n); tp = new Uint8Array(nw * n); wdir = new Uint8Array(nw * n);
+          for (const q of parts) { if (d.lib && q.lib !== d.lib) throw new Error("wind part from another build"); const o = q.cases[0] * n; hs.set(await gunzipB64(q.hs), o); tp.set(await gunzipB64(q.tp), o); wdir.set(await gunzipB64(q.dir), o); } }
+        else { hs = await gunzipB64(W.hs); tp = await gunzipB64(W.tp); wdir = await gunzipB64(W.dir); }
+        const dirs = [...new Set(W.cases.map((c) => c.dir))].sort((a, b) => a - b), u10s = [...new Set(W.cases.map((c) => c.u10))].sort((a, b) => a - b);
+        wind = { cases: W.cases, hs, tp, dir: wdir, dirs, u10s, idx: new Map(W.cases.map((c, i) => [`${c.dir}|${c.u10}`, i])) };
+      } catch (e) { console.warn("SWAN wind", name, e.message); } }
     await yieldUI();
-    doms.push({ name, g, cases: d.cases, ratio, dir, n, hsBy, x0: g.x0 / 1000, y0: g.y0 / 1000, w: (g.nx - 1) * g.dx / 1000, h: (g.ny - 1) * g.dx / 1000, obstacles: (d.obstacles || []).length });
+    if (!d.cases?.length && !wind) continue;
+    doms.push({ name, g, cases: d.cases || [], ratio, dir, n, hsBy, wind, x0: g.x0 / 1000, y0: g.y0 / 1000, w: (g.nx - 1) * g.dx / 1000, h: (g.ny - 1) * g.dx / 1000, obstacles: (d.obstacles || []).length });
   }
   SWAN.domains = SWAN.domains.concat(doms).sort((a, b) => a.g.dx - b.g.dx);   // finest first: the 8 m trail inside the 20 m lane to the crib
   SWAN.model = sw.model; SWAN.key = null;
 }
 function swanDomainAt(xk, yk) { return SWAN.domains.find((d) => xk >= d.x0 && yk >= d.y0 && xk <= d.x0 + d.w && yk <= d.y0 + d.h) || null; }
+// the wind library for a U10 (m/s) from dir: linear in direction (circular, every 15 deg) and in speed between the speeds
+// run; below the lowest speed Hs falls with the wind (and Tp with its root), above the highest it grows with it
+function swanWindBlend(D, u10, dir, only) {
+  const W = D.wind, n = only != null ? 1 : D.n, k0 = only != null ? only : 0, hs = new Float32Array(n), tp = new Float32Array(n), dd = new Float32Array(n * 2);
+  if (!W || !(u10 > 0.3)) return { hs, tp, dir: dd, ok: false };
+  const dn = ((dir % 360) + 360) % 360, ds = W.dirs, step = ds.length > 1 ? ds[1] - ds[0] : 360;
+  const i0 = Math.floor(dn / step) % ds.length, f = dn / step - Math.floor(dn / step), wd = [[ds[i0], 1 - f], [ds[(i0 + 1) % ds.length], f]].filter(([, w]) => w > 1e-6);
+  const us = W.u10s, uc = clamp(u10, us[0], us[us.length - 1]); let j = 0; while (j < us.length - 2 && us[j + 1] < uc) j++;
+  const fu = us.length > 1 ? (uc - us[j]) / (us[j + 1] - us[j]) : 0, wu = us.length > 1 ? [[us[j], 1 - fu], [us[j + 1], fu]] : [[us[0], 1]];
+  const scale = u10 < us[0] ? u10 / us[0] : u10 > us[us.length - 1] ? u10 / us[us.length - 1] : 1, tScale = Math.sqrt(scale);
+  let wsum = 0;
+  for (const [dv, wa] of wd) for (const [uv, wb] of wu) { const ci = W.idx.get(`${dv}|${uv}`); if (ci == null) continue; const w = wa * wb; wsum += w; const off = ci * D.n;
+    for (let i = 0; i < n; i++) { const q = off + k0 + i; hs[i] += w * W.hs[q] / 100; tp[i] += w * W.tp[q] / 10; const a = W.dir[q] / 256 * 2 * Math.PI; dd[2 * i] += w * Math.sin(a); dd[2 * i + 1] += w * Math.cos(a); } }
+  if (wsum > 0) for (let i = 0; i < n; i++) { hs[i] *= scale / wsum; tp[i] *= tScale / wsum; }
+  return { hs, tp, dir: dd, ok: wsum > 0 };
+}
+// which of a domain's cells are harbour water (mask class 2): the wind library counts only there; over the open lake inside
+// the domain the offshore cases already carry the wind sea the buoys measured
+function swanHarborCells(D) { if (D.harbor) return D.harbor; const g = D.g, m = new Uint8Array(D.n); let n = 0;
+  for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) { const c = maskAt(D.x0 + i * g.dx / 1000, D.y0 + j * g.dx / 1000); if (c === 2) { m[j * g.nx + i] = 1; n++; } }
+  D.harbor = m; D.harborN = n; return m; }
+// the wind library at one point (m, s, deg from), or null when the point is not harbour water or the domain has no library
+function swanWindAt(xk, yk, u10, dir) {
+  const D = swanDomainAt(xk, yk); if (!D || !D.wind || maskAt(xk, yk) !== 2) return null;
+  const g = D.g, i = clamp(Math.round((xk - D.x0) / D.w * (g.nx - 1)), 0, g.nx - 1), j = clamp(Math.round((yk - D.y0) / D.h * (g.ny - 1)), 0, g.ny - 1);
+  const b = swanWindBlend(D, u10, dir, j * g.nx + i); if (!b.ok) return { hs: 0, tp: 0, dir, domain: D.name };
+  return { hs: b.hs[0], tp: b.tp[0], dir: (Math.atan2(b.dir[0], b.dir[1]) * 180 / Math.PI + 360) % 360, domain: D.name };
+}
+// the nearest harbour water (mask class 2) within rM metres of a point, or null: [xk, yk]
+function nearestHarborWater(xk, yk, rM) { let best = null; for (let dy = -rM; dy <= rM; dy += 3) for (let dx = -rM; dx <= rM; dx += 3) { const d = Math.hypot(dx, dy); if (d > rM || (best && d >= best.d)) continue;
+    if (maskAt(xk + dx / 1000, yk + dy / 1000) === 2) best = { d, x: xk + dx / 1000, y: yk + dy / 1000 }; } return best ? [best.x, best.y] : null; }
+// how far the wind blows over water before this point (m): up-wind through the map's water until land, a wall or 3 km
+function waterFetchM(xk, yk, fromDeg) { const b = fromDeg * Math.PI / 180, dx = Math.sin(b) / 1000, dy = Math.cos(b) / 1000; let d = 0;
+  while (d < 3000) { const c = maskAt(xk + dx * (d + 4), yk + dy * (d + 4)); if (c !== 1 && c !== 2) break; d += 4; } return d; }
 // blend the library for an offshore condition: linear in direction (circular) and period, and in height between the
 // heights that (direction, period) was run for (clamped at the ends)
 // the library at one point for any offshore condition (no texture or uniform changes): same weights as swanBlend
 function swanPointAt(xk, yk, off) {
-  const D = swanDomainAt(xk, yk); if (!D || !off || off.hs < 0.02) return null;
+  const D = swanDomainAt(xk, yk); if (!D || !off || off.hs < 0.02 || !D.cases.length) return null;
   const g = D.g, i = clamp(Math.round((xk - D.x0) / D.w * (g.nx - 1)), 0, g.nx - 1), j = clamp(Math.round((yk - D.y0) / D.h * (g.ny - 1)), 0, g.ny - 1), k = j * g.nx + i;
   const b = swanBlend(D, off.hs, off.tp, off.dir, k); if (!b.ok || !(b.ratio[0] > 0.005)) return null;
   return { ratio: b.ratio[0], dir: (Math.atan2(b.dir[0], b.dir[1]) * 180 / Math.PI + 360) % 360, domain: D.name };
 }
 function swanBlend(D, hs, tp, dir, only) {   // only: one cell index -> 1-cell result
+  if (!D.cases.length) return { ratio: new Float32Array(0), dir: new Float32Array(0), ok: false };
   const dirs = [...new Set(D.cases.map((c) => c.dir))].sort((a, b) => a - b), tps = [...new Set(D.cases.map((c) => c.tp))].sort((a, b) => a - b);
   const brk = (arr, v) => { if (v <= arr[0]) return [[arr[0], 1]]; if (v >= arr[arr.length - 1]) return [[arr[arr.length - 1], 1]]; let i = 0; while (arr[i + 1] < v) i++; const f = (v - arr[i]) / (arr[i + 1] - arr[i]); return [[arr[i], 1 - f], [arr[i + 1], f]]; };
   const dn = ((dir % 360) + 360) % 360;
@@ -1759,25 +1808,39 @@ function swanBlend(D, hs, tp, dir, only) {   // only: one cell index -> 1-cell r
   if (wsum > 0) for (let i = 0; i < n; i++) out[i] /= wsum;
   return { ratio: out, dir: dout, ok: wsum > 0 };
 }
-function swanUpdate(xk, yk, off) {   // off: {hs, tp, dir} offshore; returns local {ratio, dir} at (xk, yk) or null
-  const D = swanDomainAt(xk, yk); if (!D || !off || off.hs < 0.02) { U.uSwanOn.value = 0; SWAN.cur = null; return null; }
-  const key = `${D.name}|${off.hs.toFixed(2)}|${off.tp.toFixed(1)}|${Math.round(off.dir)}`;
-  if (key !== SWAN.key) { const b = swanBlend(D, off.hs, off.tp, off.dir); SWAN.key = key;
-    if (!b.ok) { U.uSwanOn.value = 0; SWAN.cur = { D, none: true }; return null; }
+function swanUpdate(xk, yk, off, wind) {   // off: {hs, tp, dir} offshore, wind: {u10, dir}; returns local {ratio, dir} at (xk, yk) or null
+  const D = swanDomainAt(xk, yk), windy = D && D.wind && wind && wind.u10 > 0.3;
+  if (!D || !off || (off.hs < 0.02 && !windy)) { U.uSwanOn.value = 0; SWAN.cur = null; return null; }
+  // the lake's sea is scaled by the offshore height; with a harbour wind library the texture also carries the wind's own
+  // chop over the basin, so the reference height stays positive even on a glassy lake
+  const hsRef = Math.max(off.hs, 0.02);
+  const key = `${D.name}|${off.hs.toFixed(2)}|${off.tp.toFixed(1)}|${Math.round(off.dir)}|${windy ? `${wind.u10.toFixed(1)}|${Math.round(wind.dir / 5) * 5}` : ""}`;
+  if (key !== SWAN.key) { const b = off.hs >= 0.02 && D.cases.length ? swanBlend(D, off.hs, off.tp, off.dir) : { ok: false }; SWAN.key = key;
+    const wb = windy ? swanWindBlend(D, wind.u10, wind.dir) : null, hm = wb && wb.ok ? swanHarborCells(D) : null;
+    if (!b.ok && !(wb && wb.ok)) { U.uSwanOn.value = 0; SWAN.cur = { D, none: true }; return null; }
     // SWAN's opaque obstacles can seal small pockets (harbour basins, groyne pockets) completely; where it says
     // exactly zero on wet water, fall back to the sheltered-water estimate instead (marked -1 = no SWAN value)
     // one RGBA texture: ratio in R, the mean "from" direction as (sin, cos) in G and B (for the energy-flow streaks). One sampler, not two:
     // the ground shader is close to the 16-texture limit of some GPUs, and a shader over it silently stops drawing the ground
+    // inside the harbour the lake's sea (through the mouth) and the wind's chop add in quadrature; the direction is the bigger one's
+    const ratio = new Float32Array(D.n), dir = new Float32Array(D.n * 2);
+    for (let i = 0; i < D.n; i++) { const lake = b.ok && b.ratio[i] > 0.005 ? b.ratio[i] * off.hs : 0, w = hm && hm[i] ? wb.hs[i] : 0;
+      const tot = Math.hypot(lake, w); ratio[i] = tot > 0.001 ? tot / hsRef : 0;
+      if (w > lake) { dir[2 * i] = wb.dir[2 * i]; dir[2 * i + 1] = wb.dir[2 * i + 1]; } else if (b.ok) { dir[2 * i] = b.dir[2 * i]; dir[2 * i + 1] = b.dir[2 * i + 1]; } }
     const hf = THREE.DataUtils.toHalfFloat, one = hf(1), half = new Uint16Array(D.n * 4);
-    for (let i = 0; i < D.n; i++) { half[i * 4] = hf(b.ratio[i] > 0.005 ? b.ratio[i] : -1); half[i * 4 + 1] = hf(b.dir[i * 2]); half[i * 4 + 2] = hf(b.dir[i * 2 + 1]); half[i * 4 + 3] = one; }
+    for (let i = 0; i < D.n; i++) { half[i * 4] = hf(ratio[i] > 0.005 ? ratio[i] : -1); half[i * 4 + 1] = hf(dir[i * 2]); half[i * 4 + 2] = hf(dir[i * 2 + 1]); half[i * 4 + 3] = one; }
     if (SWAN.tex) SWAN.tex.dispose(); SWAN.tex = new THREE.DataTexture(half, D.g.nx, D.g.ny, THREE.RGBAFormat, THREE.HalfFloatType); SWAN.tex.minFilter = SWAN.tex.magFilter = THREE.LinearFilter; SWAN.tex.needsUpdate = true;
-    U.uSwan.value = SWAN.tex; U.uSwanMin.value.set(D.x0, D.y0); U.uSwanSize.value.set(D.w, D.h); SWAN.cur = { D, ...b }; }
+    U.uSwan.value = SWAN.tex; U.uSwanMin.value.set(D.x0, D.y0); U.uSwanSize.value.set(D.w, D.h); SWAN.cur = { D, ratio, dir, ok: true, hsRef }; }
   if (!SWAN.cur || SWAN.cur.none) return null;
-  U.uSwanOn.value = 1; U.uHsOff.value = off.hs;
+  U.uSwanOn.value = 1; U.uHsOff.value = SWAN.cur.hsRef;
   const C = SWAN.cur, g = D.g, i = clamp(Math.round((xk - D.x0) / D.w * (g.nx - 1)), 0, g.nx - 1), j = clamp(Math.round((yk - D.y0) / D.h * (g.ny - 1)), 0, g.ny - 1), k = j * g.nx + i;
   if (!(C.ratio[k] > 0.005)) return null;
   return { ratio: C.ratio[k], dir: (Math.atan2(C.dir[2 * k], C.dir[2 * k + 1]) * 180 / Math.PI + 360) % 360, domain: D.name };
 }
+// the lake's sea alone at a point (ratio to the offshore height), from the library for this offshore condition
+function swanLakeAt(xk, yk, off) { const D = swanDomainAt(xk, yk); if (!D || !off || off.hs < 0.02 || !D.cases.length) return null;
+  const g = D.g, i = clamp(Math.round((xk - D.x0) / D.w * (g.nx - 1)), 0, g.nx - 1), j = clamp(Math.round((yk - D.y0) / D.h * (g.ny - 1)), 0, g.ny - 1);
+  const b = swanBlend(D, off.hs, off.tp, off.dir, j * g.nx + i); return b.ok && b.ratio[0] > 0.005 ? { ratio: b.ratio[0], dir: (Math.atan2(b.dir[0], b.dir[1]) * 180 / Math.PI + 360) % 360 } : null; }
 function swanRatioKm(xk, yk) { const C = SWAN.cur; if (!C || C.none || U.uSwanOn.value < 0.5) return null; const D = C.D, g = D.g;
   const fx = (xk - D.x0) / D.w * (g.nx - 1), fy = (yk - D.y0) / D.h * (g.ny - 1); if (fx < 0 || fy < 0 || fx > g.nx - 1 || fy > g.ny - 1) return null; const v = C.ratio[Math.round(fy) * g.nx + Math.round(fx)]; return v > 0.005 ? v : null; }
 
@@ -2679,7 +2742,8 @@ function radarState(tMs) {   // which frames to show, blend and motion shift
 function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN texture/uniforms (launch ratings)
   const c = { wind: 0, dir: 0, gust: null, airC: null, sky: 0, pop: 0, systems: [], dRef: 1000, waterC: null, src: [] };
   let shore = nearestShore(xk, yk);
-  if (!inLakeCoarse(xk, yk) && maskAt(xk, yk) === 0) { xk += shore.nx * (shore.d + 1.2); yk += shore.ny * (shore.d + 1.2); shore = nearestShore(xk, yk); }   // over land: report the lake just offshore (harbour water reports itself)
+  if (!inLakeCoarse(xk, yk) && maskAt(xk, yk) === 0) {   // over land: harbour water within ~40 m (a launch ramp, a dock) reports itself, else the lake just offshore
+    const hw = nearestHarborWater(xk, yk, 40); if (hw) { xk = hw[0]; yk = hw[1]; } else { xk += shore.nx * (shore.d + 1.2); yk += shore.ny * (shore.d + 1.2); } shore = nearestShore(xk, yk); }
   const fetchAt = (dir) => rayFetchKm(xk, yk, dir) * 1000;
   const withChop = (sys, U10, dir) => { const ch = cem(U10, 300, 1); if (ch.hm0 > 0.01) sys.push({ hs: Math.max(ch.hm0, 0.02 + 0.006 * U10), tp: Math.max(0.9, ch.tp), dir, spread: 50 }); return sys; };
   if (S.mode === "import") {
@@ -2735,8 +2799,16 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
   }
   if (FW.cur) { c.off = { hs: FW.cur.hs, tp: FW.cur.tp, dir: FW.cur.dir, src: "FUNWAVE case" }; c.src.unshift(`FUNWAVE: ${FW.cur.label}`); }
   // SWAN: inside a modelled domain, the local sea comes from the library for this offshore condition
-  const sw = pure ? swanPointAt(xk, yk, c.off) : swanUpdate(xk, yk, c.off);
-  if (sw) { const chop = c.systems.filter((q) => q.spread >= 50); c.systems = (c.off.hs * sw.ratio > 0.01 ? [{ hs: c.off.hs * sw.ratio, tp: c.off.tp, dir: sw.dir, spread: 22 }] : []).concat(chop);
+  const hw = swanWindAt(xk, yk, c.wind, c.dir);   // the harbour's own wind chop (the harbor domain's wind library), if this is harbour water
+  const sw = pure ? swanPointAt(xk, yk, c.off) : swanUpdate(xk, yk, c.off, { u10: c.wind, dir: c.dir });
+  if (hw) {
+    // Diversey Harbor and the lagoon: what gets in through the mouth (the lake's sea by the library, zero in a sealed basin) and
+    // the chop the wind raises over the basin's own fetch, from the harbour wind library instead of the generic 300 m chop
+    const lk = c.off ? swanLakeAt(xk, yk, c.off) : null, lake = lk ? { hs: c.off.hs * lk.ratio, tp: c.off.tp, dir: lk.dir, spread: 22 } : null;
+    c.systems = (lake && lake.hs > 0.01 ? [lake] : []).concat(hw.hs > 0.01 ? [{ hs: hw.hs, tp: Math.max(hw.tp, 0.9), dir: hw.dir, spread: 50 }] : []);
+    c.harbor = { windHs: hw.hs, windTp: hw.tp, windDir: hw.dir, lakeHs: lake ? lake.hs : 0, fetchM: waterFetchM(xk, yk, c.dir) };
+    c.swan = sw; c.dRef = Math.max(20, shore.d * 1000); c.src.push(`harbor SWAN`); if (!pure && sw) U.uSwanRef.value = Math.max(sw.ratio, 0.02); }
+  else if (sw) { const chop = c.systems.filter((q) => q.spread >= 50); c.systems = (c.off.hs * sw.ratio > 0.01 ? [{ hs: c.off.hs * sw.ratio, tp: c.off.tp, dir: sw.dir, spread: 22 }] : []).concat(chop);
     c.swan = sw; c.dRef = Math.max(20, shore.d * 1000); c.src.push(`SWAN ${sw.domain}`); if (!pure) U.uSwanRef.value = Math.max(sw.ratio, 0.02); }
   // harbour or lagoon water the library leaves at zero (an enclosed basin): no lake waves get in, only the chop
   // the wind raises over the basin itself
@@ -3354,7 +3426,7 @@ function renderLegend() {
       <span>${BATHY.ok ? `Lines every 1 m · lake ${(BATHY.level - LWD).toFixed(2)} m above low-water datum` : "No survey loaded"}</span><span>${BATHY.ok && BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}% · NOAA chart ${Math.round(BATHY.cov.ncei * 100)}%` : ""}</span>`; }
   else if (S.ov === "hs") { const st = [[0, "#2659bf"], [0.5, "#33bf8c"], [1.25, "#f2d94d"], [2.5, "#e64033"]];
     h = `<b>Wave height</b><div class="bar" style="background:linear-gradient(90deg,${st.map(([d, c]) => `${c} ${(d / 2.5 * 100).toFixed(0)}%`).join(",")})"></div><div class="tk"><span>0</span><span>2</span><span>4</span><span>6</span><span>8 ft</span></div>
-      <span>${SWAN.domains.length ? (U.uSwanOn.value > 0.5 ? `SWAN ${SWAN.cur && SWAN.cur.D.name}: sheltering, breaking, reflection` : "Outside the SWAN domains: open-lake estimate") : "No SWAN library loaded"}</span>`; }
+      <span>${SWAN.domains.length ? (U.uSwanOn.value > 0.5 ? `SWAN ${SWAN.cur && SWAN.cur.D.name}: sheltering, breaking, reflection${SWAN.cur && SWAN.cur.D.wind ? "; inside Diversey Harbor and the lagoon the lake's sea through the mouth plus the wind's own chop over the basin (2 m harbor model, surveyed walls)" : ""}` : "Outside the SWAN domains: open-lake estimate") : "No SWAN library loaded"}</span>`; }
   else if (S.ov === "chop") { const st = [[0, "#1a2950"], [12, "#268cb3"], [30, "#4dcc73"], [60, "#f7d940"], [100, "#eb4d26"]];   // % of the log 10..1000 J/m² scale
     h = `<b>Chop: wave energy</b><div class="bar" style="background:linear-gradient(90deg,${st.map(([d, c]) => `${c} ${d}%`).join(",")})"></div><div class="tk"><span>10</span><span>30</span><span>100</span><span>300</span><span>1000+ J/m²</span></div>
       <span><i style="display:inline-block;width:22px;height:9px;vertical-align:-1px;background:repeating-linear-gradient(135deg,#f240d9 0 3px,transparent 3px 7px)"></i> waves crossing: rebound off walls, trains meeting</span>
@@ -3607,6 +3679,8 @@ function updateHud(rr, tp) {
   if (live && NM.era5 && NM.era5.wind_ms) wind.push(["Usual", `${mph(NM.era5.wind_ms.p50)} mph · 1 in 10 ≥${mph(NM.era5.wind_ms.p90)}`]);
   if (tp && tp.inside && C.wind > 0.5) { const rel = Math.abs(angd(tp.hd, C.dir)); wind.push(["Your heading", rel < 60 ? "into the wind" : rel > 120 ? "with the wind" : "cross-wind"]); }
   if (hs > 0.01) waves.push(["Energy", `${Math.round(613 * hs ** 2)} J/m²`]);
+  if (C.harbor) { const H = C.harbor; waves.push(["Harbor chop", H.windHs > 0.01 ? `${ft(H.windHs)} ft ${compass(H.windDir)} · ${H.windTp.toFixed(1)} s · ${H.fetchM >= 1000 ? `${(H.fetchM / 1000).toFixed(1)} km` : `${Math.round(H.fetchM)} m`} fetch` : "none"]);
+    waves.push(["Through the mouth", H.lakeHs > 0.01 ? `${ft(H.lakeHs)} ft` : "none"]); }
   if (C.swan && C.off) waves.push(["Offshore", `${ft(C.off.hs)} ft ${compass(C.off.dir)} · ${C.off.tp.toFixed(1)} s`]);
   if (C.fwHs != null && tot > 0.01) waves.push(["Model (SWAN)", `${ft(tot)} ft`]);
   if (C.fwCross != null) waves.push(["Crossing seas", `${Math.round(C.fwCross * 100)}%${C.fwCross >= 0.5 ? " · confused" : ""}`]);
@@ -3919,7 +3993,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
       for (const h of DATA.hist) await addHistory(h);
       if (!SRC.hist.length) { const o = document.createElement("option"); o.textContent = "No historical periods in this page"; $("#hist-pick").appendChild(o); } else histNote(); };
     { const o = document.createElement("option"); o.id = "hist-wait"; o.disabled = true; o.textContent = "Loading historical periods…"; $("#hist-pick").appendChild(o); }
-    const about = () => { $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}${BATHY.survey ? `; Diversey Harbor and the lagoon from the ${(BATHY.survey.date || "2023").slice(0, 4)} USGS / Cook County survey` : ""}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""} GPU: ${GPU.name || "unknown"}, ${GPU.tex} textures, ${GPU.fvec} uniform vectors.${GPU.errs.length ? ` Shader problem: ${GPU.errs.join(" | ")}` : ""}`; };
+    const about = () => { $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}${BATHY.survey ? `; Diversey Harbor and the lagoon from the ${(BATHY.survey.date || "2023").slice(0, 4)} USGS / Cook County survey` : ""}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases${d.wind ? ` + ${d.wind.cases.length} wind` : ""}`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""} GPU: ${GPU.name || "unknown"}, ${GPU.tex} textures, ${GPU.fvec} uniform vectors.${GPU.errs.length ? ` Shader problem: ${GPU.errs.join(" | ")}` : ""}`; };
     await setBathy(DATA.bathy); await yieldUI();
     if (DATA.lake) { await buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
     mmFit(); buildMinimap(); await yieldUI();
