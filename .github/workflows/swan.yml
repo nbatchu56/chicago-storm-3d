@@ -165,6 +165,19 @@ jobs:
           run1() { cd "$1" && (time timeout 9000 $EXE > swan.log 2>&1) 2> time.txt; tail -3 PRINT 2>/dev/null | tr '\n' ' '; ls out.mat >/dev/null 2>&1 && echo " ok $1 $(grep real time.txt)" || echo " FAILED $1"; }
           export -f run1; export EXE
           ls -d runs/harbor/w* | xargs -P 2 -I{} bash -c 'run1 {}'
+          # a case that blew up (NaN read as zero waves everywhere) runs again without the diffraction term
+          for c in $(python - <<'PY'
+          import glob, os, numpy as np
+          from scipy.io import loadmat
+          for f in sorted(glob.glob("runs/harbor/w*/out.mat")):
+              hs = loadmat(f)["Hsig"]
+              if np.isnan(hs).mean() > 0.001 or np.nanmax(hs) <= 0:
+                  print(os.path.dirname(f))
+          PY
+          ); do
+            echo "::warning title=SWAN wind ${{ matrix.dir }}::$c blew up; rerunning without diffraction"
+            sed -i '/^DIFFRACTION/d' "$c/INPUT"; (cd "$c" && rm -f out.mat && timeout 9000 $EXE > swan.log 2>&1); ls "$c/out.mat" >/dev/null 2>&1 && echo " rerun ok $c" || echo " rerun FAILED $c"
+          done
           first=$(ls -d runs/harbor/w* | head -1)
           echo "::notice title=SWAN wind ${{ matrix.dir }}::$(for c in runs/harbor/w*; do echo "$(basename $c): $(grep real $c/time.txt 2>/dev/null | tr -s ' \t' ' ')"; done | tr '\n' '|') | PRINT: $(grep -i -B2 -A3 'error\|severe' $first/PRINT 2>/dev/null | head -20 | tr '\n' '|' | sed 's/%/%25/g' | cut -c1-1500)"
           echo "outputs: $(ls runs/harbor/w*/out.mat 2>/dev/null | wc -l)"
