@@ -58,8 +58,8 @@ def put(html, tag, obj):
 
 
 # The page draws the shoreline and nearshore bottom from a 4 m grid: the corridor (Monroe Harbor to Montrose)
-# when the bathy build has it, else the older route grid around Diversey Harbor. Only the band the lidar
-# actually surveyed (plus a margin) is kept; cells beyond are NODATA and the page uses the 10 m grid there.
+# when the bathy build has it, else the older route grid around Diversey Harbor. Only the band the lidar or the
+# harbour survey actually covered (plus a margin) is kept; cells beyond are NODATA and the page uses the 10 m grid there.
 DETAIL_BOX = (-860.0, 4560.0, 0.0, 5760.0)   # x0, y0, x1, y1 (m east/north of 41.8820, -87.6278): route fallback
 NODATA = -32768
 BAND_M = 160.0
@@ -79,7 +79,7 @@ def crop_detail(g, box=None, band_m=BAND_M):
         return None
     z = np.frombuffer(gzip.decompress(base64.b64decode(g["z_cm"])), "<i2").reshape(ny, nx)[j0:j1, i0:i1].copy()
     src = np.frombuffer(gzip.decompress(base64.b64decode(g["src"])), np.uint8).reshape(ny, nx)[j0:j1, i0:i1].copy()
-    keep = ndimage.binary_dilation(src == 1, iterations=max(1, int(round(band_m / dx))))
+    keep = ndimage.binary_dilation((src == 1) | (src == 4), iterations=max(1, int(round(band_m / dx))))
     z[~keep] = NODATA; src[~keep] = 0
     enc = lambda a: base64.b64encode(gzip.compress(np.ascontiguousarray(a).tobytes(), 9)).decode()  # noqa: E731
     return {"x0": g["x0"] + i0 * dx, "y0": g["y0"] + j0 * dx, "dx": dx, "nx": i1 - i0, "ny": j1 - j0, "z_cm": enc(z.astype("<i2")),

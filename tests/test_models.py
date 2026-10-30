@@ -156,3 +156,63 @@ def test_levels_hourly():
     assert d["station"] == "9087044" and d["step_s"] == 3600
     assert d["cm"][0] == 50 and d["cm"][-1] == 70            # recent hours from the 6-minute series
     assert len(d["cm"]) == 30 * 24 + 1
+
+
+# ---------------------------------------------------------------- the 2023 harbour survey (app.cookcounty)
+from app import cookcounty as cook  # noqa: E402
+
+
+def square_poly(x0, y0, x1, y1, hole=None):
+    rings = [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]
+    if hole:
+        a, b, c, d = hole
+        rings.append([[a, b], [c, b], [c, d], [a, d], [a, b]])
+    return {"name": "Test Harbor", "acres": 1.0, "rings": rings}
+
+
+def test_cookcounty_polygons_from_geojson():
+    lat, lon = cook.lf.REF
+    gj = {"features": [{"properties": {"Name": "DIVERSEY HARBOR", "Acres": 41.4},
+                        "geometry": {"type": "Polygon", "coordinates": [[[lon, lat], [lon + 0.001, lat], [lon + 0.001, lat + 0.001], [lon, lat]]]}},
+                       {"properties": {"Name": "NORTH POND"},
+                        "geometry": {"type": "MultiPolygon", "coordinates": [[[[lon, lat], [lon + 0.002, lat], [lon, lat + 0.002], [lon, lat]]], [[[lon, lat], [lon - 0.002, lat], [lon, lat - 0.002], [lon, lat]]]]}}]}
+    ps = cook.polygons_from_geojson(gj)
+    assert [p["name"] for p in ps] == ["Diversey Harbor", "North Pond", "North Pond"]
+    assert ps[0]["rings"][0][0] == [0.0, 0.0] and abs(ps[0]["rings"][0][1][0] - 0.001 * cook.lf.KX) < 0.2 and ps[0]["rings"][0][2][1] > 100
+
+
+def test_cookcounty_rasterize_with_hole():
+    g = {"x0": 0.0, "y0": 0.0, "dx": 2.0, "nx": 50, "ny": 40}
+    inside = cook.rasterize([square_poly(10, 10, 60, 50, hole=(30, 20, 40, 30))], g)
+    assert inside.shape == (40, 50)
+    assert inside[10, 10] and inside[20, 25]            # (y=20, x=20) and (y=40, x=50): inside the ring
+    assert not inside[12, 17] and not inside[13, 16]   # (y=24, x=34), (y=26, x=32): in the hole
+    assert not inside[2, 2] and not inside[30, 45]     # outside
+    assert 25 * 20 - 5 * 5 - 30 < inside.sum() < 25 * 20 - 5 * 5 + 30
+
+
+def test_blend_survey_wins_and_seam_stays_sharp():
+    lid = np.full((40, 50), 178.0, np.float32)          # lidar: dry park everywhere (boats, docks, the lagoon's surface)
+    lid[:, 40:] = 172.0                                 # and lake to the east
+    sv = np.full((40, 50), np.nan, np.float32); sv[5:35, 5:30] = 174.5   # the survey: 2.3 m of water in the basin
+    z, src, info = bm.blend(lid, None, 176.8, survey=sv)
+    assert (src[5:35, 5:30] == 4).all() and src[0, 0] == 1 and src[0, 45] == 1 and info["survey_cells"] == 30 * 25
+    assert z[20, 20] == 174.5 and z[0, 0] == 178.0
+    zs = bm.smooth_seam(z, src)
+    assert zs[20, 20] == 174.5 and zs[5, 5] == 174.5 and zs[4, 5] == 178.0   # no smearing at the wall
+
+
+def test_cookcounty_bed_elevation_fills_rim():
+    g = {"x0": 0.0, "y0": 0.0, "dx": 2.0, "nx": 50, "ny": 40}
+    polys = [square_poly(10, 10, 60, 50)]
+    depth = np.full((40, 50), np.nan, np.float32); depth[8:22, 8:27] = 3.0; depth[10, 10] = 6.0   # the rim has no soundings
+    z, inside, meta = cook.bed_elevation(g, polys=polys, depth=depth, level=176.8)
+    assert inside[10, 10] and np.isfinite(z[inside]).all() and np.isnan(z[~inside]).all()
+    assert abs(z[10, 10] - (176.8 - 6.0)) < 1e-5 and abs(z[24, 29] - 173.8) < 1e-5   # the rim takes the nearest sounding
+    assert meta["level_m_igld85"] == 176.8 and meta["polys"][0]["name"] == "Test Harbor" and meta["date"] == cook.SURVEY_DATE
+
+
+def test_model_bboxes_carry_spacing():
+    assert bm.MODEL_BBOXES["harbor"] == (cook.BBOX, 2.0) and bm.MODEL_BBOXES["corridor"][1] == 4.0
+    g = bm.local_grid(cook.BBOX, 2.0)
+    assert bm.overlaps(g, cook.BBOX) and not bm.overlaps(bm.local_grid((41.95, -87.648, 41.975, -87.60), 4.0), cook.BBOX)
