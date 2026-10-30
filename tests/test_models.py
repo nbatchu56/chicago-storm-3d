@@ -292,3 +292,18 @@ def test_survey_obstacles_leave_the_mouth_open():
     obs = sc.survey_obstacles({"survey": {"polys": [{"name": "Diversey Harbor", "rings": [ring]}]}}, g, depth, lagoon_y=0)
     segs = [(tuple(a), tuple(b)) for o in obs for a, b in zip(o["pts"], o["pts"][1:])]
     assert ((160.0, 40.0), (160.0, 160.0)) not in segs and len(segs) == 3                             # the east edge is water both sides: no wall
+
+
+def test_channels_are_cut_and_clear_of_walls():
+    g = bm.local_grid((41.9310, -87.6340, 41.9340, -87.6290), 2.0)
+    cm, cd = cook.channel_mask(g)
+    assert cm.sum() > 200 and np.nanmin(cd[cm]) == 1.8 and np.nanmax(cd[cm]) == 2.5
+    lid = np.full((g["ny"], g["nx"]), 177.5, np.float32)                        # the bridge deck, dry everywhere
+    z, src, info = bm.blend(lid, None, 176.4, channels=(cm, cd))
+    assert (src[cm] == 5).all() and abs(z[cm].max() - (176.4 - 1.8)) < 1e-3 and info["channel_cells"] == int(cm.sum())
+    # an OSM breakwater outline drawn across the inlet (the LSD abutment) loses its vertices in the channel
+    j, i = np.argwhere(cm)[len(np.argwhere(cm)) // 2]; cx, cy = g["x0"] + i * 2, g["y0"] + j * 2
+    lake = {"osm": [{"kind": "breakwater", "pts": [[cx - 40, cy - 40], [cx - 30, cy - 30], [cx, cy], [cx + 2, cy + 2], [cx + 30, cy + 30], [cx + 40, cy + 40]], "closed": False}]}
+    obs = sc.obstacles(lake, g, 176.4 - z, channel=cm)
+    assert len(obs) == 2 and all(len(o["pts"]) == 2 for o in obs) and all(not cm[int(round(p[1] / 2)), int(round(p[0] / 2))] for o in obs for p in o["pts"])
+    assert len(sc.obstacles(lake, g, 176.4 - z)) == 1                                   # without a channel the line is one wall

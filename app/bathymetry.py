@@ -14,7 +14,8 @@ Real lake bottom for the Chicago lakefront.
 
 Output grids are in the shared local frame (metres east/north of State & Madison). Bed elevation is stored
 relative to Lake Michigan low water datum (176.0 m IGLD85) in centimetres (int16), with a source map
-(0 none, 1 lidar, 2 NCEI, 3 filled, 4 survey). The file also carries the survey's polygons (survey.polys, local metres).
+(0 none, 1 lidar, 2 NCEI, 3 filled, 4 survey, 5 a known channel the surveys miss: the inlet under Lake Shore Drive and
+the harbour mouth, app.cookcounty.CHANNELS). The file also carries the survey's polygons (survey.polys, local metres).
 """
 
 import argparse
@@ -319,9 +320,10 @@ def nearest_fill(z, mask):
     return out
 
 
-def blend(lidar, ncei, level, lake_mask=None, survey=None):
+def blend(lidar, ncei, level, lake_mask=None, survey=None, channels=None):
     """Bed elevation (m IGLD85) and source map. NCEI is shifted to agree with the lidar where both exist; the harbour
-    survey (bed elevation inside its polygons, NaN elsewhere) replaces both where it has a value."""
+    survey (bed elevation inside its polygons, NaN elsewhere) replaces both where it has a value; known channels
+    (inside mask, nominal depth m) are cut at least that deep below the lake level."""
     z = lidar.copy()
     src = np.where(np.isfinite(lidar), 1, 0).astype(np.uint8)
     info = {}
@@ -330,6 +332,12 @@ def blend(lidar, ncei, level, lake_mask=None, survey=None):
         z[sv] = survey[sv]; src[sv] = 4
         info["survey_cells"] = int(sv.sum())
         lidar = np.where(sv, np.nan, lidar)    # the NCEI alignment below should not learn from the survey's cells
+    if channels is not None:
+        cm, cd = channels
+        cut = cm & (~np.isfinite(z) | (z > level - cd))
+        z[cut] = level - cd[cut]; src[cut] = 5
+        info["channel_cells"] = int(cut.sum())
+        lidar = np.where(cut, np.nan, lidar)
     if ncei is not None:
         both = np.isfinite(lidar) & np.isfinite(ncei) & (lidar < level - 3.0)
         if both.sum() > 200:
@@ -365,7 +373,8 @@ def blend(lidar, ncei, level, lake_mask=None, survey=None):
 def smooth_seam(z, src, passes=6):
     """Light diffusion across the lidar/NCEI seam only (never across the survey's edge: that is a wall)."""
     from scipy import ndimage
-    seam = ndimage.binary_dilation(src == 1, iterations=4) & ndimage.binary_dilation((src != 1) & (src != 4), iterations=4) & (src != 4)
+    keep = (src == 4) | (src == 5)
+    seam = ndimage.binary_dilation(src == 1, iterations=4) & ndimage.binary_dilation((src != 1) & ~keep, iterations=4) & ~keep
     for _ in range(passes):
         zs = ndimage.uniform_filter(z, 5)
         z = np.where(seam, zs, z)
@@ -409,15 +418,16 @@ def build_grid(bbox, d, level, probe, tag):
     nc = ncei_grid(g, p)
     if not np.isfinite(lid).any() and nc is None:
         raise RuntimeError("no bathymetry source reachable")
-    sv = None
+    sv, ch = None, None
     if overlaps(g, cook.BBOX):
         try:
             sv, _, meta = cook.bed_elevation(g, p)
             if meta:
-                SURVEY.setdefault("meta", meta)
+                SURVEY.setdefault("meta", meta | {"channels": cook.CHANNELS})
         except Exception as e:  # noqa: BLE001
             p["cook_error"] = str(e)[:300]; sv = None
-    z, src, info = blend(lid, nc, level, survey=sv)
+        ch = cook.channel_mask(g)
+    z, src, info = blend(lid, nc, level, survey=sv, channels=ch)
     z = smooth_seam(z, src)
     p.update(info)
     depth = level - z

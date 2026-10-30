@@ -41,6 +41,13 @@ BBOX = (41.912, -87.641, 41.937, -87.625)       # S, W, N, E
 FT = 0.3048
 PX_FT = 3.0                                     # the raster's native pixel (feet)
 COOK_DIR = os.environ.get("COOK_DIR", "cook_cache")
+# channels no survey sees: the inlet under the Lake Shore Drive bridge (the survey boat stopped at the bridge's west
+# face and the lidar returns the deck as land) and the gap between the jetties to the lake, confirmed by paddle tracks
+# (the same strokes the page draws, app/static/world.html WATERWAYS): [name, width m, nominal depth m, [[lat, lon], ...]]
+CHANNELS = [
+    ["Diversey Harbor inlet under Lake Shore Drive", 16.0, 1.8, [[41.93252, -87.63242], [41.93250, -87.63162], [41.93259, -87.63132], [41.93267, -87.63117]]],
+    ["Diversey Harbor mouth", 18.0, 2.5, [[41.93264, -87.63112], [41.93254, -87.63091], [41.93242, -87.63076], [41.93228, -87.63060], [41.93212, -87.63048]]],
+]
 
 
 def get(url, timeout=120):
@@ -109,6 +116,22 @@ def rasterize(polys, g):
                 hit[j] ^= (cnt % 2 == 1)
         inside |= hit
     return inside
+
+
+def channel_mask(g, channels=None):
+    """Cells of grid g within a channel stroke: (inside bool, nominal depth m where inside, else NaN)."""
+    xs = g["x0"] + np.arange(g["nx"]) * g["dx"]; ys = g["y0"] + np.arange(g["ny"]) * g["dx"]
+    X, Y = np.meshgrid(xs, ys)
+    inside = np.zeros(X.shape, bool); depth = np.full(X.shape, np.nan, np.float32)
+    for name, w, d, pts in (CHANNELS if channels is None else channels):
+        P = [lf.xy(la, lo) for la, lo in pts]
+        for (ax, ay), (bx, by) in zip(P, P[1:]):
+            vx, vy = bx - ax, by - ay; L2 = vx * vx + vy * vy or 1.0
+            t = np.clip(((X - ax) * vx + (Y - ay) * vy) / L2, 0.0, 1.0)
+            dist = np.hypot(X - (ax + t * vx), Y - (ay + t * vy))
+            hit = dist <= w / 2
+            depth[hit & (~inside | (depth < d))] = d; inside |= hit
+    return inside, depth
 
 
 # ---------------------------------------------------------------------------- depth raster
