@@ -79,7 +79,7 @@ def crop_detail(g, box=None, band_m=BAND_M):
         return None
     z = np.frombuffer(gzip.decompress(base64.b64decode(g["z_cm"])), "<i2").reshape(ny, nx)[j0:j1, i0:i1].copy()
     src = np.frombuffer(gzip.decompress(base64.b64decode(g["src"])), np.uint8).reshape(ny, nx)[j0:j1, i0:i1].copy()
-    keep = ndimage.binary_dilation((src == 1) | (src == 4), iterations=max(1, int(round(band_m / dx))))
+    keep = ndimage.binary_dilation((src == 1) | (src == 4) | (src == 5), iterations=max(1, int(round(band_m / dx))))
     z[~keep] = NODATA; src[~keep] = 0
     enc = lambda a: base64.b64encode(gzip.compress(np.ascontiguousarray(a).tobytes(), 9)).decode()  # noqa: E731
     return {"x0": g["x0"] + i0 * dx, "y0": g["y0"] + j0 * dx, "dx": dx, "nx": i1 - i0, "ny": j1 - j0, "z_cm": enc(z.astype("<i2")),

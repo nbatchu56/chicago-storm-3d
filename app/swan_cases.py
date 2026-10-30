@@ -111,6 +111,11 @@ def _area(pts):
     return abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))) / 2
 
 
+def _in_channel(channel, g, p):
+    i, j = int(round((p[0] - g["x0"]) / g["dx"])), int(round((p[1] - g["y0"]) / g["dx"]))
+    return 0 <= j < channel.shape[0] and 0 <= i < channel.shape[1] and bool(channel[j, i])
+
+
 def survey_obstacles(bathy, g, depth=None, lagoon_y=4830.0):
     """The surveyed shoreline of Diversey Harbor as reflecting walls: the basin's quay walls (REFL_QUAY), the lagoon's
     banks south of the Fullerton bridge (REFL_BANK). Ponds are left out (no wave domain). A ring edge with water on both
@@ -154,7 +159,7 @@ def survey_obstacles(bathy, g, depth=None, lagoon_y=4830.0):
     return out
 
 
-def obstacles(lakefront, g, depth, fine=None, min_opening=60.0):
+def obstacles(lakefront, g, depth, fine=None, min_opening=60.0, channel=None):
     """Polylines (local metres) for SWAN OBSTACLE: structures and wall-like shoreline.
 
     Wall-like shore along the open lake is graded by the lidar depth 8 m out from the waterline: deep water at
@@ -164,6 +169,9 @@ def obstacles(lakefront, g, depth, fine=None, min_opening=60.0):
     x0, y0, x1, y1 = g["x0"], g["y0"], g["x0"] + (g["nx"] - 1) * g["dx"], g["y0"] + (g["ny"] - 1) * g["dx"]
     inside = lambda p: x0 < p[0] < x1 and y0 < p[1] < y1
     out = []
+    # a segment inside a known channel (the inlet under LSD, the mouth: app.cookcounty.CHANNELS) is a bridge or a mapped
+    # abutment over the water, not a wall
+    in_channel = (lambda a, b: False) if channel is None else (lambda a, b: _in_channel(channel, g, a) or _in_channel(channel, g, b) or _in_channel(channel, g, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]))
     fg, fd = fine[:2] if fine else (g, depth)
     fs = fine[2] if fine and len(fine) > 2 else None
 
@@ -211,7 +219,17 @@ def obstacles(lakefront, g, depth, fine=None, min_opening=60.0):
             refl = REFL["vertical"]
         elif kind in ("breakwater", "groyne") and in_vertical_zone(pts):
             refl = REFL["vertical"]
-        out.append({"kind": kind, "name": name or None, "refl": refl, "trans": trans, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in pts]})
+        # the runs of segments outside the channels, each its own obstacle
+        run = []
+        for a, b in zip(pts, pts[1:]):
+            if in_channel(a, b):
+                if len(run) >= 2:
+                    out.append({"kind": kind, "name": name or None, "refl": refl, "trans": trans, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in run]})
+                run = []
+            else:
+                run = run + [b] if run else [a, b]
+        if len(run) >= 2:
+            out.append({"kind": kind, "name": name or None, "refl": refl, "trans": trans, "pts": [[round(p[0] - x0, 1), round(p[1] - y0, 1)] for p in run]})
     # wall-like shore: coastline segments where the water is already > 2 m deep 15 m offshore, graded by toe depth
     def depth_at(px, py):
         i, j = int((px - x0) / g["dx"]), int((py - y0) / g["dx"])
@@ -279,7 +297,7 @@ def obstacles(lakefront, g, depth, fine=None, min_opening=60.0):
             L = math.dist(a, b) or 1
             nx, ny = (b[1] - a[1]) / L, -(b[0] - a[0]) / L            # one side's normal; test both
             d = np.nanmax([depth_at(mx + nx * 15, my + ny * 15), depth_at(mx - nx * 15, my - ny * 15)])
-            if np.isfinite(d) and d > 2.0 and not is_open:
+            if np.isfinite(d) and d > 2.0 and not is_open and not in_channel(a, b):
                 k = toe_class(mx, my, nx, ny)
                 if run and kinds and k != kinds[0]:          # a new wall grade starts a new obstacle line
                     out.append(wall(run, kinds)); run, kinds = [], []
@@ -349,7 +367,11 @@ def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=None, hei
     fine = (gr, level - z, src) if gr["dx"] <= 2.0 else None
     if fine is None and "corridor" in bathy.get("models", {}):
         fz, fsrc = bm.unpack(bathy["models"]["corridor"]); fine = (bathy["models"]["corridor"], level - fz, fsrc)
-    obst = obstacles(lakefront, g, level - zz, fine or (gr, level - z), min_opening=spec.get("min_opening", 60.0))
+    channel = None
+    if spec.get("wind"):
+        from . import cookcounty as cook
+        channel = cook.channel_mask(g, (bathy.get("survey") or {}).get("channels"))[0]
+    obst = obstacles(lakefront, g, level - zz, fine or (gr, level - z), min_opening=spec.get("min_opening", 60.0), channel=channel)
     if spec.get("wind"):
         obst += survey_obstacles(bathy, g, level - zz)
     meta = {"domain": domain, "grid": g, "level_m_igld85": level, "obstacles": [{"kind": o["kind"], "n": len(o["pts"])} for o in obst]}
