@@ -1,6 +1,12 @@
 """
 SWAN wave-transformation library for the Lake Michigan Water Trail: Monroe Harbor to Montrose ("trail", 8 m)
-inside a coarser lane out past the Harrison-Dever crib ("lane", 20 m); "route"/"montrose" are the older domains.
+inside a coarser lane out past the Harrison-Dever crib ("lane", 20 m); "route"/"montrose" are the older domains;
+"harbor" (2 m) is Diversey Harbor, the channel under Fullerton and the South Lagoon with the lake off their mouth.
+
+The harbor domain runs two libraries: the same offshore cases as the others (how much of the lake's sea gets through the
+mouth, diffracting and reflecting inside) and a wind library (CASE_GROUPS["wind"]: 24 directions x 4 speeds) in which no
+waves come in and the wind alone raises chop over the basin's own fetch (GEN3 with linear growth, quadruplets on). The
+surveyed walls (bathy.survey.polys) are reflecting obstacles. The page adds the two in quadrature.
 
 For each offshore wave condition (direction x a (peak period, height) case, CASES), SWAN (TU Delft, stationary, 2-D)
 propagates a JONSWAP spectrum from the lake boundaries over the real bottom (app.bathymetry), with
@@ -38,6 +44,10 @@ CASES = [(2.5, 0.6), (2.5, 1.8), (4.0, 0.6), (4.0, 1.8), (6.0, 0.6), (6.0, 1.8),
          (6.0, 3.5), (8.5, 0.6), (8.5, 1.8), (8.5, 3.5), (8.5, 5.0)]
 CASE_GROUPS = {"base": CASES[:6], "storm": CASES[6:]}
 CASE_GROUPS |= {f"s{k + 1}": [c] for k, c in enumerate(CASES[6:])}   # one storm case each, for a slow direction
+# wind library (the harbor domain): U10 m/s for every direction in WIND_DIRS; the page blends by speed and direction
+WIND_SPEEDS = [4.0, 7.0, 11.0, 16.0]
+WIND_DIRS = list(range(0, 360, 15))
+CASE_GROUPS["wind"] = [("wind", u) for u in WIND_SPEEDS]
 SWAN_DX = 10.0                                 # computational grid spacing (m) for the older route/montrose domains
 # domains: bathy grid to take the bottom from, optional crop (S, W, N, E) and grid spacing (m)
 DOMAINS = {
@@ -47,7 +57,11 @@ DOMAINS = {
     "lane": {"grid": "world", "bbox": (41.866, -87.656, 41.988, -87.552), "dx": 20.0},
     "route": {"grid": "route", "dx": SWAN_DX},
     "montrose": {"grid": "montrose", "dx": SWAN_DX},
+    # Diversey Harbor to the lagoon's south end, with the lake east of Lake Shore Drive so the offshore cases enter the
+    # mouth from the boundary; the inlet under LSD is ~16 m wide (8 cells), so openings need only be 12 m
+    "harbor": {"grid": "harbor", "bbox": (41.9159, -87.6362, 41.9372, -87.6260), "dx": 2.0, "min_opening": 12.0, "wind": True},
 }
+REFL_QUAY, REFL_BANK = 0.5, 0.25           # the surveyed harbour walls (concrete, docks along them); the lagoon's banks
 REFL = {"breakwater": 0.35, "groyne": 0.35, "pier": 0.5, "revetment": 0.45, "vertical": 0.85,
         # lakefront walls graded by the water depth 8 m out from the lidar waterline: in deep water the waves reach
         # the wall unbroken and come straight back (Theater on the Lake: 5 m deep 12 m out); over a shoal they
@@ -63,6 +77,8 @@ VERTICAL_ZONES = {"Navy Pier": (41.8885, -87.6150, 41.8945, -87.5955),
 
 
 def case_id(d, tp, hs):
+    if tp == "wind":                           # a wind case: (direction from, U10)
+        return f"w{d:03d}_u{hs:04.1f}".replace(".", "p")
     return f"d{d:03d}_t{tp:.1f}_h{hs:.1f}".replace(".", "p")
 
 
@@ -92,7 +108,36 @@ def _area(pts):
     return abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))) / 2
 
 
-def obstacles(lakefront, g, depth, fine=None):
+def survey_obstacles(bathy, g, lagoon_y=4830.0):
+    """The surveyed shoreline of Diversey Harbor as reflecting walls: the basin's quay walls (REFL_QUAY), the lagoon's
+    banks south of the Fullerton bridge (REFL_BANK). Ponds are left out (no wave domain)."""
+    polys = (bathy.get("survey") or {}).get("polys") or []
+    x0, y0, x1, y1 = g["x0"], g["y0"], g["x0"] + (g["nx"] - 1) * g["dx"], g["y0"] + (g["ny"] - 1) * g["dx"]
+    out = []
+    for poly in polys:
+        if re.search(r"pond", poly.get("name") or "", re.I):
+            continue
+        for ring in poly["rings"]:
+            run, kind = [], None
+            for a, b in zip(ring, ring[1:]):
+                if not (x0 < a[0] < x1 and y0 < a[1] < y1 and x0 < b[0] < x1 and y0 < b[1] < y1):
+                    if len(run) >= 2:
+                        out.append({"kind": kind, "name": poly.get("name"), "refl": REFL_QUAY if kind == "quay" else REFL_BANK, "trans": 0.0, "pts": run})
+                    run, kind = [], None
+                    continue
+                k = "quay" if (a[1] + b[1]) / 2 >= lagoon_y else "bank"
+                if run and k != kind:
+                    out.append({"kind": kind, "name": poly.get("name"), "refl": REFL_QUAY if kind == "quay" else REFL_BANK, "trans": 0.0, "pts": run})
+                    run = [run[-1]]
+                pt = [[round(a[0] - x0, 1), round(a[1] - y0, 1)], [round(b[0] - x0, 1), round(b[1] - y0, 1)]]
+                run = run + [pt[1]] if run else pt
+                kind = k
+            if len(run) >= 2:
+                out.append({"kind": kind, "name": poly.get("name"), "refl": REFL_QUAY if kind == "quay" else REFL_BANK, "trans": 0.0, "pts": run})
+    return out
+
+
+def obstacles(lakefront, g, depth, fine=None, min_opening=60.0):
     """Polylines (local metres) for SWAN OBSTACLE: structures and wall-like shoreline.
 
     Wall-like shore along the open lake is graded by the lidar depth 8 m out from the waterline: deep water at
@@ -204,7 +249,7 @@ def obstacles(lakefront, g, depth, fine=None):
                 e = k
                 while e + 1 < len(op) and op[e + 1]:
                     e += 1
-                if sum(math.dist(*segs[q]) for q in range(k, e + 1)) < max(60.0, 4 * g["dx"]):
+                if sum(math.dist(*segs[q]) for q in range(k, e + 1)) < max(min_opening, 4 * g["dx"]):
                     for q in range(k, e + 1):
                         op[q] = False
                 k = e + 1
@@ -233,9 +278,12 @@ def obstacles(lakefront, g, depth, fine=None):
 
 
 def swn(g, level_above_lwd, d, tp, hs, obst):
+    """SWAN input for one case: an offshore sea (tp s, hs m from direction d) entering on the E, N and S sides, or, when
+    tp == "wind", no incoming waves and a U10 of hs m/s from d growing its own sea over the grid."""
+    wind = tp == "wind"
     xl, yl = (g["nx"] - 1) * g["dx"], (g["ny"] - 1) * g["dx"]
     lines = [
-        f"PROJECT 'chicago' 'c{d:03d}'",
+        f"PROJECT 'chicago' '{'w' if wind else 'c'}{d:03d}'",
         f"SET LEVEL={level_above_lwd:.3f} NAUTICAL",
         "MODE STATIONARY TWODIMENSIONAL",
         "COORDINATES CARTESIAN",
@@ -243,22 +291,26 @@ def swn(g, level_above_lwd, d, tp, hs, obst):
         f"CGRID REGULAR 0. 0. 0. {xl:.1f} {yl:.1f} {g['nx'] - 1} {g['ny'] - 1} CIRCLE 36 0.06 1.2 28",
         f"INPGRID BOTTOM REGULAR 0. 0. 0. {g['nx'] - 1} {g['ny'] - 1} {g['dx']:.1f} {g['dx']:.1f} EXCEPTION -99.",
         "READINP BOTTOM 1. '../bottom.txt' 3 0 FREE",
-        "BOUND SHAPESPEC JONSWAP 3.3 PEAK DSPR DEGREES",
     ]
-    for side in ("E", "N", "S"):
-        lines.append(f"BOUNDSPEC SIDE {side} CCW CONSTANT PAR {hs:.2f} {tp:.2f} {d:.1f} 25.")
+    if wind:
+        # a steady wind over the whole grid; third-generation physics with the linear growth term, so a sea rises from
+        # nothing in stationary mode; quadruplets on to shape it
+        lines += [f"WIND {hs:.2f} {d:.1f}", "GEN3 KOMEN AGROW"]
+    else:
+        lines.append("BOUND SHAPESPEC JONSWAP 3.3 PEAK DSPR DEGREES")
+        for side in ("E", "N", "S"):
+            lines.append(f"BOUNDSPEC SIDE {side} CCW CONSTANT PAR {hs:.2f} {tp:.2f} {d:.1f} 25.")
     for o in obst:                             # long commands continue on the next line with "&"
         pairs = [f"{p[0]:.1f} {p[1]:.1f}" for p in o["pts"]]
         chunks = [" ".join(pairs[i:i + 5]) for i in range(0, len(pairs), 5)]
         lines.append(f"OBSTACLE TRANSM {o['trans']:.2f} REFL {o['refl']:.2f} LINE " + " &\n    ".join(chunks))
-    lines += [
-        "OFF QUADRUPL",
+    lines += ([] if wind else ["OFF QUADRUPL"]) + [
         "BREAKING CONSTANT 1.0 0.73",
         "FRICTION JONSWAP CONSTANT 0.038",
         "TRIAD",
         "DIFFRACTION 1 0.2",
         "NUMERIC STOPC 0.005 0.01 0.005 99.5 STAT 40",
-        "BLOCK 'COMPGRID' NOHEAD 'out.mat' LAY 3 XP YP HSIGN DIR TM01 DEPTH",
+        "BLOCK 'COMPGRID' NOHEAD 'out.mat' LAY 3 XP YP HSIGN DIR TM01 RTP DEPTH",
         "COMPUTE",
         "STOP",
     ]
@@ -271,14 +323,18 @@ def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=None, hei
         cases = [(tp, hs) for tp in periods for hs in heights] if periods and heights else CASES
     bathy = json.load(open(bathy_path))
     lakefront = json.load(open(lakefront_path)) if lakefront_path and os.path.exists(lakefront_path) else None
-    gr, z, _ = load_grid(bathy, domain)
-    g, zz = resample(gr, z, DOMAINS.get(domain, {}).get("dx", SWAN_DX))
+    spec = DOMAINS.get(domain, {})
+    gr, z, src = load_grid(bathy, domain)
+    g, zz = resample(gr, z, spec.get("dx", SWAN_DX))
     level = bathy["level"]["m_igld85"]
     depth_lwd = bm.LWD - zz                    # depth below LWD (SWAN adds LEVEL)
-    fine = None
-    if "corridor" in bathy.get("models", {}):
+    # the finest bottom for judging walls and openings: the domain's own grid when it is the 2 m harbor one, else the corridor
+    fine = (gr, level - z, src) if gr["dx"] <= 2.0 else None
+    if fine is None and "corridor" in bathy.get("models", {}):
         fz, fsrc = bm.unpack(bathy["models"]["corridor"]); fine = (bathy["models"]["corridor"], level - fz, fsrc)
-    obst = obstacles(lakefront, g, level - zz, fine or (gr, level - z))
+    obst = obstacles(lakefront, g, level - zz, fine or (gr, level - z), min_opening=spec.get("min_opening", 60.0))
+    if spec.get("wind"):
+        obst += survey_obstacles(bathy, g)
     meta = {"domain": domain, "grid": g, "level_m_igld85": level, "obstacles": [{"kind": o["kind"], "n": len(o["pts"])} for o in obst]}
     os.makedirs(out_dir, exist_ok=True)
     bottom = "\n".join(" ".join(f"{v:.2f}" for v in row) for row in depth_lwd) + "\n"
@@ -293,7 +349,7 @@ def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=None, hei
             os.makedirs(cdir, exist_ok=True)
             with open(os.path.join(cdir, "INPUT"), "w") as fh:
                 fh.write(swn(g, level - bm.LWD, d, tp, hs, obst))
-            cases.append({"id": cid, "dir": d, "tp": tp, "hs": hs})
+            cases.append({"id": cid, "dir": d, "u10": hs} if tp == "wind" else {"id": cid, "dir": d, "tp": tp, "hs": hs})
     meta["cases"] = cases
     with open(os.path.join(out_dir, domain, "meta.json"), "w") as fh:
         json.dump(meta, fh)
@@ -302,26 +358,43 @@ def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=None, hei
     return meta
 
 
-def read_case(cdir):
+def read_case(cdir, peak=False):
     from scipy.io import loadmat
     m = loadmat(os.path.join(cdir, "out.mat"))
     hs = m["Hsig"].astype(np.float32); di = m["Dir"].astype(np.float32); yp = m["Yp"]
+    tp = next((m[k].astype(np.float32) for k in ("RTpeak", "Tpeak", "RTP", "TPsmoo") if k in m), np.zeros_like(hs)) if peak else None
     if yp[0, 0] > yp[-1, 0]:                    # make rows south -> north
         hs, di = hs[::-1], di[::-1]
+        if peak:
+            tp = tp[::-1]
     hs[(hs < 0) | ~np.isfinite(hs)] = 0
     di[~np.isfinite(di)] = 0
+    if peak:
+        tp[(tp < 0) | ~np.isfinite(tp)] = 0
+        return hs, di, tp
     return hs, di
 
 
 def collect(runs_dir, out_path, merge=None):
     """merge: an earlier library (swan.json); its cases on the same grid that this run didn't produce are kept."""
     out = {"version": 1, "model": "SWAN 41.51 stationary", "domains": {}}
+    enc = lambda arrs: base64.b64encode(gzip.compress(np.stack(arrs).tobytes(), 6)).decode()
+    dec = lambda b, shape: np.frombuffer(gzip.decompress(base64.b64decode(b)), np.uint8).reshape(shape)
     for meta_path in glob.glob(os.path.join(runs_dir, "*", "meta.json")):
         meta = json.load(open(meta_path)); dom = meta["domain"]; base = os.path.dirname(meta_path)
         got, ratio, dirs = [], [], []
+        wgot, whs, wtp, wdir = [], [], [], []   # the wind library: Hs in cm, Tp in 0.1 s, direction
         for c in meta["cases"]:
             cdir = os.path.join(base, c["id"])
             if not os.path.exists(os.path.join(cdir, "out.mat")):
+                continue
+            if "u10" in c:
+                hs, di, tp = read_case(cdir, peak=True)
+                if not (hs > 0).any():
+                    print(f"::warning title=SWAN::{dom} {c['id']} has no waves anywhere; left out")
+                    continue
+                whs.append(np.clip(np.round(hs * 100), 0, 255).astype(np.uint8)); wtp.append(np.clip(np.round(tp * 10), 0, 255).astype(np.uint8))
+                wdir.append((np.mod(di, 360) * 256 / 360).astype(np.uint8)); wgot.append(c)
                 continue
             hs, di = read_case(cdir)
             if not (hs > 0).any():             # blew up (NaN read as zero): leave it out rather than show calm water
@@ -332,22 +405,36 @@ def collect(runs_dir, out_path, merge=None):
             got.append(c)
         old = (merge or {}).get("domains", {}).get(dom)
         if old and old["grid"] == meta["grid"]:
-            g = meta["grid"]; shape = (len(old["cases"]), g["ny"], g["nx"])
-            r0 = np.frombuffer(gzip.decompress(base64.b64decode(old["ratio"])), np.uint8).reshape(shape)
-            d0 = np.frombuffer(gzip.decompress(base64.b64decode(old["dir"])), np.uint8).reshape(shape)
-            have = {c["id"] for c in got}
-            for k, c in enumerate(old["cases"]):
-                if c["id"] not in have:
-                    got.append(c); ratio.append(r0[k]); dirs.append(d0[k])
-        if not got:
+            g = meta["grid"]
+            if old.get("cases"):
+                shape = (len(old["cases"]), g["ny"], g["nx"]); r0 = dec(old["ratio"], shape); d0 = dec(old["dir"], shape)
+                have = {c["id"] for c in got}
+                for k, c in enumerate(old["cases"]):
+                    if c["id"] not in have:
+                        got.append(c); ratio.append(r0[k]); dirs.append(d0[k])
+            ow = old.get("wind")
+            if ow and ow.get("cases"):
+                shape = (len(ow["cases"]), g["ny"], g["nx"]); h0, t0, w0 = dec(ow["hs"], shape), dec(ow["tp"], shape), dec(ow["dir"], shape)
+                have = {c["id"] for c in wgot}
+                for k, c in enumerate(ow["cases"]):
+                    if c["id"] not in have:
+                        wgot.append(c); whs.append(h0[k]); wtp.append(t0[k]); wdir.append(w0[k])
+        if not got and not wgot:
             continue
         order = sorted(range(len(got)), key=lambda k: got[k]["id"])
         got, ratio, dirs = [got[k] for k in order], [ratio[k] for k in order], [dirs[k] for k in order]
-        enc = lambda arrs: base64.b64encode(gzip.compress(np.stack(arrs).tobytes(), 6)).decode()
-        out["domains"][dom] = {"grid": meta["grid"], "level_m_igld85": meta["level_m_igld85"], "cases": got,
-                               "obstacles": json.load(open(os.path.join(base, "obstacles.json"))),
-                               "ratio": enc(ratio), "dir": enc(dirs),
-                               "layout": "cases x rows(south->north) x cols(west->east); ratio = Hs/Hs0*100; dir = deg*256/360 (from)"}
+        entry = {"grid": meta["grid"], "level_m_igld85": meta["level_m_igld85"], "cases": got,
+                 "obstacles": json.load(open(os.path.join(base, "obstacles.json"))),
+                 "layout": "cases x rows(south->north) x cols(west->east); ratio = Hs/Hs0*100; dir = deg*256/360 (from)"}
+        if got:
+            entry["ratio"], entry["dir"] = enc(ratio), enc(dirs)
+        if wgot:
+            worder = sorted(range(len(wgot)), key=lambda k: wgot[k]["id"])
+            entry["wind"] = {"cases": [wgot[k] for k in worder], "hs": enc([whs[k] for k in worder]), "tp": enc([wtp[k] for k in worder]), "dir": enc([wdir[k] for k in worder]),
+                             "layout": "cases x rows x cols; hs = Hs cm; tp = Tp * 10 s; dir = deg*256/360 (from); u10 m/s from dir, no incoming waves"}
+        out["domains"][dom] = entry
+    for dom, old in (merge or {}).get("domains", {}).items():   # domains this run did not touch stay as they were
+        out["domains"].setdefault(dom, old)
     with open(out_path, "w") as fh:
         json.dump(out, fh, separators=(",", ":"))
     return out
@@ -357,14 +444,15 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("prepare"); p.add_argument("--bathy", required=True); p.add_argument("--lakefront"); p.add_argument("--domain", default="route")
-    p.add_argument("--dirs", default=",".join(map(str, DIRS))); p.add_argument("--out", default="runs")
+    p.add_argument("--dirs", default=None, help="directions (deg from), comma list; default: the offshore sector, or every 15 deg for the wind group")
+    p.add_argument("--out", default="runs")
     p.add_argument("--group", choices=sorted(CASE_GROUPS), help="run only this group of (period, height) cases")
     c = sub.add_parser("collect"); c.add_argument("--runs", default="runs"); c.add_argument("--out", default="swan.json")
     c.add_argument("--merge", help="earlier swan.json whose other cases (same grid) are kept")
     a = ap.parse_args()
     if a.cmd == "prepare":
-        m = prepare(a.bathy, a.lakefront, a.domain, [int(x) for x in a.dirs.split(",")], a.out,
-                    cases=CASE_GROUPS[a.group] if a.group else None)
+        dirs = [int(x) for x in a.dirs.split(",")] if a.dirs else (WIND_DIRS if a.group == "wind" else DIRS)
+        m = prepare(a.bathy, a.lakefront, a.domain, dirs, a.out, cases=CASE_GROUPS[a.group] if a.group else None)
         print(f"{a.domain}: grid {m['grid']['nx']}x{m['grid']['ny']} at {m['grid']['dx']} m, {len(m['cases'])} cases, {len(m['obstacles'])} obstacles")
     else:
         o = collect(a.runs, a.out, json.load(open(a.merge)) if a.merge and os.path.exists(a.merge) else None)

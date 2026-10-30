@@ -28,3 +28,21 @@ def test_thin_bathy_keeps_survey_and_surveyed_cells():
     s = np.frombuffer(gzip.decompress(base64.b64decode(det["src"])), np.uint8).reshape(det["ny"], det["nx"])
     assert (s[30:40, 40:50] == 4).all() and z[35, 45] == -250        # the surveyed basin survives the lidar band crop
     assert z[90, 95] == bw.NODATA and s[90, 95] == 0                 # over 160 m from either source: dropped
+
+
+def test_coarsen_swan_with_wind_library():
+    enc = lambda a: base64.b64encode(gzip.compress(np.ascontiguousarray(a).tobytes(), 6)).decode()  # noqa: E731
+    g = {"x0": 0, "y0": 0, "dx": 2.0, "nx": 8, "ny": 8}
+    r = np.zeros((1, 8, 8), np.uint8); r[0, :, 4:] = 80                       # water east, land west
+    d = np.full((1, 8, 8), 64, np.uint8)                                      # from 90 deg
+    whs = np.zeros((2, 8, 8), np.uint8); whs[:, :, 4:] = 30; wtp = np.full((2, 8, 8), 22, np.uint8)
+    sw = {"domains": {"harbor": {"grid": dict(g), "cases": [{"id": "d000_t4p0_h1p0", "dir": 0, "tp": 4.0, "hs": 1.0}], "ratio": enc(r), "dir": enc(d),
+                                  "wind": {"cases": [{"id": "w000_u04p0", "dir": 0, "u10": 4.0}, {"id": "w000_u07p0", "dir": 0, "u10": 7.0}], "hs": enc(whs), "tp": enc(wtp), "dir": enc(np.concatenate([d, d]))}}}}
+    out = bw.coarsen_swan(sw)
+    h = out["domains"]["harbor"]
+    assert h["grid"]["dx"] == 8.0 and h["grid"]["nx"] == 2 and h["grid"]["ny"] == 2        # 2 m -> 8 m for the page
+    rr = np.frombuffer(gzip.decompress(base64.b64decode(h["ratio"])), np.uint8).reshape(1, 2, 2)
+    hh = np.frombuffer(gzip.decompress(base64.b64decode(h["wind"]["hs"])), np.uint8).reshape(2, 2, 2)
+    tt = np.frombuffer(gzip.decompress(base64.b64decode(h["wind"]["tp"])), np.uint8).reshape(2, 2, 2)
+    assert rr[0, 0, 0] == 0 and rr[0, 0, 1] == 80 and hh[1, 1, 1] == 30 and hh[1, 1, 0] == 0 and tt[0, 0, 1] == 22
+    assert bw.chop_spots({"domains": {"harbor": {"grid": g, "cases": [], "wind": h["wind"]}}}, {"hours": 10, "bins": {}}) is None

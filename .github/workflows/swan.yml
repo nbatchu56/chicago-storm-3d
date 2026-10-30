@@ -8,6 +8,12 @@ on:
       groups:
         description: "Case groups (app.swan_cases CASE_GROUPS), comma list"
         default: "base,storm"
+      domains:
+        description: "Domains (app.swan_cases DOMAINS), comma list: trail, lane, harbor"
+        default: "trail,lane"
+      wind_dirs:
+        description: "Wind directions for the harbor's wind library (deg from, comma list; empty = none)"
+        default: "0,15,30,45,60,75,90,105,120,135,150,165,180,195,210,225,240,255,270,285,300,315,330,345"
       merge:
         description: "Keep the swan branch's other cases (same grids) that this run doesn't redo"
         type: boolean
@@ -24,11 +30,18 @@ jobs:
     outputs:
       dirs: ${{ steps.m.outputs.dirs }}
       groups: ${{ steps.m.outputs.groups }}
+      domains: ${{ steps.m.outputs.domains }}
+      wind_dirs: ${{ steps.m.outputs.wind_dirs }}
+      harbor: ${{ steps.m.outputs.harbor }}
     steps:
       - id: m
         run: |
-          echo "dirs=$(python3 -c "import json,sys; print(json.dumps([int(x) for x in sys.argv[1].split(',')]))" '${{ inputs.dirs }}')" >> "$GITHUB_OUTPUT"
+          echo "dirs=$(python3 -c "import json,sys; print(json.dumps([int(x) for x in sys.argv[1].split(',') if x.strip()]))" '${{ inputs.dirs }}')" >> "$GITHUB_OUTPUT"
           echo "groups=$(python3 -c "import json,sys; print(json.dumps([x.strip() for x in sys.argv[1].split(',') if x.strip()]))" '${{ inputs.groups }}')" >> "$GITHUB_OUTPUT"
+          echo "domains=$(python3 -c "import sys; print(' '.join(x.strip() for x in sys.argv[1].split(',') if x.strip()))" '${{ inputs.domains }}')" >> "$GITHUB_OUTPUT"
+          # the harbor's wind library runs only when the harbor domain is asked for
+          echo "harbor=$(python3 -c "import sys; print('yes' if 'harbor' in [x.strip() for x in sys.argv[1].split(',')] and sys.argv[2].strip() else 'no')" '${{ inputs.domains }}' '${{ inputs.wind_dirs }}')" >> "$GITHUB_OUTPUT"
+          echo "wind_dirs=$(python3 -c "import json,sys; print(json.dumps([int(x) for x in sys.argv[1].split(',') if x.strip()] or [0]))" '${{ inputs.wind_dirs }}')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         id: cache
         with:
@@ -76,17 +89,19 @@ jobs:
           git fetch -q --depth 1 origin bathy snapshot
           git show origin/bathy:bathy.json > bathy.json
           git show origin/snapshot:lakefront.json > lakefront.json
-          for d in trail lane; do python -m app.swan_cases prepare --bathy bathy.json --lakefront lakefront.json --domain $d --dirs ${{ matrix.dir }} --group ${{ matrix.group }} --out runs; done
+          for d in ${{ needs.build.outputs.domains }}; do python -m app.swan_cases prepare --bathy bathy.json --lakefront lakefront.json --domain $d --dirs ${{ matrix.dir }} --group ${{ matrix.group }} --out runs; done
       - name: Run SWAN cases
         run: |
           EXE=$(find ~/swan -type f -perm -u+x -name 'swan*.exe' | head -1); [ -n "$EXE" ] || EXE=$(find ~/swan -type f -perm -u+x -name 'swan*' | grep -v run | head -1)
           echo "SWAN: $EXE"
           export OMP_NUM_THREADS=2
           # the 20 m lane two at a time; the 8 m trail (~1.4 M cells, ~6 GB of spectra each) one at a time
-          run1() { cd "$1" && timeout 12000 $EXE > swan.log 2>&1; tail -3 PRINT 2>/dev/null | tr '\n' ' '; ls out.mat >/dev/null 2>&1 && echo " ok $1" || echo " FAILED $1"; }
+          run1() { cd "$1" && (time timeout 12000 $EXE > swan.log 2>&1) 2> time.txt; tail -3 PRINT 2>/dev/null | tr '\n' ' '; ls out.mat >/dev/null 2>&1 && echo " ok $1 $(grep real time.txt | tr -s ' \t' ' ')" || echo " FAILED $1"; }
           export -f run1; export EXE
-          ls -d runs/lane/d* | xargs -P 2 -I{} bash -c 'run1 {}'
-          ls -d runs/trail/d* | OMP_NUM_THREADS=4 xargs -P 1 -I{} bash -c 'run1 {}'
+          ls -d runs/lane/d* 2>/dev/null | xargs -P 2 -I{} bash -c 'run1 {}'
+          # the 2 m harbor (~500 k cells): two at a time
+          ls -d runs/harbor/d* 2>/dev/null | xargs -P 2 -I{} bash -c 'run1 {}'
+          ls -d runs/trail/d* 2>/dev/null | OMP_NUM_THREADS=4 xargs -P 1 -I{} bash -c 'run1 {}'
           # a case that blew up (NaN in the output, read as zero waves everywhere) runs again without the
           # diffraction term, which is what goes unstable at narrow openings
           for c in $(python - <<'PY'
@@ -115,9 +130,57 @@ jobs:
             runs/*/d*/out.mat
             runs/*/d*/PRINT
           retention-days: 3
+  wind:
+    # the harbor's wind library: no incoming waves, U10 from each direction over the basin's own fetch
+    needs: build
+    if: needs.build.outputs.harbor == 'yes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        dir: ${{ fromJson(needs.build.outputs.wind_dirs) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install numpy scipy && sudo apt-get install -y -q gfortran >/dev/null
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/swan
+          key: swan-41.51-gnu-2
+          fail-on-cache-miss: true
+      - name: Inputs
+        run: |
+          git fetch -q --depth 1 origin bathy snapshot
+          git show origin/bathy:bathy.json > bathy.json
+          git show origin/snapshot:lakefront.json > lakefront.json
+          python -m app.swan_cases prepare --bathy bathy.json --lakefront lakefront.json --domain harbor --dirs ${{ matrix.dir }} --group wind --out runs
+      - name: Run SWAN wind cases
+        run: |
+          EXE=$(find ~/swan -type f -perm -u+x -name 'swan*.exe' | head -1); [ -n "$EXE" ] || EXE=$(find ~/swan -type f -perm -u+x -name 'swan*' | grep -v run | head -1)
+          export OMP_NUM_THREADS=2
+          run1() { cd "$1" && (time timeout 9000 $EXE > swan.log 2>&1) 2> time.txt; tail -3 PRINT 2>/dev/null | tr '\n' ' '; ls out.mat >/dev/null 2>&1 && echo " ok $1 $(grep real time.txt)" || echo " FAILED $1"; }
+          export -f run1; export EXE
+          ls -d runs/harbor/w* | xargs -P 2 -I{} bash -c 'run1 {}'
+          first=$(ls -d runs/harbor/w* | head -1)
+          echo "::notice title=SWAN wind ${{ matrix.dir }}::$(for c in runs/harbor/w*; do echo "$(basename $c): $(grep real $c/time.txt 2>/dev/null | tr -s ' \t' ' ')"; done | tr '\n' '|') | PRINT: $(grep -i -B2 -A3 'error\|severe' $first/PRINT 2>/dev/null | head -20 | tr '\n' '|' | sed 's/%/%25/g' | cut -c1-1500)"
+          echo "outputs: $(ls runs/harbor/w*/out.mat 2>/dev/null | wc -l)"
+          find runs -name 'bottom.txt' -delete
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swan-wind-${{ matrix.dir }}
+          path: |
+            runs/*/meta.json
+            runs/*/obstacles.json
+            runs/*/w*/out.mat
+            runs/*/w*/PRINT
+          retention-days: 3
   collect:
-    needs: run
-    if: always()
+    needs: [run, wind]
+    if: always() && needs.run.result != 'cancelled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
