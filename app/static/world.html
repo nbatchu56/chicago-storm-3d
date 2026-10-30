@@ -396,6 +396,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
       <div class="row"><label for="x-air">Air temperature</label><output id="x-air-o"></output></div><input type="range" id="x-air" min="-25" max="35" step="1" value="16">
       <div class="row"><label for="x-water">Water temperature</label><output id="x-water-o"></output></div><input type="range" id="x-water" min="0" max="27" step="0.5" value="15">
       <div class="row"><label for="x-ice">Lake ice</label><output id="x-ice-o"></output></div><input type="range" id="x-ice" min="0" max="1" step="0.05" value="0">
+      <div class="row"><label for="x-fdd" title="Freezing degree-days: how cold for how long (a day at 14°F is 10; a month of it 300). Decides the ice's thickness and kind: a slick or pancakes in the first days, a shelf and floes later, snow on top in a long spell">Cold spell</label><output id="x-fdd-o"></output></div><input type="range" id="x-fdd" min="0" max="300" step="5" value="0">
       <div class="row"><label for="x-hour">Time of day</label><output id="x-hour-o"></output></div><input type="range" id="x-hour" min="0" max="23.75" step="0.25" value="14">
       <button id="x-seed">New storm layout</button>
       </div>
@@ -607,7 +608,7 @@ const azElDir = (o, v) => { const a = o.az * Math.PI / 180, e = o.el * Math.PI /
 const DATA = { scene: parseJSON("scene-data"), sup: parseJSON("sup-data"), lake: parseJSON("lakefront-data"), hist: [], track: parseJSON("track-data"), bathy: parseJSON("bathy-data"), swan: parseJSON("swan-data"), funwave: parseJSON("funwave-data"), validate: parseJSON("validate-data"), learn: parseJSON("learn-data"), levels: parseJSON("levels-data"), earth: parseJSON("earth-data"), wn3: parseJSON("wn3-data"), generated: (parseJSON("meta-data") || {}).generated, imports: [].concat(parseJSON("import-data") || []) };
 { const h = parseJSON("history-data"); if (h) DATA.hist = Array.isArray(h) ? h : [h]; }
 const S = { mode: "live", t: Date.now(), follow: true, playing: false, speed: 600, ov: "natural", exag: 1, quality: 1, bolts: !RM, goes: true, view: "overview", histIdx: 0,
-  x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, hour: 14, seed: 7 } };
+  x: { type: "thunder", int: 1, cov: 1, mspd: 45, mdir: 100, wspd: 8, wdir: 20, dur: 8, air: 16, water: 15, ice: 0, fdd: 0, hour: 14, seed: 7 } };
 try { const q = localStorage.getItem("lakeworld-q"); if (q !== null) S.quality = +q; } catch (e) {}
 
 // ---------------------------------------------------------------- renderer
@@ -697,7 +698,7 @@ const U = {
   uSpotsOn: { value: 0 }, uSpotHas: { value: 0 }, uSpotTex: { value: blank2D }, uSpotMin: { value: new THREE.Vector2() }, uSpotSize: { value: new THREE.Vector2(1, 1) },
   uChopOn: { value: 0 }, uFlowOn: { value: 0 }, uFlowDir: { value: new THREE.Vector2(0, 1) }, uFlowTp: { value: 3 }, uChopTex: { value: blank2D }, uChopMin: { value: new THREE.Vector2() }, uChopSize: { value: new THREE.Vector2(1, 1) }, uChopCore: { value: new THREE.Vector4(1e6, 1e6, -1e6, -1e6) }, uChopHas: { value: 0 },
   uFw: { value: null }, uFwHs: { value: blank2D }, uFwMin: { value: new THREE.Vector2() }, uFwSize: { value: new THREE.Vector2(1, 1) }, uFwOn: { value: 0 }, uFwT: { value: 0 },
-  uTempOn: { value: 0 }, uTRamp: { value: tRamp }, uLocalC: { value: new THREE.Vector2() }, uWaterC: { value: 15 }, uIceExp: { value: 0 }, uSnowCover: { value: 0 },
+  uTempOn: { value: 0 }, uTRamp: { value: tRamp }, uLocalC: { value: new THREE.Vector2() }, uWaterC: { value: 15 }, uIceExp: { value: 0 }, uFdd: { value: 0 }, uIceMax: { value: 0 }, uSnowCover: { value: 0 },
 };
 
 U.uCitySky = U.uCity; U.uTimeSky = U.uTime;   // same values under names the sky function can declare without clashing
@@ -775,7 +776,7 @@ vec3 skyColor(vec3 d, bool sun) {
   return c + uFlash * vec3(0.35, 0.36, 0.5);
 }`;
 const TEMP_GLSL = `
-uniform sampler2D uTempTex, uIceTex, uTRamp; uniform vec2 uTempMin, uTempSize, uTempN, uIceMin, uIceSize, uIceN; uniform float uHasTemp, uHasIce, uWaterC, uIceExp;
+uniform sampler2D uTempTex, uIceTex, uTRamp; uniform vec2 uTempMin, uTempSize, uTempN, uIceMin, uIceSize, uIceN; uniform float uFdd, uIceMax; uniform float uHasTemp, uHasIce, uWaterC, uIceExp;
 float gridSample(sampler2D tx, vec2 p, vec2 mn, vec2 sz, vec2 n) { vec2 f = clamp((p - mn) / sz, 0.0, 1.0); vec2 uv = (f * (n - 1.0) + 0.5) / n; return texture2D(tx, uv).r; }
 float waterTempC(vec2 p) { return uHasTemp > 0.5 ? gridSample(uTempTex, p, uTempMin, uTempSize, uTempN) : uWaterC; }
 vec3 tempColor(float c) { float f = c * 1.8 + 32.0; return pow(texture2D(uTRamp, vec2(clamp((f - 32.0) / 48.0, 0.0, 1.0) * 0.984 + 0.008, 0.5)).rgb, vec3(2.2)); }
@@ -850,11 +851,64 @@ vec3 hsColor(float h) { float t = clamp(h / 2.5, 0.0, 1.0); vec3 c = mix(vec3(0.
   c = mix(c, vec3(0.95, 0.85, 0.3), smoothstep(0.2, 0.5, t)); return pow(mix(c, vec3(0.9, 0.25, 0.2), smoothstep(0.5, 1.0, t)), vec3(2.2)); }
 float iceAt(vec2 p, float shoreD, float n) {
   float g = uHasIce > 0.5 ? gridSample(uIceTex, p, uIceMin, uIceSize, uIceN) : 0.0;
+  // the 1.3 km analysis grid misses the shelf ice on the beaches: once the lake nearby carries ice and the cold spell has
+  // run a few weeks, a band of shore-fast ice (100-250 m, wider in the harbours) stands in for the land-contaminated cells
+  if (uHasIce > 0.5) g = max(g, (1.0 - smoothstep(0.08, 0.25, shoreD)) * smoothstep(0.1, 0.4, uIceMax) * smoothstep(20.0, 70.0, uFdd));
   // experimental ice: shore-fast ice grows out from the beach, broken pack further out
-  float fast = 1.0 - smoothstep(uIceExp * 3.0, uIceExp * 3.0 + 0.4, shoreD);
+  float fast = 1.0 - smoothstep(uIceExp * 1.2, uIceExp * 3.0 + 0.4, shoreD) * (0.5 + 0.5 * smoothstep(uIceExp * 1.2, uIceExp * 3.0 + 0.4, shoreD));
   float pack = smoothstep(1.0 - uIceExp, 1.0 - uIceExp + 0.08, n) * step(0.02, uIceExp);
   return clamp(max(g, max(fast * step(0.02, uIceExp), pack)), 0.0, 1.0);
-}`;
+}
+float ihash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float inoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(ihash(i), ihash(i+vec2(1,0)), f.x), mix(ihash(i+vec2(0,1)), ihash(i+vec2(1,1)), f.x), f.y); }
+// nearest and second-nearest feature points of a jittered lattice (Worley): x = d1, y = d2, z = the nearest cell's id
+vec3 cellular(vec2 q) { vec2 i = floor(q), f = fract(q); float d1 = 8.0, d2 = 8.0; vec2 id = vec2(0.0);
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) { vec2 g = vec2(float(x), float(y)); vec2 o = vec2(ihash(i + g), ihash(i + g + 17.3)); vec2 r = g + o - f; float d = dot(r, r);
+    if (d < d1) { d2 = d1; d1 = d; id = i + g; } else if (d < d2) d2 = d; }
+  return vec3(sqrt(d1), sqrt(d2), ihash(id + 3.1)); }
+// What kind of ice is here. ice: concentration 0-1 at this point; shoreD: km to the shore; hs: wave height here (m); cls > 1.5: a
+// harbour or pond; fdd: freezing degree-days of the cold spell so far (deg C days; Stefan: thickness ~ 3.3 cm * sqrt(fdd)).
+//   sheet    shore-fast (shelf) ice, and harbour ice: solid, snow on top in a long cold spell, cracked and ridged where it was pushed
+//   pancake  the ice edge in a sea: plates a metre or two across with raised rims, rafted together as the concentration grows
+//   floe     the pack further out: floes tens of metres across with dark leads between them
+//   grease   new ice in calm water: a dark matte slick that kills the ripples (nilas once it holds together)
+// Returns x = sheet, y = pancake, z = floe, w = grease, each 0-1, summing to at most 1.
+vec4 iceKinds(float ice, float shoreD, float hs, float cls, float fdd) {
+  float young = 1.0 - smoothstep(5.0, 40.0, fdd);                                  // the first days of a freeze: thin ice only
+  float sheet = max(step(1.5, cls), 1.0 - smoothstep(0.06, 0.35, shoreD)) * smoothstep(0.45, 0.85, ice) * (1.0 - young * 0.6);
+  float waves = smoothstep(0.08, 0.3, hs);
+  float edge = smoothstep(0.08, 0.5, ice) * (1.0 - smoothstep(0.75, 0.97, ice));
+  float pancake = edge * waves * (1.0 - sheet);
+  float floe = smoothstep(0.55, 0.95, ice) * (1.0 - sheet) * (1.0 - pancake) * (1.0 - young * 0.7);
+  float grease = smoothstep(0.03, 0.25, ice) * (1.0 - waves) * (1.0 - sheet) * (1.0 - floe) * (1.0 - pancake) * (0.35 + 0.65 * young);
+  return vec4(sheet, pancake, floe, grease); }
+// The look: colour and how much of the pixel is ice (the rest stays water). lit: the sun and sky on a white surface.
+vec4 iceLook(vec2 p, vec4 k, float ice, float foot, float snow, vec3 lit, vec3 sunDir, float t) {
+  float fm = foot * 1000.0;                                                          // metres per pixel
+  vec3 white = vec3(0.80, 0.85, 0.89), grey = vec3(0.50, 0.56, 0.62), col = vec3(0.0); float cover = 0.0;
+  // shore-fast sheet: cracks, pressure ridges along the old edge, drifted snow
+  if (k.x > 0.001) { float cr = smoothstep(0.02, 0.0, abs(inoise(p * 40.0) - 0.5)) * clamp(1.0 - fm / 6.0, 0.0, 1.0);
+    float rg = inoise(p * 90.0 + 7.0), rgx = inoise(p * 90.0 + 7.0 + vec2(0.004, 0.0)); float ridge = smoothstep(0.62, 0.78, rg) * clamp(1.0 - fm / 4.0, 0.0, 1.0);
+    float shade = 1.0 + (rgx - rg) * 60.0 * ridge * sunDir.x - 0.3 * ridge;             // ridges catch the sun on one side
+    vec3 c = mix(mix(grey, white, 0.6 + 0.4 * inoise(p * 400.0)), vec3(0.92, 0.94, 0.97), snow * (0.7 + 0.3 * inoise(p * 150.0))) * shade * (1.0 - cr * 0.5);
+    col += c * k.x; cover += k.x; }
+  // pancakes: plates 1-2 m across with bright raised rims, water between them; rafted into a crust as the concentration grows
+  if (k.y > 0.001) { vec3 c1 = cellular(p * 620.0 + 11.0); float r = 0.36 + 0.12 * c1.z, here = step(c1.z, ice * 1.25 + 0.05);
+    float plate = (1.0 - smoothstep(r - 0.03, r + 0.03, c1.x)) * here, rim = smoothstep(r - 0.14, r - 0.05, c1.x) * plate;
+    float bob = 0.9 + 0.1 * sin(t * 2.1 + c1.z * 20.0);                                 // they ride the swell
+    float detail = clamp(1.0 - fm / 1.2, 0.0, 1.0); plate = mix(ice, plate, detail); rim = mix(0.3, rim, detail);
+    vec3 c = mix(vec3(0.56, 0.63, 0.70), vec3(0.95, 0.97, 1.0), rim) * bob;
+    col += c * plate * k.y; cover += plate * k.y; }
+  // floes: tens of metres across, dark leads between, a dusting of snow
+  if (k.z > 0.001) { vec3 c2 = cellular(p * 28.0 + 5.0); float lead = smoothstep(0.10, 0.03, c2.y - c2.x) * clamp(1.0 - fm / 3.0, 0.0, 1.0);
+    float here = step(c2.z, ice * 1.15), fl = (1.0 - lead) * here; fl = mix(ice, fl, clamp(1.0 - fm / 40.0, 0.0, 1.0));
+    vec3 c = mix(mix(grey, white, 0.5 + 0.5 * c2.z), vec3(0.92, 0.94, 0.97), snow * 0.8) * (0.85 + 0.15 * inoise(p * 300.0));
+    col += c * fl * k.z; cover += fl * k.z; }
+  // grease ice / nilas: a dark matte film, a little lighter where it has thickened
+  if (k.w > 0.001) { float g = smoothstep(0.4, 0.7, inoise(p * 120.0) * 0.6 + inoise(p * 30.0) * 0.4);
+    col += mix(vec3(0.07, 0.085, 0.10), vec3(0.22, 0.26, 0.30), g * 0.5) * k.w; cover += k.w; }
+  cover = clamp(cover, 0.0, 1.0); if (cover > 0.0) col /= max(cover, 1e-4);
+  return vec4(col * lit, cover); }`;
 
 // ---------------------------------------------------------------- sky
 const sky = new THREE.Mesh(new THREE.SphereGeometry(2500, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: U,
@@ -913,11 +967,11 @@ void main(){
   vec2 muv = (p - uMapMin) / uMapSize;
   float cls = inMap ? floor(texture2D(uMapMask, muv).r * 3.0 + 0.5) : (inLake(p) ? 1.0 : 0.0);
   // rounded shoreline: the smoothed water fraction decides water vs land within a pixel or two of the edge
-  vec2 looks = inMap ? texture2D(uMapLooks, muv).rg : vec2(cls > 0.5 ? 1.0 : 0.0, 0.0); float wetF = looks.r, edgeN = vnoise(p * 300.0) * 0.12 - 0.06;
+  vec3 looks = inMap ? texture2D(uMapLooks, muv).rgb : vec3(cls > 0.5 ? 1.0 : 0.0, 0.0, 1.0); float wetF = looks.r, edgeN = vnoise(p * 300.0) * 0.12 - 0.06;
   if (inMap) { if (wetF + edgeN > 0.5 && cls < 0.5) cls = 1.0; else if (wetF + edgeN <= 0.5 && cls > 0.5) cls = 0.0; }
   vec3 col;
   if (cls > 0.5) {
-    float shoreD = inMap ? 0.2 : shoreDist(p);
+    float shoreD = inMap ? looks.b : shoreDist(p);   // km to the shore (the map's distance field inside it; 0-1 km)
     float n = vnoise(p * 1.7) * 0.6 + vnoise(p * 7.0) * 0.4;
     float ice = cls < 2.5 ? iceAt(p, shoreD, n) : 0.0;
     // wind waves: 8 directional components around the peak; sub-pixel ones become roughness
@@ -926,6 +980,8 @@ void main(){
     float ang[8]; ang[0]=-0.45; ang[1]=0.2; ang[2]=-0.15; ang[3]=0.6; ang[4]=-0.75; ang[5]=0.35; ang[6]=0.95; ang[7]=-0.5;
     float calm = cls > 1.5 ? 0.25 : 1.0;                       // harbours and ponds: sheltered
     float shel = inMap && cls < 1.5 ? texture2D(uShelter, muv).r : 1.0; calm *= mix(0.35, 1.0, shel);   // and the lee of piers, walls and points
+    vec4 iceK = ice > 0.02 ? iceKinds(ice, shoreD, uHs * calm, cls, uFdd) : vec4(0.0);
+    calm *= 1.0 - 0.95 * clamp(iceK.x + iceK.z + 0.7 * iceK.w + 0.5 * iceK.y, 0.0, 1.0);   // a sheet or pack kills the waves; grease the ripples; pancakes damp them
     float crest = 0.0;
     float slopeT = (0.06 + 0.012 * uWindSpd) * calm;
     // glass (wind under ~1 m/s): no short wind waves, only the long-crested remains of old swell, smooth enough to mirror the sky
@@ -991,9 +1047,8 @@ void main(){
       float pulse = 0.55 + 0.45 * sin(uTime * 6.2832 / max(uTp, 1.0) + vnoise(p * 300.0) * 6.0);
       float swash = band * clamp(0.25 + hsHere * 2.5, 0.0, 1.0) * smoothstep(0.12, 0.6, shel) * pulse * (0.6 + 0.4 * vnoise(p * 1500.0 + uTime * 0.5));
       col = mix(col, (sunL + amb * 2.2) * 0.8 + vec3(0.9, 0.95, 1.0) * uCity * 0.15, swash * 0.75 * (1.0 - ice)); }
-    if (ice > 0.02) { float cr = smoothstep(0.02, 0.0, abs(vnoise(p * 40.0) - 0.5)) * 0.25;
-      vec3 iceC = mix(vec3(0.55, 0.62, 0.66), vec3(0.85, 0.9, 0.93), n) * (1.0 - cr) * (sunL * 0.9 + amb * 2.4);
-      col = mix(col, iceC, smoothstep(0.1, 0.6, ice)); }
+    if (ice > 0.02) { vec4 look = iceLook(p, iceK, ice, foot, max(uSnowCover, smoothstep(40.0, 120.0, uFdd) * 0.7), sunL * 0.9 + amb * 2.4, uSunDir, uTime);
+      col = mix(col, look.rgb, look.a); }
   } else {
     vec3 base;
     float urban;
@@ -1255,9 +1310,19 @@ async function buildMap(LF) {
   lx.strokeStyle = "#999"; lx.lineWidth = 3 * SC; feats.filter((f) => f.kind === "building" && f.closed).forEach((f) => { path(lx, f.pts, true); lx.stroke(); });
   const ld = lx.getImageData(0, 0, WPX, HPX).data, light = new Uint8Array(WPX * HPX); for (let i = 0; i < light.length; i++) light[i] = ld[i * 4];
   await blur(light, Math.max(2, Math.round(5 / MPP)), 2);
-  const looks = new Uint8Array(WPX * HPX * 2);
-  for (let y = 0; y < HPX; y++) { const src = (HPX - 1 - y) * WPX, dst = y * WPX; for (let x = 0; x < WPX; x++) { looks[(dst + x) * 2] = wet[src + x]; looks[(dst + x) * 2 + 1] = Math.min(255, light[src + x] * 1.6); } }
-  const looksTex = new THREE.DataTexture(looks, WPX, HPX, THREE.RGFormat); looksTex.unpackAlignment = 1; looksTex.minFilter = looksTex.magFilter = THREE.LinearFilter; looksTex.needsUpdate = true;
+  //  B = distance from the shore (land, piers and walls) in km, 0-1, on a coarser grid: where shore-fast ice forms
+  const DS = 4, DW = Math.ceil(WPX / DS), DH = Math.ceil(HPX / DS), dist = new Float32Array(DW * DH).fill(1e6);
+  for (let y = 0; y < DH; y++) for (let x = 0; x < DW; x++) { const i = Math.min(y * DS, HPX - 1) * WPX + Math.min(x * DS, WPX - 1); if (!mask[i] || pd[i * 4] > 128) dist[y * DW + x] = 0; }
+  { const a = 1, b = Math.SQRT2;   // two-pass chamfer distance transform
+    for (let y = 0; y < DH; y++) for (let x = 0; x < DW; x++) { const o = y * DW + x; let d = dist[o];
+      if (x > 0) d = Math.min(d, dist[o - 1] + a); if (y > 0) { d = Math.min(d, dist[o - DW] + a); if (x > 0) d = Math.min(d, dist[o - DW - 1] + b); if (x < DW - 1) d = Math.min(d, dist[o - DW + 1] + b); } dist[o] = d; }
+    for (let y = DH - 1; y >= 0; y--) for (let x = DW - 1; x >= 0; x--) { const o = y * DW + x; let d = dist[o];
+      if (x < DW - 1) d = Math.min(d, dist[o + 1] + a); if (y < DH - 1) { d = Math.min(d, dist[o + DW] + a); if (x < DW - 1) d = Math.min(d, dist[o + DW + 1] + b); if (x > 0) d = Math.min(d, dist[o + DW - 1] + b); } dist[o] = d; } }
+  await yieldUI();
+  const looks = new Uint8Array(WPX * HPX * 4);
+  for (let y = 0; y < HPX; y++) { const src = (HPX - 1 - y) * WPX, dst = y * WPX, dy = Math.min(Math.floor((HPX - 1 - y) / DS), DH - 1) * DW;
+    for (let x = 0; x < WPX; x++) { const o = (dst + x) * 4; looks[o] = wet[src + x]; looks[o + 1] = Math.min(255, light[src + x] * 1.6); looks[o + 2] = Math.min(255, Math.round(dist[dy + Math.min(Math.floor(x / DS), DW - 1)] * DS * MPP / 1000 * 255)); looks[o + 3] = 255; } }
+  const looksTex = new THREE.DataTexture(looks, WPX, HPX, THREE.RGBAFormat); looksTex.unpackAlignment = 1; looksTex.minFilter = looksTex.magFilter = THREE.LinearFilter; looksTex.needsUpdate = true;
   U.uMapLooks.value = looksTex;
   const colTex = new THREE.CanvasTexture(cv); colTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); colTex.minFilter = THREE.LinearMipmapLinearFilter;
   U.uMapCol.value = colTex; U.uMapMask.value = maskTex; U.uMapMin.value.set(x0, y0); U.uMapSize.value.set(x1 - x0, y1 - y0); U.uHasMap.value = 1;
@@ -1464,10 +1529,20 @@ function gridTexture(g) {
 const GRIDS = { temp: null, ice: null };
 function setLakeGrids(lake) {
   GRIDS.temp = gridTexture(lake && lake.temp); GRIDS.ice = gridTexture(lake && lake.ice); GRIDS.src = lake && lake.temp ? (lake.temp.label ? `Satellite: ${lake.temp.label}` : `NOAA GLSEA ${String(lake.temp.time || "").slice(0, 10)}`) : null;
-  GRIDS.iceStatus = lake && lake.ice_status;
+  GRIDS.iceStatus = lake && lake.ice_status; GRIDS.fdd = lake && lake.fdd; GRIDS.iceMax = lake && lake.ice && lake.ice.v ? Math.max(0, ...lake.ice.v.filter((x) => x != null)) : 0;
   if (GRIDS.temp) { U.uTempTex.value = GRIDS.temp.tex; U.uTempMin.value.set(...GRIDS.temp.min); U.uTempSize.value.set(...GRIDS.temp.size); U.uTempN.value.set(...GRIDS.temp.n); }
   if (GRIDS.ice) { U.uIceTex.value = GRIDS.ice.tex; U.uIceMin.value.set(...GRIDS.ice.min); U.uIceSize.value.set(...GRIDS.ice.size); U.uIceN.value.set(...GRIDS.ice.n); }
 }
+// the lake grids follow the mode: a past period's own day (temperature, ice in season) while it is shown, else today's
+function applyLakeGrids() { const H = S.mode === "history" ? SRC.hist[S.histIdx] : null, L = H && H.raw.lake && (H.raw.lake.temp || H.raw.lake.ice) ? H.raw.lake : DATA.lake && DATA.lake.lake;
+  const key = H && L === H.raw.lake ? H.raw.label : "today"; if (GRIDS.key === key) return; GRIDS.key = key;
+  setLakeGrids(L ? Object.assign({}, L, { fdd: H && H.raw.event ? H.raw.event.fdd : undefined }) : null); }
+// what the ice is doing, in words (the same rules as the shader's iceKinds)
+function iceWords(conc, fdd, hs) { if (!(conc > 0.03)) return ""; const young = fdd < 40, out = [];
+  if (conc > 0.5) out.push(young ? "new shelf ice on the beaches" : `shelf ice on the beaches (${(3.3 * Math.sqrt(Math.max(fdd, 1))).toFixed(0)} cm)`);
+  if (conc < 0.95) out.push(hs > 0.1 ? "pancake ice at the edge" : young ? "grease ice slicks" : "nilas at the edge");
+  if (conc > 0.6 && !young) out.push("floes and leads offshore");
+  return out.join(", "); }
 function gridValue(G, xk, yk) { if (!G) return null; const fx = clamp((xk - G.min[0]) / G.size[0], 0, 1) * (G.n[0] - 1), fy = clamp((yk - G.min[1]) / G.size[1], 0, 1) * (G.n[1] - 1);
   const i0 = Math.min(Math.floor(fx), G.n[0] - 2), j0 = Math.min(Math.floor(fy), G.n[1] - 2), tx = fx - i0, ty = fy - j0, v = (j, i) => G.vals[j * G.n[0] + i];
   return (v(j0, i0) * (1 - tx) + v(j0, i0 + 1) * tx) * (1 - ty) + (v(j0 + 1, i0) * (1 - tx) + v(j0 + 1, i0 + 1) * tx) * ty; }
@@ -2989,7 +3064,7 @@ function setMode(m) { S.mode = m; const expish = m !== "live"; if (expish) S.xmo
   const chip = $("#status"); chip.className = "chip " + m; const [t0, t1] = range();
   S.follow = m === "live"; $("#nowbtn").hidden = true; sessionTrack();
   S.t = m === "import" ? clamp(Date.now(), t0, t1) : m === "live" ? Date.now() : m === "history" ? (DATA.track && DATA.track.start ? new Date(DATA.track.start).getTime() : t0 + 10 * 60e3) : t0;
-  buildTicks(); WAVES.key = null; histNote(); }
+  buildTicks(); WAVES.key = null; histNote(); applyLakeGrids(); }
 document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode === "exp" ? (S.xmode || "exp") : "live"));
 document.querySelectorAll("[data-ov]").forEach((b) => b.onclick = () => { S.ov = b.dataset.ov; document.querySelectorAll("[data-ov]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.ov === S.ov)));
   U.uMode.value = S.ov === "radar" ? 1 : 0; U.uTempOn.value = S.ov === "temp" ? 1 : 0; U.uDepthOn.value = S.ov === "depth" ? 1 : 0; U.uHsOn.value = S.ov === "hs" ? 1 : 0; U.uChopOn.value = S.ov === "chop" ? 1 : 0; U.uFlowOn.value = S.ov === "flow" ? 1 : 0; setSat(); setSpots(); renderLegend(); });
@@ -3004,7 +3079,7 @@ try { S.goes = localStorage.getItem("lakelocal-goes") === "1"; } catch (e) {}   
 $("#goes").checked = S.goes; $("#goes").onchange = (e) => { S.goes = e.target.checked; try { localStorage.setItem("lakelocal-goes", S.goes ? "1" : "0"); } catch (err) {} };
 $("#spd").onchange = (e) => S.speed = +e.target.value;
 const XFMT = { int: (v) => `${Math.round(v * 100)}%`, cov: (v) => `${Math.round(v * 100)}%`, mspd: (v) => `${v} km/h`, mdir: (v) => `${v}° ${compass(v)}`, wspd: (v) => `${mph(v)} mph`, wdir: (v) => `${v}° ${compass(v)}`,
-  dur: (v) => `${v} h`, air: (v) => `${Math.round(cToF(v))}°F`, water: (v) => `${Math.round(cToF(v))}°F`, ice: (v) => `${Math.round(v * 100)}%`, hour: (v) => { const h = Math.floor(v), m = Math.round((v - h) * 60); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; } };
+  dur: (v) => `${v} h`, air: (v) => `${Math.round(cToF(v))}°F`, water: (v) => `${Math.round(cToF(v))}°F`, ice: (v) => `${Math.round(v * 100)}%`, fdd: (v) => v ? `${v} °C·d · ${(3.3 * Math.sqrt(v)).toFixed(0)} cm` : "none", hour: (v) => { const h = Math.floor(v), m = Math.round((v - h) * 60); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; } };
 for (const k of Object.keys(XFMT)) { const el = $(`#x-${k}`); if (!el) continue; el.value = S.x[k]; $(`#x-${k}-o`).textContent = XFMT[k](S.x[k]);
   el.oninput = () => { S.x[k] = +el.value; $(`#x-${k}-o`).textContent = XFMT[k](S.x[k]); if (k === "hour") { const [t0] = range(); S.t = t0 + (S.t - t0); buildTicks(); } WAVES.key = null; }; }
 $("#x-type").value = S.x.type; $("#x-type").onchange = (e) => { S.x.type = e.target.value; if (S.x.type === "lakeeffect" && S.x.air > 0) { S.x.air = -6; $("#x-air").value = -6; $("#x-air-o").textContent = XFMT.air(-6); } };
@@ -3187,7 +3262,7 @@ function histOption(H) { const raw = H.raw, n = H.scene ? H.scene.frames.length 
   H.option.textContent = `${raw.title ? raw.title + " · " : ""}${raw.title && raw.event ? fmtHM.format(t0) : fmtFull.format(t0)}${n ? ` · ${n} radar scans` : H.src && !H.scene ? "" : " · no radar"}`; }
 async function ensureHist(i) { const H = SRC.hist[i]; if (!H || H.scene || !H.src || H.loading) return H && H.loading;
   H.loading = (async () => { try { const r = await fetch(H.src); if (r.ok) { const full = await r.json(); Object.assign(H.raw, full); H.scene = full.scene ? await decodeScene(full.scene) : null; } }
-    catch (e) { console.warn("history period", H.raw.label, e); } H.src = null; H.loading = null; histOption(H); if (S.mode === "history" && S.histIdx === i) { WAVES.key = null; buildTicks(); histNote(); } })();
+    catch (e) { console.warn("history period", H.raw.label, e); } H.src = null; H.loading = null; histOption(H); if (S.mode === "history" && S.histIdx === i) { WAVES.key = null; buildTicks(); histNote(); applyLakeGrids(); } })();
   return H.loading; }
 function histNote() { const H = SRC.hist[S.histIdx], el = $("#hist-note"); if (!H) { el.hidden = true; return; } const ev = H.raw.event; let t = ev && ev.headline ? ev.headline : "";
   if (H.src && !H.scene) t += (t ? " · " : "") + "Loading the radar scans…"; else if (ev && ev.radar === "quiet") t += " · Little or nothing on radar: watch the wind, waves" + (ev.ice ? " and ice" : "") + ".";
@@ -3300,7 +3375,7 @@ function tick() {
     { const lv = levelAt(S.t); C.level = lv; WU.uLevelD.value = lv != null && BATHY.ok ? clamp(lv - BATHY.level, -1, 1.5) : 0;
       const hs0 = C.off ? C.off.hs : Math.sqrt(sys.reduce((a, q) => a + q.hs * q.hs, 0)); WU.uSetupShore.value = Math.min(0.18 * hs0, 0.9); }
     U.uWhitecap.value = Math.min(3.84e-6 * Math.pow(C.wind, 3.41), 0.3) * WU.uWcFetch.value;
-    U.uWaterC.value = C.waterC ?? 15; U.uIceExp.value = S.mode === "exp" ? S.x.ice : 0; U.uHasTemp.value = S.mode === "exp" ? 0 : GRIDS.temp ? 1 : 0;
+    U.uWaterC.value = C.waterC ?? 15; U.uIceExp.value = S.mode === "exp" ? S.x.ice : 0; U.uFdd.value = S.mode === "exp" ? S.x.fdd : GRIDS.ice ? (GRIDS.fdd ?? 60 + 200 * (GRIDS.iceMax || 0)) : 0; U.uIceMax.value = S.mode !== "exp" && GRIDS.ice ? GRIDS.iceMax || 0 : 0; U.uHasTemp.value = S.mode === "exp" ? 0 : GRIDS.temp ? 1 : 0;
     U.uHasIce.value = S.mode !== "exp" && GRIDS.ice ? 1 : 0; U.uSnowCover.value = C.snow && (C.airC ?? 5) < -1 ? 0.8 : 0; U.uSnow.value = C.snow ? 1 : 0;
     // clouds beyond radar: forecast sky cover, or the chosen fair-weather layer
     U.uExtra.value = (S.mode === "live" || S.mode === "import") && !RS ? clamp((C.sky - 10) / 90, 0, 1) * 0.95 : S.mode === "exp" && S.x.type === "cumulus" ? 0.55 * S.x.cov : 0;
@@ -3418,7 +3493,8 @@ function updateHud(rr, tp) {
   { const key = `${Math.round(C.wind * 10)}|${Math.round(C.dir)}|${Math.round(hs * 100)}|${Math.round(wdirW)}`; if (key !== VS_KEY) { VS_KEY = key; $("#vs").innerHTML = vsCompass(C, hs, wdirW); } }
   const pill = (icon, html, cls = "", st = "") => `<span class="p ${cls}"${st ? ` style="${st}"` : ""}>${icon ? WXI[icon] : ""}${html}</span>`;
   let wl = pill(sky, wx) + (C.airC != null ? pill("", `<i>Air</i> ${Math.round(cToF(C.airC))}°`) : ""), ww = "";
-  if (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) ww += pill("", `<i>Ice</i> ${S.mode === "exp" ? Math.round(S.x.ice * 100) + "%" : "NOAA"}`);
+  if (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) { const conc = S.mode === "exp" ? Math.min(1, S.x.ice * 1.5) : GRIDS.iceMax || 0, words = iceWords(conc, U.uFdd.value, hs);
+    ww += pill("", `<i>Ice</i> ${S.mode === "exp" ? Math.round(S.x.ice * 100) + "%" : `NOAA · up to ${Math.round(conc * 100)}%`}${words ? " · " + words : ""}`); }
   const E = DATA.earth || {}, UP = E.water && E.water.upwelling, NM = E.normals || {};
   if (live && UP && UP.upwelling) ww += pill("", `Upwelling: shore water ${Math.round(UP.delta_c * 1.8)}° colder than offshore`, "spc", "background:#8fd0ff;color:#0b2540");
   if (live && NM.era5 && NM.era5.wind_ms && C.wind > NM.era5.wind_ms.p90) wl += pill("", "Windier than 9 in 10 hours this time of year", "spc", "background:#ffd38a;color:#3a2400");

@@ -45,11 +45,11 @@ jobs:
           start, end, label = os.environ["START"].strip(), os.environ["END"].strip(), os.environ["LABEL"].strip()
           if start:
               if not re.fullmatch(r"[A-Za-z0-9-]+", label): raise SystemExit("bad label")
-              wins = [{"label": label, "start": start, "end": end}]
+              wins = [{"label": label, "start": start, "end": end, "lake": ""}]
           else:
               cat = json.load(open("tools/events.json"))["events"]
               want = {x.strip() for x in label.split(",") if x.strip()}
-              wins = [{"label": e["label"], "start": e["start"], "end": e["end"]} for e in cat if not want or e["label"] in want]
+              wins = [{"label": e["label"], "start": e["start"], "end": e["end"], "lake": e.get("ice", "")} for e in cat if not want or e["label"] in want]
               missing = want - {w["label"] for w in wins}
               if missing: raise SystemExit(f"not in the catalog: {sorted(missing)}")
           print("windows=" + json.dumps(wins))
@@ -80,11 +80,13 @@ jobs:
           START: ${{ matrix.window.start }}
           END: ${{ matrix.window.end }}
           LABEL: ${{ matrix.window.label }}
+          LAKE: ${{ matrix.window.lake }}
           MAX_SCANS: ${{ inputs.max_scans }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           if [ -n "$END" ]; then E="--end $END"; else E=""; fi
-          python -m app.history --start "$START" $E --max-scans "${MAX_SCANS:-12}" --out "$RUNNER_TEMP/out/history-$LABEL.json"
+          if [ -n "$LAKE" ]; then L="--lake-date $LAKE"; else L=""; fi
+          python -m app.history --start "$START" $E $L --max-scans "${MAX_SCANS:-12}" --out "$RUNNER_TEMP/out/history-$LABEL.json"
           ls -la "$RUNNER_TEMP/out"
       - uses: actions/upload-artifact@v4
         with:

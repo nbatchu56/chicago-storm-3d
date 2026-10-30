@@ -154,7 +154,7 @@ def lake_for_date(t, get=lf.http_get):
     return out, probe
 
 
-def build(start, end, site="KLOT", cache="radar_cache", get=lf.http_get, max_scans=12):
+def build(start, end, site="KLOT", cache="radar_cache", get=lf.http_get, max_scans=12, lake_date=None):
     notes = []
     data = {"version": 1, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds"),
             "window": {"start": start.isoformat(), "end": end.isoformat()}, "site": site}
@@ -169,7 +169,10 @@ def build(start, end, site="KLOT", cache="radar_cache", get=lf.http_get, max_sca
         data["scene"] = radar_scene(start, end, site, cache, max_scans=max_scans, wind=wind)
     except Exception as e:  # noqa: BLE001
         notes.append(f"radar unavailable: {e}")
-    data["lake"], probe = lake_for_date(start, get)
+    data["lake"], probe = lake_for_date(lake_date or start, get)
+    if lake_date:   # e.g. the ice peak a few days after the cold snap: say so
+        notes.append(f"lake temperature and ice from {lake_date.strftime('%b %-d, %Y')}, when the nearshore ice was greatest")
+        data["lake"]["date_note"] = lake_date.strftime("%b %-d, %Y")
     if "temp" not in data["lake"]:
         notes.append("satellite lake temperature unavailable for that day")
     data["notes"] = notes
@@ -186,10 +189,11 @@ if __name__ == "__main__":
     ap.add_argument("--cache", default="radar_cache")
     ap.add_argument("--out", default="history.json")
     ap.add_argument("--max-scans", type=int, default=12, help="most radar volumes gridded for the window")
+    ap.add_argument("--lake-date", help="take the lake temperature and ice analysis from this day instead (UTC date, e.g. 2026-01-31)")
     a = ap.parse_args()
     t0 = _parse_time(a.start)
     t1 = _parse_time(a.end) if a.end else t0 + dt.timedelta(minutes=30)
-    d = build(t0, t1, a.site, a.cache, max_scans=a.max_scans)
+    d = build(t0, t1, a.site, a.cache, max_scans=a.max_scans, lake_date=_parse_time(a.lake_date + "T12:00") if a.lake_date else None)
     with open(a.out, "w") as fh:
         json.dump(d, fh, separators=(",", ":"))
     sc = d.get("scene")

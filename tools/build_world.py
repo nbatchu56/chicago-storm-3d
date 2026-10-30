@@ -302,7 +302,7 @@ def main():
         ev = catalog.get(h["label"])
         if ev:   # a severe-weather period: what happened, for the picker and the note under it
             h["title"] = ev.get("title") or h.get("title")
-            h["event"] = {k: ev[k] for k in ("type", "headline", "radar", "ice", "source") if k in ev}
+            h["event"] = {k: ev[k] for k in ("type", "headline", "radar", "ice", "fdd", "source") if k in ev}
             h["kind"] = "event"
         else:
             h.setdefault("title", TITLES.get(h["label"]) or paddle_title(h["label"]))
