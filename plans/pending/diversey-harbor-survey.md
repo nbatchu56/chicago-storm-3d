@@ -211,5 +211,5 @@ Files: `README.md`, `plans/`
 | 4 harbor SWAN | pending |
 | 5 FUNWAVE to the sill | pending |
 | 6 harbor waves on the page | pending |
-| 7 1000 m course | pending |
+| 7 1000 m course | done (21 waypoints from the survey polygon; ribbon, 100 m ticks, 250 m labels) |
 | 8 ship | pending |
