@@ -188,6 +188,9 @@ Files: `README.md`, `plans/`
 | Wind chop | SWAN wind-only cases on the harbor domain; lake waves from the same domain's offshore cases; quadrature on the page | One product of wind x offshore cases would be 10x the runs; the two seas are nearly independent inside |
 | FUNWAVE | Extend the diversey tile south to the sill; no FUNWAVE in the lagoon | The 2-3 ft sill 1 km from the mouth stops lake waves; wind chop there is SWAN's |
 | Page textures | No new samplers (ortho and wind field reuse existing slots) | The ground shader sits at the 16-unit limit |
+| Harbor offshore cases | Run without SWAN's diffraction term | Every 2 m case blew up with it (0 and 3 smoothing steps alike) and fell back to a no-diffraction rerun, doubling the time; the 25° spread and reflections carry the sea through the mouth, FUNWAVE resolves the diffraction |
+| The inlet under LSD | Known channels (page WATERWAYS strokes) cut into the lake bottom as source 5; obstacle lines split at them | The survey stops at the bridge's west face and the lidar returns the deck as land: every model had the harbour sealed (timing run: 0% inside) |
+| Survey ring edges over water | Not walls | The polygon closes across the mouth where the sounder stopped |
 
 ## Not yet specified
 - Phase 1: the lake level on the survey's dates (needed to turn depth into bed elevation): the USGS release's metadata
