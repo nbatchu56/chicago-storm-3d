@@ -191,6 +191,8 @@ Files: `README.md`, `plans/`
 | Harbor offshore cases | Run without SWAN's diffraction term | Every 2 m case blew up with it (0 and 3 smoothing steps alike) and fell back to a no-diffraction rerun, doubling the time; the 25° spread and reflections carry the sea through the mouth, FUNWAVE resolves the diffraction |
 | The inlet under LSD | Known channels (page WATERWAYS strokes) cut into the lake bottom as source 5; obstacle lines split at them | The survey stops at the bridge's west face and the lidar returns the deck as land: every model had the harbour sealed (timing run: 0% inside) |
 | Survey ring edges over water | Not walls | The polygon closes across the mouth where the sounder stopped |
+| The inlet under LSD | An open channel, no transmission barrier (a DAM obstacle was tried and dropped) | The user: the bridge carries the roadway over an open channel; the lake's waves usually stop right before it, and only a significant sea breaks in. The open-channel harbor library reproduces that (E sea: ~13% at the bridge's east face, ~3% at the basin's north end; NE: ~3% and ~1%). FUNWAVE is checked against the same observation |
+| Aerial photo placement | The extent the server reports | The ImageServer widened the box (square pixels in degrees); the photo was ~170 m off at the harbor's north end |
 
 ## Not yet specified
 - Phase 1: the lake level on the survey's dates (needed to turn depth into bed elevation): the USGS release's metadata
@@ -211,7 +213,7 @@ Files: `README.md`, `plans/`
 | 1 survey in the lake bottom | done (bathy.yml run 41096808739 on the branch) |
 | 2 rigid walls | done (probe: 99.2% inside / 99.4% outside, from 19% / 88%) |
 | 3 aerial imagery | done (0.55 m JPEG, 2.0 MB; Aerial 2024 button) |
-| 4 harbor SWAN | pending |
+| 4 harbor SWAN | done (run 41115898447: 132 offshore + 96 wind cases) |
 | 5 FUNWAVE to the sill | pending |
 | 6 harbor waves on the page | pending |
 | 7 1000 m course | done (21 waypoints from the survey polygon; ribbon, 100 m ticks, 250 m labels) |
