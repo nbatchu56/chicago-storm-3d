@@ -30,6 +30,20 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 /* kiosk (Diversey Outlook): a view to leave on a monitor or open on a phone; nothing to click, the clock runs by itself */
 body.kiosk #controls, body.kiosk #toggle, body.kiosk #nav, body.kiosk #hint, body.kiosk #help, body.kiosk #legend, body.kiosk #refreshbox, body.kiosk #nowbtn, body.kiosk .cathead .more, body.kiosk #mmview, body.kiosk #timeline .speed { display: none !important; }
 body.kiosk #play { visibility: hidden; }
+#kstrip { display: none; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+#kstrip .kt { background: var(--panel); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--line); border-radius: 10px; padding: 7px 9px 8px; min-width: 0; }
+#kstrip .kt .k { font: 600 10px/1.2 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; }
+#kstrip .kt .k .arw { width: 11px; height: 11px; fill: currentColor; flex: none; }
+#kstrip .kt .v { font: 700 24px/1.1 var(--font-data); margin-top: 3px; white-space: nowrap; } #kstrip .kt .v .u { font: 500 12px var(--font-data); color: var(--muted); margin-left: 3px; }
+#kstrip .kt .s { font: 11px/1.3 var(--font-data); color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#kstrip .kt.air { border-left: 3px solid #90c841; } #kstrip .kt.water { border-left: 3px solid #05a0cb; } #kstrip .kt.sky { border-left: 3px solid #e8b84a; } #kstrip .kt.temp { border-left: 3px solid #7ad0ff; }
+@media (max-width: 760px) {
+  body.kiosk #cards { display: none; } body.kiosk #kstrip:not([hidden]) { display: grid; grid-template-columns: 1fr 1fr; }
+  body.kiosk #bar { bottom: calc(var(--gut) + 64px + env(safe-area-inset-bottom, 0px)); }
+  body.kiosk #hud h1 { font-size: 15px; } body.kiosk #hud h1 .logo { width: 26px; height: 26px; margin-right: 6px; } body.kiosk #hud .sub { font-size: 11px; margin: -2px 0 2px; }
+  body.kiosk #timeline { padding: 6px 10px; }
+}
+@media (max-width: 760px) and (orientation: landscape) { body.kiosk #kstrip:not([hidden]) { grid-template-columns: repeat(4, 1fr); } }
 body.kiosk canvas#gl, body.kiosk #bar, body.kiosk #timeline, body.kiosk #hud { pointer-events: none; } body.kiosk #timeline .track { pointer-events: none; }
 body.kiosk #timeline #scrub { pointer-events: none; } body.kiosk #hud .sub { font: 500 13px/1.2 var(--font-ui); color: var(--muted); margin: -2px 0 6px; letter-spacing: .01em; }
 #hud { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); left: calc(var(--gut) + env(safe-area-inset-left, 0px)); padding: 12px 14px; width: min(330px, calc(100vw - 2 * var(--gut))); display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
@@ -276,7 +290,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
   #bar { bottom: calc(var(--gut) + 78px + env(safe-area-inset-bottom, 0px)); }
   #hud { padding: 5px 10px !important; gap: 4px 8px; } #hud .src { display: none; } #hud h1 { font-size: 15px; }
   :root { --cardh: 222px; } #cards .cat, #vsbox { flex: none !important; width: 210px; } #minimap { flex: none !important; width: 160px; }
-  .ticks.abs span.fct, .ticks.abs span.wn3 { display: none; }   /* the phone's timeline keeps only the ends and the latest scan */
+  .ticks.abs span.fct:not(.r), .ticks.abs span.wn3:not(.r) { display: none; }   /* the phone's timeline keeps only the ends and the latest scan */
   .card.open .more { position: static; width: auto !important; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: 4px 0 0; margin-top: 4px; max-height: 30vh; }
   #controls { bottom: calc(var(--gut) + 92px + env(safe-area-inset-bottom, 0px)); max-height: 58% !important; z-index: 4; }
 }
@@ -297,6 +311,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
   </div>
   <button id="toggle" aria-expanded="false" aria-controls="controls">Settings</button>
   <div id="bar" aria-label="Conditions">
+    <div id="kstrip" hidden></div>
     <div id="cards">
       <div id="minimap" class="panel card"><canvas id="mm" width="300" height="444" aria-label="Map: click to go there"></canvas><div class="mmstat" id="mmstat" hidden></div><div class="cap"><button id="mmview" type="button" title="Switch between the radar map and the local map">Local map</button><span id="mmscale"></span></div></div>
       <div class="panel card cat air" id="cat-air"><button class="cathead" type="button" aria-expanded="false"><span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h9a3 3 0 1 0-3-3M3 12h13a3 3 0 1 1-3 3M3 16h7a2 2 0 1 1-2 2"/></svg>Air</span></button><div class="hero" id="hero-air"></div><div class="wxline" id="wx-air"></div><dl class="readouts" id="ro-air-top"></dl><div class="more"><dl class="readouts" id="ro-air"></dl></div></div>
@@ -3515,6 +3530,14 @@ function updateHud(rr, tp) {
   if (live && spc && spc.cat && (!spc.expire || new Date(spc.expire).getTime() > tRef) && (!spc.valid || new Date(spc.valid).getTime() < tRef + 24 * 3600e3))
     wl += pill("", spc.cat === "TSTM" ? "Thunder possible" : `Severe: ${spc.label.replace(/ risk$/i, "")} ${spc.level}/5`, "spc", `background:${spc.color || "#f6f67f"}`);
   $("#wx-air").innerHTML = wl; $("#wx-water").innerHTML = ww;
+  if (S.kiosk) {   // the phone's strip: one number per category
+    const arrow = (d) => `<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${(d + 180) % 360}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg>`;
+    const iceTxt = (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) ? iceWords(S.mode === "exp" ? Math.min(1, S.x.ice * 1.5) : GRIDS.iceMax || 0, U.uFdd.value, hs) : "";
+    const st = $("#kstrip"); st.hidden = false; st.innerHTML =
+      `<div class="kt air"><div class="k">Wind ${arrow(C.dir)}</div><div class="v">${mph(C.wind)}<span class="u">mph</span></div><div class="s">from ${compass(C.dir)}${C.gust ? ` · gusts ${mph(C.gust)}` : ""}</div></div>` +
+      `<div class="kt water"><div class="k">Waves ${hs > 0.01 ? arrow(wdirW) : ""}</div><div class="v">${hs > 0.01 ? `${ft(hs)}<span class="u">ft</span>` : "Calm"}</div><div class="s">${hs > 0.01 ? `from ${compass(wdirW)} · ${tpk.toFixed(1)} s` : "under 0.1 ft"}</div></div>` +
+      `<div class="kt sky"><div class="k">Sky</div><div class="v">${C.airC != null ? `${Math.round(cToF(C.airC))}<span class="u">°F air</span>` : "—"}</div><div class="s">${wx}</div></div>` +
+      `<div class="kt temp"><div class="k">Water</div><div class="v">${C.waterC != null ? `${Math.round(cToF(C.waterC))}<span class="u">°F</span>` : "—"}</div><div class="s">${iceTxt || (() => { const su = C.sun || solar(new Date(S.t)); return `sun ${su.el > 0 ? Math.round(su.el) + "° up" : "down"}`; })()}</div></div>`; }
   renderAlerts(live ? (W.alerts || []) : [], tRef);
   // the readouts, by topic: wind (other stations and models), waves, water, your paddle
   const wind = [], waves = [], water = [], you = [];
@@ -3727,6 +3750,9 @@ function kiosk(k) {
   // a fresh copy of the page every so often (the artifact is republished a few times a day), at the top of a loop
   setInterval(() => { if (document.visibilityState !== "hidden" && navigator.onLine !== false) location.reload(); }, Math.max(5, S.kiosk.reloadMin) * 60e3);
 }
+// the fixed view was set up for a landscape screen: a portrait phone sees a narrower slice, so it stands further back
+function kioskView(v) { const [la, lo, d, h, p] = v, [x, y] = ll(la, lo), asp = innerWidth / Math.max(innerHeight, 1);
+  flyTo(x, y, d * (asp < 1 ? Math.min(2.2, 0.8 / asp) : 1), h, p, true); }
 function kioskRefresh() {   // the build is old: ask for a new one, once per build (this only works for the page's owner, signed in to claude.ai)
   if (!REFRESH.fire || !DATA.generated) return;
   const gen = new Date(DATA.generated).getTime(), age = Date.now() - gen; let last = 0; try { last = +(localStorage.getItem("lakelocal-refresh") || 0); } catch (e) {}
@@ -3855,7 +3881,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
     else if (st) { const i = SRC.hist.findIndex((h) => h.raw.label === st.label || (h.raw.window && h.raw.window.start.startsWith(st.label || "~")));
       if (i >= 0) { S.histIdx = i; $("#hist-pick").value = String(i); await ensureHist(i); setMode("history"); if (st.t) S.t = new Date(st.t).getTime(); }
       if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }
-    if (st && st.kiosk) { kiosk(st.kiosk); if (REFRESH.fire) kioskRefresh(); }
+    if (st && st.kiosk) { kiosk(st.kiosk); if (st.view) kioskView(st.view); if (REFRESH.fire) kioskRefresh(); }
     // second stage, in the background
     try {
       await setSwan(await swanP); await setFunwave(await fwP); renderModels();
