@@ -3204,7 +3204,7 @@ function setCourse(on) { COURSE.on = on; if (COURSE.group) COURSE.group.visible 
 // ---------------------------------------------------------------- labels
 const labelsEl = $("#labels"); let labelItems = [];
 function buildLabels() { labelsEl.innerHTML = ""; labelItems = [];
-  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"), sp = document.createElement("span"); d.className = "lbl" + (cls ? " " + cls : ""); sp.textContent = txt; d.appendChild(sp); labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y), far: cls === "lake" || h > 0.1 ? 220 : cls === "course" ? 2.2 : 30, near: cls === "rental" || cls === "course" ? 0.03 : 0.25, lake: cls === "lake" }); };
+  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"), sp = document.createElement("span"); d.className = "lbl" + (cls ? " " + cls : ""); sp.textContent = txt; d.appendChild(sp); labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y), far: cls === "lake" || h > 0.1 ? 220 : cls === "course" ? 1.4 : 30, near: cls === "rental" || cls === "course" ? 0.03 : 0.25, lake: cls === "lake" }); };
   for (const [name, la, lo, h, cls] of PLACES) { const [x, y] = ll(la, lo); add(name, x, y, h, cls); } add("Lake Michigan", 2.2, 4.6, 0, "lake");
   if (COURSE.on) for (const [txt, x, y] of COURSE.labels) add(txt, x, y, 0.001, "course"); }
 const tmpV = new THREE.Vector3();
