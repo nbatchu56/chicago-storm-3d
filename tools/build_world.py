@@ -99,24 +99,44 @@ def thin_bathy(b):
     return out
 
 
+def _coarsen(g, nc, fields, k):
+    """Block-average k x k cells of byte fields (wet cells only, by the first field > 0); angles (deg*256/360) by vector mean."""
+    ny, nx = g["ny"] // k * k, g["nx"] // k * k
+    blk = lambda x: x[:, :ny, :nx].reshape(nc, ny // k, k, nx // k, k)  # noqa: E731
+    dec = lambda b: np.frombuffer(gzip.decompress(base64.b64decode(b)), np.uint8).reshape(nc, g["ny"], g["nx"]).astype(np.float32)  # noqa: E731
+    enc = lambda x: base64.b64encode(gzip.compress(np.ascontiguousarray(x).astype(np.uint8).tobytes(), 9)).decode()  # noqa: E731
+    first = dec(fields[0][1]); wetc = first > 0
+    wet = blk(wetc.astype(np.float32)).sum(axis=(2, 4))
+    out = {}
+    for name, b64, kind in fields:
+        x = first if b64 is fields[0][1] else dec(b64)
+        if kind == "angle":
+            a = x * 2 * np.pi / 256
+            ss, cc = blk(np.sin(a) * wetc).sum(axis=(2, 4)), blk(np.cos(a) * wetc).sum(axis=(2, 4))
+            out[name] = enc(np.round((np.degrees(np.arctan2(ss, cc)) % 360) * 256 / 360) % 256)
+        else:
+            out[name] = enc(np.round(np.where(wet > 0, blk(x * wetc).sum(axis=(2, 4)) / np.maximum(wet, 1), 0)))
+    return out, dict(g, dx=g["dx"] * k, nx=nx // k, ny=ny // k)
+
+
 def coarsen_swan(d, k=2):
     if not d:
         return None
     for v in d.get("domains", {}).values():
-        g = v["grid"]; nc = len(v["cases"])
+        g = v["grid"]
         if g["dx"] >= 16:                       # already coarse (the offshore lane): keep as is
             continue
-        r = np.frombuffer(gzip.decompress(base64.b64decode(v["ratio"])), np.uint8).reshape(nc, g["ny"], g["nx"]).astype(np.float32)
-        a = np.frombuffer(gzip.decompress(base64.b64decode(v["dir"])), np.uint8).reshape(nc, g["ny"], g["nx"]).astype(np.float32) * 2 * np.pi / 256
-        ny, nx = g["ny"] // k * k, g["nx"] // k * k
-        blk = lambda x: x[:, :ny, :nx].reshape(nc, ny // k, k, nx // k, k)  # noqa: E731
-        wet = blk((r > 0).astype(np.float32)).sum(axis=(2, 4))
-        rr = np.where(wet > 0, blk(r).sum(axis=(2, 4)) / np.maximum(wet, 1), 0)
-        ss, cc = blk(np.sin(a) * (r > 0)).sum(axis=(2, 4)), blk(np.cos(a) * (r > 0)).sum(axis=(2, 4))
-        dd = (np.degrees(np.arctan2(ss, cc)) % 360) * 256 / 360
-        enc = lambda x: base64.b64encode(gzip.compress(np.ascontiguousarray(x).astype(np.uint8).tobytes(), 9)).decode()  # noqa: E731
-        v["ratio"], v["dir"] = enc(np.round(rr)), enc(np.round(dd) % 256)
-        v["grid"] = dict(g, dx=g["dx"] * k, nx=nx // k, ny=ny // k)
+        kk = k if g["dx"] >= 4 else 2 * k        # the 2 m harbor goes to 8 m: the page's texture, not the model
+        grid = None
+        if v.get("cases") and v.get("ratio"):
+            out, grid = _coarsen(g, len(v["cases"]), [("ratio", v["ratio"], "value"), ("dir", v["dir"], "angle")], kk)
+            v.update(out)
+        w = v.get("wind")
+        if w and w.get("cases"):
+            out, grid = _coarsen(g, len(w["cases"]), [("hs", w["hs"], "value"), ("tp", w["tp"], "value"), ("dir", w["dir"], "angle")], kk)
+            w.update(out)
+        if grid:
+            v["grid"] = grid
     return d
 
 
@@ -174,11 +194,15 @@ def chop_spots(swan, climate):
         return None
     doms = []
     for v in swan["domains"].values():
-        g = v["grid"]; nc = len(v["cases"])
+        g = v["grid"]; nc = len(v.get("cases") or [])
+        if not nc or not v.get("ratio"):
+            continue
         # the paddling-season cases only (the climate's waves): the storm cases would change the blend between them
         keep = [i for i, c in enumerate(v["cases"]) if c["hs"] in (0.6, 1.8) and c["tp"] <= 6.0]
         r = np.frombuffer(gzip.decompress(base64.b64decode(v["ratio"])), np.uint8).reshape(nc, g["ny"], g["nx"])[keep].astype(np.float32) / 100
         doms.append((g, [v["cases"][i] for i in keep], r))
+    if not doms:
+        return None
     doms.sort(key=lambda d: -d[0]["dx"])          # coarse first; finer domains overwrite where they have water
     x0 = min(g["x0"] for g, _, _ in doms); y0 = min(g["y0"] for g, _, _ in doms)
     x1 = max(g["x0"] + (g["nx"] - 1) * g["dx"] for g, _, _ in doms); y1 = max(g["y0"] + (g["ny"] - 1) * g["dx"] for g, _, _ in doms)
@@ -337,17 +361,25 @@ def main():
         elif a.split and tag == "swan-data":     # case tables in data/swan.json; each domain's arrays in parts under data/swan/
             idx = {"version": obj.get("version"), "model": obj.get("model"), "domains": {}}
             for name, v in obj["domains"].items():
-                g = v["grid"]; nc = len(v["cases"]); n = g["nx"] * g["ny"]
-                arr = {k: np.frombuffer(gzip.decompress(base64.b64decode(v[k])), np.uint8).reshape(nc, n) for k in ("ratio", "dir")}
+                g = v["grid"]; n = g["nx"] * g["ny"]
                 per = max(1, SWAN_PART_BYTES // n)          # cases per part
                 # parts carry the library's fingerprint: a page that gets a part from another build skips the domain
-                lib = hashlib.sha1(json.dumps([g, v["cases"]], sort_keys=True).encode()).hexdigest()[:12]
-                parts = []
-                for k0 in range(0, nc, per):
-                    rel = f"data/swan/{name}-{k0 // per}.json"
-                    part = {"lib": lib, "cases": [k0, min(k0 + per, nc)]} | {k: base64.b64encode(gzip.compress(arr[k][k0:k0 + per].tobytes(), 9)).decode() for k in arr}
-                    sizes[rel] = write_side(a.out, rel, part); parts.append({"src": rel, "cases": part["cases"]})
-                idx["domains"][name] = {k: x for k, x in v.items() if k not in ("ratio", "dir")} | {"parts": parts, "lib": lib}
+                lib = hashlib.sha1(json.dumps([g, v.get("cases"), (v.get("wind") or {}).get("cases")], sort_keys=True).encode()).hexdigest()[:12]
+
+                def split_arrays(block, keys, tag):
+                    nc = len(block["cases"]); arr = {k: np.frombuffer(gzip.decompress(base64.b64decode(block[k])), np.uint8).reshape(nc, n) for k in keys}
+                    parts = []
+                    for k0 in range(0, nc, per):
+                        rel = f"data/swan/{name}{tag}-{k0 // per}.json"
+                        part = {"lib": lib, "cases": [k0, min(k0 + per, nc)]} | {k: base64.b64encode(gzip.compress(arr[k][k0:k0 + per].tobytes(), 9)).decode() for k in arr}
+                        sizes[rel] = write_side(a.out, rel, part); parts.append({"src": rel, "cases": part["cases"]})
+                    return parts
+                entry = {k: x for k, x in v.items() if k not in ("ratio", "dir", "wind")} | {"lib": lib}
+                if v.get("cases") and v.get("ratio"):
+                    entry["parts"] = split_arrays(v, ("ratio", "dir"), "")
+                if v.get("wind") and v["wind"].get("cases"):
+                    entry["wind"] = {k: x for k, x in v["wind"].items() if k not in ("hs", "tp", "dir")} | {"parts": split_arrays(v["wind"], ("hs", "tp", "dir"), "-wind")}
+                idx["domains"][name] = entry
             sizes["data/swan.json"] = write_side(a.out, "data/swan.json", idx)
             html = html.replace(f'<script id="{tag}" type="application/json">', f'<script id="{tag}" type="application/json" data-src="data/swan.json">', 1)
         elif a.split and tag == "history-data":   # one file per period (the radar scene is most of it), fetched when it is picked

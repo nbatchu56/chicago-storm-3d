@@ -216,3 +216,55 @@ def test_model_bboxes_carry_spacing():
     assert bm.MODEL_BBOXES["harbor"] == (cook.BBOX, 2.0) and bm.MODEL_BBOXES["corridor"][1] == 4.0
     g = bm.local_grid(cook.BBOX, 2.0)
     assert bm.overlaps(g, cook.BBOX) and not bm.overlaps(bm.local_grid((41.95, -87.648, 41.975, -87.60), 4.0), cook.BBOX)
+
+
+# ---------------------------------------------------------------- the harbor domain: wind library and surveyed walls
+def test_swan_wind_inputs(tmp_path):
+    b = fake_bathy()
+    b["survey"] = {"polys": [{"name": "Diversey Harbor", "rings": [[[-500, 5500], [-400, 5500], [-400, 4700], [-500, 4700], [-500, 5500]]]},
+                             {"name": "North Pond", "rings": [[[-800, 5000], [-700, 5000], [-700, 4900], [-800, 5000]]]}]}
+    p = tmp_path / "bathy.json"; p.write_text(json.dumps(b))
+    sc.DOMAINS["test_harbor"] = {"grid": "route", "dx": 4.0, "wind": True, "min_opening": 12.0}
+    try:
+        meta = sc.prepare(str(p), None, "test_harbor", [0, 90], str(tmp_path / "runs"), cases=sc.CASE_GROUPS["wind"][:2])
+    finally:
+        del sc.DOMAINS["test_harbor"]
+    assert [c["id"] for c in meta["cases"]] == ["w000_u04p0", "w000_u07p0", "w090_u04p0", "w090_u07p0"] and meta["cases"][0] == {"id": "w000_u04p0", "dir": 0, "u10": 4.0}
+    kinds = [o["kind"] for o in meta["obstacles"]]
+    assert "quay" in kinds and "bank" in kinds and len(meta["obstacles"]) >= 2          # the pond is left out
+    txt = (tmp_path / "runs" / "test_harbor" / "w090_u07p0" / "INPUT").read_text()
+    assert "WIND 7.00 90.0" in txt and "GEN3 KOMEN AGROW" in txt and "PROJECT 'chicago' 'w090'" in txt
+    assert "BOUNDSPEC" not in txt and "OFF QUADRUPL" not in txt and "RTP" in txt and "OBSTACLE TRANSM 0.00 REFL 0.50" in txt
+    assert sc.case_id(45, 4.0, 1.0) == "d045_t4p0_h1p0" and len(sc.CASE_GROUPS["wind"]) == 4 and len(sc.WIND_DIRS) == 24
+
+
+def test_survey_obstacles_split_at_the_lagoon():
+    g = {"x0": -1000.0, "y0": 3000.0, "dx": 2.0, "nx": 600, "ny": 1600}
+    bathy = {"survey": {"polys": [{"name": "Diversey Harbor", "rings": [[[-500, 5500], [-400, 5500], [-400, 4000], [-500, 4000], [-500, 5500]]]}]}}
+    obs = sc.survey_obstacles(bathy, g)
+    assert {o["kind"] for o in obs} == {"quay", "bank"} and all(o["pts"][0][0] >= 0 for o in obs)
+    quay = [o for o in obs if o["kind"] == "quay"]; bank = [o for o in obs if o["kind"] == "bank"]
+    assert quay[0]["refl"] == sc.REFL_QUAY and bank[0]["refl"] == sc.REFL_BANK
+    assert sum(len(o["pts"]) - 1 for o in obs) >= 4                                     # every edge of the ring is a wall segment
+
+
+def test_swan_collect_wind(tmp_path):
+    from scipy.io import savemat
+    g = {"x0": 0, "y0": 0, "dx": 2, "nx": 4, "ny": 3}
+    d = tmp_path / "r" / "harbor"; d.mkdir(parents=True)
+    cases = [{"id": sc.case_id(0, "wind", u), "dir": 0, "u10": u} for u in (4.0, 7.0)] + [{"id": sc.case_id(0, 4.0, 1.0), "dir": 0, "tp": 4.0, "hs": 1.0}]
+    json.dump({"domain": "harbor", "grid": g, "level_m_igld85": 176.5, "cases": cases}, open(d / "meta.json", "w")); json.dump([], open(d / "obstacles.json", "w"))
+    for c in cases:
+        (d / c["id"]).mkdir()
+        hs = np.full((3, 4), 0.3 if "u10" in c else 0.5); savemat(d / c["id"] / "out.mat", {"Hsig": hs, "Dir": np.full((3, 4), 90.0), "RTpeak": np.full((3, 4), 2.2), "Yp": np.arange(3)[:, None] * np.ones((1, 4))})
+    out = sc.collect(str(tmp_path / "r"), str(tmp_path / "s.json"))
+    h = out["domains"]["harbor"]
+    assert [c["id"] for c in h["cases"]] == ["d000_t4p0_h1p0"] and [c["u10"] for c in h["wind"]["cases"]] == [4.0, 7.0]
+    whs = np.frombuffer(gzip.decompress(base64.b64decode(h["wind"]["hs"])), np.uint8).reshape(2, 3, 4)
+    wtp = np.frombuffer(gzip.decompress(base64.b64decode(h["wind"]["tp"])), np.uint8).reshape(2, 3, 4)
+    assert whs.max() == 30 and wtp.max() == 22
+    # a merge keeps the wind cases this run did not redo
+    (d / cases[1]["id"] / "out.mat").unlink()
+    out["domains"]["trail"] = {"grid": {"x0": 0, "y0": 0, "dx": 8, "nx": 2, "ny": 2}, "cases": [], "ratio": "", "dir": ""}   # another domain, not rerun
+    out2 = sc.collect(str(tmp_path / "r"), str(tmp_path / "s2.json"), merge=out)
+    assert [c["u10"] for c in out2["domains"]["harbor"]["wind"]["cases"]] == [4.0, 7.0] and "trail" in out2["domains"]
