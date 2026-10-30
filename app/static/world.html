@@ -24,6 +24,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .lbl::after { content: ""; position: absolute; left: 50%; bottom: 4px; width: 1px; height: 14px; background: linear-gradient(rgba(220,230,238,.75), rgba(220,230,238,.35)); }
 .lbl::before { content: ""; position: absolute; left: 50%; bottom: 0; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(9,15,21,.7), 0 0 6px rgba(240,180,76,.6); }
 .lbl.rental span { border-color: rgba(92, 200, 170, .55); } .lbl.rental::before { background: #5cc8aa; box-shadow: 0 0 0 2px rgba(9,15,21,.7), 0 0 6px rgba(92,200,170,.7); }
+.lbl.course span { font-size: 10px; padding: 2px 5px; border-color: rgba(255, 200, 60, .55); } .lbl.course::before { background: #ffc83c; box-shadow: 0 0 0 2px rgba(9,15,21,.7); } .lbl.course::after { height: 8px; } .lbl.course { padding-bottom: 12px; }
 .lbl.lake { padding-bottom: 0; } .lbl.lake span { font-family: var(--font-ui); font-style: italic; letter-spacing: .12em; text-transform: uppercase; color: #a9cde0; background: none; border: 0; box-shadow: none; text-shadow: 0 0 6px rgba(0,0,0,.9), 0 1px 2px #000; }
 .lbl.lake::after, .lbl.lake::before { display: none; }
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
@@ -441,6 +442,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
       <input type="range" id="exag" min="1" max="5" step="0.5" value="1" hidden>
       <label class="check"><input type="checkbox" id="bolts" checked> Lightning flashes</label>
       <label class="check" title="Moored buoys that ride the modelled waves, each beside a fixed pile painted in 1 ft bands from the still-water line (red). Zoom in near the water to see them."><input type="checkbox" id="buoys"> Buoys and wave gauges on the water</label>
+      <label class="check" title="The rowing course on the Lincoln Park South Lagoon: 1000 m from the south face of the Fullerton Avenue bridge, a mark every 100 m"><input type="checkbox" id="course" checked> Lagoon 1000 m course</label>
     </section>
     <section id="sec-sat">
       <h2>Satellite</h2>
@@ -566,6 +568,11 @@ const PLACES = [["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Theater on th
 // pier-head navigation lights (steady red towers, landmarks from the water): at the tip of the North Ave Beach hook and of
 // the Montrose hook pier (the ends of the mapped breakwaters)
 const PIER_LIGHTS = [["North Ave Beach pier light", 41.91477, -87.62099], ["Montrose Beach pier light", 41.96817, -87.63180]];
+// the Lincoln Park South Lagoon's 1000 m course (Lincoln Park Boat Club's Chicago Sprints run 1,000 m between the Fullerton
+// bridge and the zoo): the lagoon's centreline from the south face of the Fullerton Avenue bridge southward, a point every
+// 50 m, from the 2023 survey's shoreline polygon (tools/lagoon_course.py)
+const LAGOON_COURSE = [[41.925638, -87.632224], [41.925197, -87.632094], [41.924759, -87.631942], [41.924329, -87.631767], [41.923896, -87.631591], [41.923462, -87.631428], [41.923035, -87.631229], [41.922617, -87.630999], [41.922188, -87.63081], [41.921753, -87.630644], [41.921313, -87.630506], [41.92087, -87.630389], [41.920424, -87.630288], [41.91998, -87.63017], [41.919544, -87.630009], [41.919113, -87.629829], [41.918676, -87.629672], [41.918238, -87.629525], [41.917799, -87.629378], [41.917367, -87.629203], [41.916942, -87.628996]];
+const COURSE_LEN = 1000, COURSE_TICK = 100, COURSE_LABEL = 250;
 // the local world: the Lake Michigan Water Trail from Monroe Harbor to Montrose, out past the Harrison-Dever crib
 const LB = (() => { const [x0, y0] = ll(41.870, -87.650), [x1, y1] = ll(41.970, -87.562); return { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; })();
 // camera presets: target (lat, lon), distance km, view heading (deg, compass), pitch (deg below horizontal)
@@ -578,6 +585,7 @@ const GOTO = [
   ["Fullerton revetment", 41.9258, -87.6312, 0.28, 300, 14],
   ["Diversey Harbor mouth", 41.9322, -87.6318, 0.26, 245, 15],
   ["Inside the harbor", 41.9290, -87.6342, 0.20, 190, 22],
+  ["Lincoln Park lagoon", 41.9212, -87.6306, 0.55, 345, 32],      // up the 1000 m course toward the Fullerton bridge
   // launch quick views: from behind each container, looking out over the launch to the water
   ["Chicago SUP · Diversey launch", 41.92654, -87.63285, 0.12, 51, 30],      // the ramp is ~25 m NE of the container
   ["Chicago SUP · North Ave launch", 41.91337, -87.62279, 0.2, 28, 26],      // the beach in front of the shop, ~70 m to the water
@@ -3168,11 +3176,37 @@ function setHeading(h) { h = ((h % 360) + 360) % 360; if (NAV.move === "paddle")
 { let idle = 0; const app = $("#app"), fly = () => { app.classList.add("flying"); clearTimeout(idle); idle = setTimeout(() => app.classList.remove("flying"), 1300); };
   canvas.addEventListener("pointermove", (e) => { if (e.buttons) fly(); }); canvas.addEventListener("wheel", fly, { passive: true }); }
 
+// ---------------------------------------------------------------- the lagoon's 1000 m course: a ribbon just above the water, a mark every 100 m
+const COURSE = { group: null, on: true, pts: [], labels: [] };
+try { COURSE.on = localStorage.getItem("lakelocal-course") !== "0"; } catch (e) {}
+function buildCourse() {
+  if (COURSE.group) scene.remove(COURSE.group);
+  const P = LAGOON_COURSE.map(([la, lo]) => ll(la, lo)), d = [0]; for (let i = 1; i < P.length; i++) d.push(d[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]) * 1000);
+  const at = (sM) => { let i = 0; while (i < d.length - 2 && d[i + 1] < sM) i++; const f = (sM - d[i]) / Math.max(d[i + 1] - d[i], 1e-6); return [P[i][0] + (P[i + 1][0] - P[i][0]) * f, P[i][1] + (P[i + 1][1] - P[i][1]) * f]; };
+  const tangent = (sM) => { const a = at(Math.max(sM - 5, 0)), b = at(Math.min(sM + 5, d[d.length - 1])), L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1e-6; return [(b[0] - a[0]) / L, (b[1] - a[1]) / L]; };
+  const H = 0.0005, pos = [], col = [], quad = (a, b, half, c) => {   // a ribbon from a to b (km), half-width in km
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1e-6, nx = -(b[1] - a[1]) / L * half, ny = (b[0] - a[0]) / L * half;
+    const v = [[a[0] + nx, a[1] + ny], [a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny]];
+    for (const k of [0, 1, 2, 0, 2, 3]) { pos.push(v[k][0], H, -v[k][1]); col.push(...c); } };
+  const end = Math.min(COURSE_LEN, d[d.length - 1]), lane = [1.0, 0.78, 0.2], mark = [1.0, 0.95, 0.75];
+  for (let sM = 0; sM < end; sM += 10) quad(at(sM), at(Math.min(sM + 10, end)), 0.0007, lane);
+  COURSE.labels = [];
+  for (let sM = 0; sM <= end + 0.5; sM += COURSE_TICK) { const c = at(sM), t = tangent(sM), big = sM % COURSE_LABEL === 0, w = (big ? 14 : 8) / 1000;
+    quad([c[0] - t[1] * w, c[1] + t[0] * w], [c[0] + t[1] * w, c[1] - t[0] * w], (big ? 1.0 : 0.6) / 1000, mark);
+    if (big) COURSE.labels.push([`${sM} m`, c[0], c[1]]); }
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
+  m.renderOrder = 6; m.frustumCulled = false; COURSE.group = new THREE.Group(); COURSE.group.add(m); COURSE.group.visible = COURSE.on; scene.add(COURSE.group);
+  COURSE.pts = P; COURSE.len = end;
+}
+function setCourse(on) { COURSE.on = on; if (COURSE.group) COURSE.group.visible = on; try { localStorage.setItem("lakelocal-course", on ? "1" : "0"); } catch (e) {} buildLabels(); }
+
 // ---------------------------------------------------------------- labels
 const labelsEl = $("#labels"); let labelItems = [];
 function buildLabels() { labelsEl.innerHTML = ""; labelItems = [];
-  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"), sp = document.createElement("span"); d.className = "lbl" + (cls ? " " + cls : ""); sp.textContent = txt; d.appendChild(sp); labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y), far: cls === "lake" || h > 0.1 ? 220 : 30, near: cls === "rental" ? 0.03 : 0.25, lake: cls === "lake" }); };
-  for (const [name, la, lo, h, cls] of PLACES) { const [x, y] = ll(la, lo); add(name, x, y, h, cls); } add("Lake Michigan", 2.2, 4.6, 0, "lake"); }
+  const add = (txt, x, y, h, cls) => { const d = document.createElement("div"), sp = document.createElement("span"); d.className = "lbl" + (cls ? " " + cls : ""); sp.textContent = txt; d.appendChild(sp); labelsEl.appendChild(d); labelItems.push({ d, p: new THREE.Vector3(x, h, -y), far: cls === "lake" || h > 0.1 ? 220 : cls === "course" ? 2.2 : 30, near: cls === "rental" || cls === "course" ? 0.03 : 0.25, lake: cls === "lake" }); };
+  for (const [name, la, lo, h, cls] of PLACES) { const [x, y] = ll(la, lo); add(name, x, y, h, cls); } add("Lake Michigan", 2.2, 4.6, 0, "lake");
+  if (COURSE.on) for (const [txt, x, y] of COURSE.labels) add(txt, x, y, 0.001, "course"); }
 const tmpV = new THREE.Vector3();
 // nearest labels win: one that would overlap a closer one is hidden (no stacked, unreadable names)
 function updateLabels() { const w = canvas.clientWidth, h = canvas.clientHeight, placed = [];
@@ -3357,6 +3391,7 @@ $("#scrub").oninput = (e) => { S.t = tlT(+e.target.value / SCRUB_N); setPlaying(
 $("#nowbtn").onclick = () => { S.follow = true; $("#nowbtn").hidden = true; };
 $("#showtrack").onchange = (e) => { S.showTrack = e.target.checked; if (S.ov === "spots") { SPOTS.built = ""; buildConfirmed(); } };
 $("#buoys").checked = BUOY.on; $("#buoys").onchange = (e) => { BUOY.on = e.target.checked; try { localStorage.setItem("lakelocal-buoys", BUOY.on ? "1" : "0"); } catch (err) {} };
+$("#course").checked = COURSE.on; $("#course").onchange = (e) => setCourse(e.target.checked);
 $("#toggle").onclick = () => { const c = $("#controls"); c.dataset.open = c.hidden ? "1" : "0"; applyPanel(); };
 function applyPanel() { const narrow = matchMedia("(max-width: 760px)").matches, c = $("#controls"), open = c.dataset.open ? c.dataset.open === "1" : false; c.hidden = !open; $("#toggle").setAttribute("aria-expanded", String(open)); $("#toggle").textContent = open ? "Hide settings" : "Settings"; }
 matchMedia("(max-width: 760px)").addEventListener("change", applyPanel); applyPanel();
@@ -3966,7 +4001,7 @@ async function initImport() {
 
 // ---------------------------------------------------------------- boot
 U.uLocalC.value.set(LB.cx, LB.cy); S.showTrack = false;
-setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnimationFrame(tick);
+setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(); requestAnimationFrame(tick);
 (async () => {
   try {
     const live = !txt("scene-data") && !txt("sup-data");
