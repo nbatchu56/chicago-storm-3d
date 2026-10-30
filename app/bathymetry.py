@@ -55,9 +55,11 @@ MODEL_BBOX = (41.905, -87.648, 41.945, -87.598)
 # (north past Montrose to Kathy Osterman Beach, so the SWAN trail domain's north boundary sits ~2 km from Montrose Beach)
 CORRIDOR_BBOX = (41.866, -87.656, 41.988, -87.578)
 # harbor = Diversey Harbor, the Fullerton channel and the South Lagoon at 2 m (the inlet under Lake Shore Drive is ~16 m
-# wide: 8 cells, enough for SWAN's diffraction; 4 at 4 m is where it goes unstable)
+# wide: 8 cells, enough for SWAN's diffraction; 4 at 4 m is where it goes unstable), north to Belmont's south jetty so
+# the FUNWAVE diversey tile extended up-wave for a NE sea still fits
+HARBOR_BBOX = (cook.BBOX[0], cook.BBOX[1], 41.942, cook.BBOX[3])
 MODEL_BBOXES = {"route": (MODEL_BBOX, 4.0), "montrose": ((41.950, -87.648, 41.975, -87.600), 4.0), "corridor": (CORRIDOR_BBOX, 4.0),
-                "harbor": (cook.BBOX, 2.0)}
+                "harbor": (HARBOR_BBOX, 2.0)}
 ISGS_PAGES = ["https://clearinghouse.isgs.illinois.edu/data/coastal/chicago-beaches-chicago-park-district-topobathymetric-models"]
 ISGS_DIR = os.environ.get("ISGS_DIR", "isgs_cache")
 

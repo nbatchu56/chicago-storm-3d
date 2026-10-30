@@ -26,10 +26,12 @@ import numpy as np
 from . import bathymetry as bm
 
 # tiles in the shared local frame (m east/north of State & Madison); the east edge must be open lake
-# (the wavemaker sits 75 m inside it). "diversey" is the original harbour-entrance domain, widened.
+# (the wavemaker sits 75 m inside it). "diversey" is the original harbour-entrance domain, widened, and since the 2023
+# survey gave the basin its real bottom it runs south to the sill under the Fullerton Avenue bridge (y ~4860), so what
+# comes through the mouth is followed to the end of the basin; the lagoon beyond the sill gets no lake waves.
 # x_wall: about the westmost lake wall in the tile; oblique seas need the wavemaker to reach up-wave of it
 TILES = {
-    "diversey": {"x_east": 200.0, "x_west": -650.0, "y_south": 5150.0, "y_north": 6000.0, "dx": 1.5, "x_wall": -400.0, "label": "Diversey Harbor"},
+    "diversey": {"x_east": 200.0, "x_west": -650.0, "y_south": 4750.0, "y_north": 6000.0, "dx": 1.5, "x_wall": -400.0, "label": "Diversey Harbor"},
     "belmont": {"x_east": 150.0, "x_west": -950.0, "y_south": 5900.0, "y_north": 6850.0, "dx": 1.5, "x_wall": -650.0, "label": "Diversey to Belmont"},
     "northave": {"x_east": 800.0, "x_west": -150.0, "y_south": 3350.0, "y_north": 4300.0, "dx": 1.5, "x_wall": -150.0, "label": "North Ave to the Chess Pavilion"},
     "fullerton": {"x_east": 300.0, "x_west": -650.0, "y_south": 4200.0, "y_north": 5150.0, "dx": 1.5, "x_wall": -250.0, "label": "Chess Pavilion to Fullerton (Theater on the Lake)"},
@@ -57,10 +59,23 @@ CASES = {
 TOTAL, STEADY, SNAP = 420.0, 240.0, 0.5         # s: run time, start of averaging, snapshot interval
 
 
+def source_grid(bathy, d):
+    """The finest lake-bottom model grid that covers the tile (the 2 m harbor grid for Diversey), else the corridor or route."""
+    best = None
+    for name, gr in (bathy.get("models") or {}).items():
+        x1, y1 = gr["x0"] + (gr["nx"] - 1) * gr["dx"], gr["y0"] + (gr["ny"] - 1) * gr["dx"]
+        if gr["x0"] <= d["x_west"] and x1 >= d["x_east"] and gr["y0"] <= d["y_south"] and y1 >= d["y_north"]:
+            if best is None or gr["dx"] < best[1]["dx"]:
+                best = (name, gr)
+    if best:
+        return best
+    return ("corridor", bathy["models"]["corridor"]) if "corridor" in bathy["models"] else ("route", bathy["models"]["route"])
+
+
 def depth_grid(bathy, d=None):
-    """Still-water depth on the model grid (model i -> west, j -> north), from the 4 m corridor (or route) grid."""
+    """Still-water depth on the model grid (model i -> west, j -> north), from the finest bottom grid covering the tile."""
     d = d or DOMAIN
-    gr = bathy["models"].get("corridor") or bathy["models"]["route"]
+    _, gr = source_grid(bathy, d)
     z, src = bm.unpack(gr)
     level = bathy["level"]["m_igld85"]
     dep = level - z
@@ -198,7 +213,7 @@ def prepare(bathy_path, case, out, tile="diversey", procs=4):
     with open(os.path.join(out, "input.txt"), "w") as fh:
         fh.write(input_txt(D.shape[1], D.shape[0], case, dep_wk, d, tile, px, py))
     meta = {"case": case, "tile": tile, "tile_label": d["label"], **CASES[case], "domain": d, "core": core, "m": int(D.shape[1]), "n": int(D.shape[0]),
-            "dep_wk": dep_wk, "lidar_frac": round(float((S == 1).mean()), 3)}
+            "dep_wk": dep_wk, "lidar_frac": round(float((S == 1).mean()), 3), "survey_frac": round(float((S == 4).mean()), 3), "bottom": source_grid(bathy, d)[0]}
     json.dump(meta, open(os.path.join(out, "meta.json"), "w"))
     return meta
 
