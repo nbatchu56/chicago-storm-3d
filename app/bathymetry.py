@@ -333,7 +333,11 @@ def blend(lidar, ncei, level, lake_mask=None, survey=None, channels=None):
         info["survey_cells"] = int(sv.sum())
         lidar = np.where(sv, np.nan, lidar)    # the NCEI alignment below should not learn from the survey's cells
     if channels is not None:
-        cm, cd = channels
+        cm, cd = channels[:2]
+        if len(channels) > 2 and channels[2] is not None:        # under a bridge deck: land except the channel itself
+            deck = channels[2] & ~cm
+            z[deck] = np.maximum(np.where(np.isfinite(z[deck]), z[deck], level + 1.0), level + 1.0); src[deck] = 5
+            info["deck_cells"] = int(deck.sum())
         cut = cm & (~np.isfinite(z) | (z > level - cd))
         z[cut] = level - cd[cut]; src[cut] = 5
         info["channel_cells"] = int(cut.sum())
@@ -426,7 +430,7 @@ def build_grid(bbox, d, level, probe, tag):
                 SURVEY.setdefault("meta", meta | {"channels": cook.CHANNELS})
         except Exception as e:  # noqa: BLE001
             p["cook_error"] = str(e)[:300]; sv = None
-        ch = cook.channel_mask(g)
+        ch = cook.channel_mask(g) + (cook.bridge_mask(g),)
     z, src, info = blend(lid, nc, level, survey=sv, channels=ch)
     z = smooth_seam(z, src)
     p.update(info)

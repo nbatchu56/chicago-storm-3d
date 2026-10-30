@@ -118,6 +118,22 @@ def rasterize(polys, g):
     return inside
 
 
+# the Lake Shore Drive bridge's footprint over the inlet (S, W, N, E): under the deck only the channel is water. The lidar
+# cannot see through the deck and the gaps it leaves were filled with deep water from the basins either side, which made
+# enclosed pockets beside the channel that rang in the phase-resolved model (waves of 2-5 m in a 1.8 m channel)
+BRIDGES = [["Lake Shore Drive over the Diversey inlet", (41.93234, -87.63253, 41.93275, -87.63169)]]
+
+
+def bridge_mask(g, bridges=None):
+    """Cells of grid g under a bridge deck (bool)."""
+    xs = g["x0"] + np.arange(g["nx"]) * g["dx"]; ys = g["y0"] + np.arange(g["ny"]) * g["dx"]
+    X, Y = np.meshgrid(xs, ys); out = np.zeros(X.shape, bool)
+    for _, (s, w, n, e) in (BRIDGES if bridges is None else bridges):
+        (xa, ya), (xb, yb) = lf.xy(s, w), lf.xy(n, e)
+        out |= (X >= xa) & (X <= xb) & (Y >= ya) & (Y <= yb)
+    return out
+
+
 def channel_mask(g, channels=None):
     """Cells of grid g within a channel stroke: (inside bool, nominal depth m where inside, else NaN)."""
     xs = g["x0"] + np.arange(g["nx"]) * g["dx"]; ys = g["y0"] + np.arange(g["ny"]) * g["dx"]

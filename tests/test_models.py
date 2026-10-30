@@ -298,6 +298,10 @@ def test_channels_are_cut_and_clear_of_walls():
     g = bm.local_grid((41.9310, -87.6340, 41.9340, -87.6290), 2.0)
     cm, cd = cook.channel_mask(g)
     assert cm.sum() > 200 and np.nanmin(cd[cm]) == 1.8 and np.nanmax(cd[cm]) == 2.5
+    lid = np.full((g["ny"], g["nx"]), 172.0, np.float32)                        # deep water filled in around the channel
+    deck = cook.bridge_mask(g)
+    zd, sd, inf = bm.blend(lid.copy(), None, 176.4, channels=(cm, cd, deck))
+    assert deck.sum() > 100 and (zd[deck & ~cm] > 176.4).all() and (zd[deck & cm] <= 176.4 - 1.8 + 1e-3).all()   # under the deck: only the channel is water
     lid = np.full((g["ny"], g["nx"]), 177.5, np.float32)                        # the bridge deck, dry everywhere
     z, src, info = bm.blend(lid, None, 176.4, channels=(cm, cd))
     assert (src[cm] == 5).all() and abs(z[cm].max() - (176.4 - 1.8)) < 1e-3 and info["channel_cells"] == int(cm.sum())
