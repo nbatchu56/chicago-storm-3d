@@ -59,8 +59,10 @@ DOMAINS = {
     "montrose": {"grid": "montrose", "dx": SWAN_DX},
     # Diversey Harbor to the lagoon's south end, with the lake east of Lake Shore Drive so the offshore cases enter the
     # mouth from the boundary; the inlet under LSD is ~16 m wide (8 cells), so openings need only be 12 m
-    # (diffraction's phase-decoupled term goes unstable at 2 m among the walls without smoothing: 3 smoothing steps)
-    "harbor": {"grid": "harbor", "bbox": (41.9159, -87.6362, 41.9372, -87.6260), "dx": 2.0, "min_opening": 12.0, "wind": True, "diffr_smooth": 3},
+    # (SWAN's phase-decoupled diffraction goes unstable at 2 m among the walls for every offshore case, with or without
+    # smoothing steps, so the offshore cases run without it: the 25-degree spread and the reflections carry the sea
+    # through the mouth; FUNWAVE resolves the diffraction there. The wind cases keep it, with 3 smoothing steps.)
+    "harbor": {"grid": "harbor", "bbox": (41.9159, -87.6362, 41.9372, -87.6260), "dx": 2.0, "min_opening": 12.0, "wind": True, "diffr_smooth": 3, "diffr_offshore": False},
 }
 REFL_QUAY, REFL_BANK = 0.5, 0.25           # the surveyed harbour walls (concrete, docks along them); the lagoon's banks
 REFL = {"breakwater": 0.35, "groyne": 0.35, "pier": 0.5, "revetment": 0.45, "vertical": 0.85,
@@ -292,7 +294,7 @@ def obstacles(lakefront, g, depth, fine=None, min_opening=60.0):
     return out
 
 
-def swn(g, level_above_lwd, d, tp, hs, obst, diffr_smooth=0):
+def swn(g, level_above_lwd, d, tp, hs, obst, diffr_smooth=0, diffraction=True):
     """SWAN input for one case: an offshore sea (tp s, hs m from direction d) entering on the E, N and S sides, or, when
     tp == "wind", no incoming waves and a U10 of hs m/s from d growing its own sea over the grid."""
     wind = tp == "wind"
@@ -323,7 +325,7 @@ def swn(g, level_above_lwd, d, tp, hs, obst, diffr_smooth=0):
         "BREAKING CONSTANT 1.0 0.73",
         "FRICTION JONSWAP CONSTANT 0.038",
         "TRIAD",
-        f"DIFFRACTION 1 0.2 {diffr_smooth}" if diffr_smooth else "DIFFRACTION 1 0.2",
+    ] + ([f"DIFFRACTION 1 0.2 {diffr_smooth}" if diffr_smooth else "DIFFRACTION 1 0.2"] if diffraction else []) + [
         "NUMERIC STOPC 0.005 0.01 0.005 99.5 STAT 40",
         "BLOCK 'COMPGRID' NOHEAD 'out.mat' LAY 3 XP YP HSIGN DIR TM01 RTP DEPTH",
         "COMPUTE",
@@ -363,7 +365,7 @@ def prepare(bathy_path, lakefront_path, domain, dirs, out_dir, periods=None, hei
             cdir = os.path.join(out_dir, domain, cid)
             os.makedirs(cdir, exist_ok=True)
             with open(os.path.join(cdir, "INPUT"), "w") as fh:
-                fh.write(swn(g, level - bm.LWD, d, tp, hs, obst, spec.get("diffr_smooth", 0)))
+                fh.write(swn(g, level - bm.LWD, d, tp, hs, obst, spec.get("diffr_smooth", 0), diffraction=True if tp == "wind" else spec.get("diffr_offshore", True)))
             cases.append({"id": cid, "dir": d, "u10": hs} if tp == "wind" else {"id": cid, "dir": d, "tp": tp, "hs": hs})
     meta["cases"] = cases
     with open(os.path.join(out_dir, domain, "meta.json"), "w") as fh:
