@@ -216,3 +216,30 @@ Files: `README.md`, `plans/`
 | 6 harbor waves on the page | pending |
 | 7 1000 m course | done (21 waypoints from the survey polygon; ribbon, 100 m ticks, 250 m labels) |
 | 8 ship | pending |
+
+---
+
+# Addendum (2026-10-30): Experimental > El Niño tracker (same PR)
+Asked: monitor, compile and analyse ENSO; global metrics; effects on Lake Michigan's nearshore waters; note significant
+weather with an El Niño influence; one El Niño symbol for future reports; an El Niño layer in the simulation.
+Answers (gate): full composite 1979+; layer = expected winter anomaly on the lake (+ live Pacific map in the panel);
+symbol in the tracker/legend and on Upsets cards and the conditions; same PR.
+
+## Sources (verified 2026-10-30, no keys)
+- CPC: ONI `oni.ascii.txt`, RONI `RONI.ascii.txt`, weekly Niño regions `wksst9120.for`, SOI `soi`; PSL MEI v2 `meiv2.data`.
+  Now: weekly Niño-3.4 +3.4 °C (Oct 21), ONI JAS +2.16; CPC Oct 8: El Niño Advisory, strong to very strong through JFM 2027.
+- OISST v2.1 anomaly (CoastWatch ERDDAP `ncdcOisst21Agg_LonPM180`, lags ~2 weeks): the equatorial Pacific map.
+- GLERL: annual max ice `glicd/AMIC.txt` (1973+), gridded daily ice ERDDAP `GL_Ice_Cover` (1.4 km, 1973+), GLSEA SST
+  ERDDAP `GLSEA_GCS` (1995-2023). NCEI GHCN-D O'Hare USW00094846 (temp, snow). CO-OPS Calumet monthly means.
+  ERA5 hourly wind at the buoy cells (learn branch `era5/`, 1991+).
+
+## Phases
+- E1 `app/enso.py`: indices (parse + trend + analog tracks) and this season's local observations (snapshot, every run).
+- E2 `app/enso.py climate`: winters 1979+ classified by DJF ONI; Chicago composites (temp, snow, cold days, AMIC,
+  level change, ERA5 storm hours onshore, nearshore ice-free days) and gridded composites (Jan-Mar ice-cover difference,
+  Dec water-temperature anomaly) over southern Lake Michigan; `enso.yml` monthly → `enso` branch.
+- E3 page: Experimental tab "El Niño" (symbol, status, indices chart with 1982-83/1997-98/2015-16/2023-24 analogs,
+  Pacific map, lake composite table with this season so far); View > Lake overlay "El Niño" (shared satellite slot).
+- E4 badges: Upsets cards and the Atmosphere card when an active El Niño's winter pattern shows (mild spell, low ice,
+  southern-stream rain); the symbol everywhere.
+- Verification: parser/composite tests; probe screenshot of the tab and the layer; the workflows on the branch.
