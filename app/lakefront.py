@@ -55,6 +55,12 @@ def http_get(url, data=None, timeout=90, accept="*/*"):
 
 # ---------------------------------------------------------------------------- OpenStreetMap
 LAKE_MICHIGAN_REL = 1205149   # OSM multipolygon "Lake Michigan" (natural=water, water=lake)
+# Harbours mapped only as multipolygons, which the page needs as one body of water (without the polygon it rebuilds
+# them from lidar around each dock and the harbour falls apart into strips): fetched from the OSM API if Overpass misses them
+HARBOUR_RELS = {17766292: "Diversey Harbor"}
+OSM_API = "https://api.openstreetmap.org/api/0.6"
+# bump when the map's content changes, so a snapshot doesn't reuse an older map for up to a week
+MAP_VERSION = 2
 
 
 def overpass_queries(b):
@@ -66,8 +72,9 @@ def overpass_queries(b):
     return {
         "shore": head + f"rel({LAKE_MICHIGAN_REL});way(r)({bb});out geom;",
         "water": head + f'(way["natural"="water"]({bb});way["leisure"="marina"]({bb});way["harbour"]({bb}););out geom tags;',
-        # water drawn as multipolygons (e.g. Diversey Harbor), minus the lake itself
-        "water_rel": head + f'(rel["natural"="water"]({bb}); - rel({LAKE_MICHIGAN_REL}););out geom tags;',
+        # water drawn as multipolygons (e.g. Diversey Harbor), minus the lake itself. "body" verbosity: "tags" leaves out
+        # a relation's members, so no ring could be built and the harbour went missing from the map
+        "water_rel": head + f'(rel["natural"="water"]({bb}); - rel({LAKE_MICHIGAN_REL}););out body geom;',
         "structures": head + f'way["man_made"~"^(breakwater|pier|groyne)$"]({bb});out geom tags;',
         "land": head + f'(way["natural"="beach"]({bb});way["leisure"="park"]({bb});way["highway"~"^(motorway|trunk|primary)$"]({bb}););out geom tags;',
         "buildings": head + f'(way["building"]["building:levels"~"^([2-9][0-9]|[1-9][0-9][0-9])$"]({bb});'
@@ -144,6 +151,50 @@ def join_rings(parts, tol=0.5):
     return rings
 
 
+def relation_water(rid, tags, parts):
+    """Water features (closed rings) for a multipolygon relation's outer member ways (lists of xy points)."""
+    out = []
+    for ring in join_rings(parts):
+        f = {"kind": "water", "pts": ring, "closed": True, "rel": rid}
+        if tags.get("name"):
+            f["name"] = tags["name"]
+        if is_harbour(tags):
+            f["harbour"] = True
+        out.append(f)
+    return out
+
+
+def parse_relation_xml(text, rid):
+    """Water features for relation `rid` from an OSM API /relation/<id>/full response."""
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(text)
+    nodes = {n.get("id"): (float(n.get("lat")), float(n.get("lon"))) for n in root.findall("node")}
+    ways = {w.get("id"): [nodes[nd.get("ref")] for nd in w.findall("nd") if nd.get("ref") in nodes] for w in root.findall("way")}
+    rel = next((r for r in root.findall("relation") if r.get("id") == str(rid)), None)
+    if rel is None:
+        return []
+    tags = {t.get("k"): t.get("v") for t in rel.findall("tag")}
+    parts = [[xy(*p) for p in ways.get(m.get("ref"), [])] for m in rel.findall("member")
+             if m.get("type") == "way" and m.get("role", "outer") in ("outer", "")]
+    return relation_water(rid, tags, parts)
+
+
+def fetch_relation_api(rid, get=http_get):
+    return parse_relation_xml(get(f"{OSM_API}/relation/{rid}/full", timeout=60), rid)
+
+
+def patch_map(feats, get=http_get):
+    """An older map with the HARBOUR_RELS it lacks added from the OSM API."""
+    feats, have = list(feats), {f.get("rel") for f in feats}
+    for rid in HARBOUR_RELS:
+        if rid not in have:
+            try:
+                feats += fetch_relation_api(rid, get)
+            except Exception as e:  # noqa: BLE001
+                log.warning("OSM relation %s unavailable: %s", rid, e)
+    return feats
+
+
 def _overpass(q, get, probe=None, tag=""):
     import time
     last = None
@@ -169,16 +220,9 @@ def fetch_osm(bbox=MAP_BBOX, get=http_get, probe=None):
             continue
         for el in js.get("elements", []):
             if el.get("type") == "relation":
-                tags = el.get("tags") or {}
                 parts = [[xy(p["lat"], p["lon"]) for p in m["geometry"]] for m in el.get("members", [])
                          if m.get("type") == "way" and m.get("role", "outer") in ("outer", "") and m.get("geometry")]
-                for ring in join_rings(parts):
-                    f = {"kind": "water", "pts": ring, "closed": True, "rel": el["id"]}
-                    if tags.get("name"):
-                        f["name"] = tags["name"]
-                    if is_harbour(tags):
-                        f["harbour"] = True
-                    feats.append(f)
+                feats += relation_water(el["id"], el.get("tags") or {}, parts)
                 continue
             if el.get("type") != "way" or "geometry" not in el:
                 continue
@@ -198,6 +242,16 @@ def fetch_osm(bbox=MAP_BBOX, get=http_get, probe=None):
                 f["harbour"] = True
             feats.append(f)
         time.sleep(2)
+    have = {f.get("rel") for f in feats}
+    for rid, name in HARBOUR_RELS.items():
+        if rid in have:
+            continue
+        try:
+            feats += fetch_relation_api(rid, get)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{name} (OSM relation {rid}) unavailable: {e}")
+        if rid not in {f.get("rel") for f in feats}:
+            errors.append(f"{name} (OSM relation {rid}) missing from the map")
     if not any(f["kind"] == "coastline" for f in feats):
         errors.append("lake shoreline missing from OpenStreetMap response")
     return feats, errors
@@ -368,6 +422,7 @@ def build(get=http_get, probe=None, skip_osm=False):
             raise _SkipOSM()
         data["osm"], errs = fetch_osm(get=get, probe=probe)
         data["osm_time"] = data["generated"]
+        data["map_version"] = MAP_VERSION
         notes += [f"map: {e}" for e in errs]
         data["osm_attribution"] = "© OpenStreetMap contributors (ODbL)"
         probe["osm_counts"] = {k: sum(1 for f in data["osm"] if f["kind"] == k) for k in sorted({f["kind"] for f in data["osm"]})}
@@ -429,11 +484,11 @@ class LakefrontUpdater:
             if os.path.exists(self.path):
                 with open(self.path) as fh:
                     old = json.load(fh)
-            reuse_map = bool(old and old.get("osm") and old.get("osm_time") and
+            reuse_map = bool(old and old.get("osm") and old.get("osm_time") and old.get("map_version") == MAP_VERSION and
                              (dt.datetime.now(UTC) - dt.datetime.fromisoformat(old["osm_time"])).days < 7)
             data = build_fn(skip_osm=reuse_map)
             if reuse_map:
-                data["osm"], data["osm_time"] = old["osm"], old["osm_time"]
+                data["osm"], data["osm_time"], data["map_version"] = old["osm"], old["osm_time"], MAP_VERSION
                 data["osm_attribution"] = old.get("osm_attribution")
             tmp = self.path + ".tmp"
             with open(tmp, "w") as fh:
@@ -474,21 +529,30 @@ if __name__ == "__main__":
     ap.add_argument("--reuse", help="earlier lakefront.json: keep its map if it covers the same area and is under 7 days old")
     a = ap.parse_args()
     probe = {}
-    prev = None
+    prev = stale = None
     if a.reuse and os.path.exists(a.reuse):
         try:
-            prev = json.load(open(a.reuse))
+            prev = stale = json.load(open(a.reuse))
             age = dt.datetime.now(UTC) - dt.datetime.fromisoformat(prev.get("osm_time") or prev["generated"])
-            if not prev.get("osm") or list(prev.get("map_bbox", [])) != list(MAP_BBOX) or age > dt.timedelta(days=7):
+            if (not prev.get("osm") or list(prev.get("map_bbox", [])) != list(MAP_BBOX) or age > dt.timedelta(days=7)
+                    or prev.get("map_version") != MAP_VERSION):
                 prev = None
         except Exception as e:  # noqa: BLE001
             log.info("can't reuse %s: %s", a.reuse, e); prev = None
     d = build(probe=probe, skip_osm=prev is not None)
     if prev is not None:
-        for k in ("osm", "osm_time", "osm_attribution", "osm_errors"):
+        for k in ("osm", "osm_time", "osm_attribution", "osm_errors", "map_version"):
             if k in prev:
                 d[k] = prev[k]
         d.setdefault("notes", []).append("map reused from the previous snapshot")
+    elif stale and stale.get("osm") and list(stale.get("map_bbox", [])) == list(MAP_BBOX) and \
+            not any(f["kind"] == "coastline" for f in d.get("osm") or []):
+        # a fresh map was due but Overpass failed: keep the older map rather than none, patched up to this version
+        d["osm"] = patch_map(stale["osm"])
+        for k in ("osm_time", "osm_attribution"):
+            if k in stale:
+                d[k] = stale[k]
+        d.setdefault("notes", []).append("map reused from the previous snapshot (fresh map unavailable)")
     with open(a.out, "w") as fh:
         json.dump(d, fh, separators=(",", ":"))
     if a.probe:

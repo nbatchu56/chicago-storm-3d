@@ -3,6 +3,7 @@ import datetime as dt
 import json
 import os
 import sys
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app import sup_waves as sw  # noqa: E402
@@ -184,3 +185,37 @@ def test_join_multipolygon_rings():
     rings = lf.join_rings(parts)
     assert len(rings) == 1 and rings[0][0] == rings[0][-1] and len(rings[0]) == 5
     assert lf.is_harbour({"water": "harbour"}) and lf.is_harbour({"name": "Diversey Harbor"}) and not lf.is_harbour({"water": "pond"})
+
+
+def test_harbour_multipolygon_reaches_the_map():
+    """Diversey Harbor is mapped only as a multipolygon: the Overpass query must return its members (not "out tags"),
+    and if Overpass leaves it out the relation comes from the OSM API, so the page gets one continuous body of water."""
+    from app import lakefront as lf
+    assert "out body geom" in lf.overpass_queries(lf.MAP_BBOX)["water_rel"]
+    xml = """<osm><node id="1" lat="41.926" lon="-87.635"/><node id="2" lat="41.926" lon="-87.631"/>
+      <node id="3" lat="41.933" lon="-87.631"/><node id="4" lat="41.933" lon="-87.635"/>
+      <way id="10"><nd ref="1"/><nd ref="2"/><nd ref="3"/></way><way id="11"><nd ref="1"/><nd ref="4"/><nd ref="3"/></way>
+      <relation id="17766292"><member type="way" ref="10" role="outer"/><member type="way" ref="11" role="outer"/>
+      <tag k="natural" v="water"/><tag k="water" v="harbour"/><tag k="name" v="Diversey Harbor"/></relation></osm>"""
+    calls = []
+
+    def get(url, data=None, timeout=90, **kw):
+        calls.append(url)
+        if url.startswith(lf.OSM_API):
+            return xml
+        q = urllib.parse.parse_qs(data.decode())["data"][0]
+        if "coastline" in q or "1205149" in q and "way(r)" in q:
+            return json.dumps({"elements": [{"type": "way", "geometry": [{"lat": 41.9, "lon": -87.6}, {"lat": 41.91, "lon": -87.6}]}]})
+        return json.dumps({"elements": []})
+
+    import time as _t
+    sleep, _t.sleep = _t.sleep, lambda s: None
+    try:
+        feats, errs = lf.fetch_osm(get=get)
+    finally:
+        _t.sleep = sleep
+    dh = [f for f in feats if f.get("rel") == 17766292]
+    assert len(dh) == 1 and dh[0]["harbour"] and dh[0]["closed"] and dh[0]["name"] == "Diversey Harbor" and len(dh[0]["pts"]) == 5
+    assert not errs and any(c.startswith(lf.OSM_API) for c in calls)
+    # an older map without it is patched, and a map from before this version isn't reused as is
+    assert any(f.get("rel") == 17766292 for f in lf.patch_map([{"kind": "coastline", "pts": [], "closed": False}], get=get))
