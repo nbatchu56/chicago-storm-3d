@@ -64,6 +64,18 @@ def test_funwave_domain(tmp_path):
     assert d[:, 0].mean() > d[:, -1].mean()                                     # model i=0 is the offshore (east) edge
     txt = (tmp_path / "fw" / "input.txt").read_text()
     assert "ThetaPeak = -45.0" in txt and "Mglob = %d" % meta["m"] in txt
+    assert meta["bottom"] == "route" and fc.TILES["diversey"]["y_south"] == 4750.0            # to the Fullerton sill
+
+
+def test_funwave_prefers_the_finest_covering_grid():
+    b = fake_bathy()
+    t = fc.TILES["diversey"]
+    g = {"x0": t["x_west"] - 10, "y0": t["y_south"] - 10, "dx": 2.0, "nx": int((t["x_east"] - t["x_west"] + 20) / 2) + 1, "ny": int((t["y_north"] - t["y_south"] + 20) / 2) + 1}
+    z = np.full((g["ny"], g["nx"]), 176.5 - 3.0, np.float32); src = np.full(z.shape, 4, np.uint8)
+    b["models"]["harbor"] = bm.pack(g, z, src)
+    assert fc.source_grid(b, t)[0] == "harbor"
+    small = dict(g, ny=10); b["models"]["harbor"] = bm.pack(small, z[:10], src[:10])         # too small to cover the tile: not used
+    assert fc.source_grid(b, t)[0] == "route"
 
 
 def test_wind_corrections():
@@ -213,7 +225,7 @@ def test_cookcounty_bed_elevation_fills_rim():
 
 
 def test_model_bboxes_carry_spacing():
-    assert bm.MODEL_BBOXES["harbor"] == (cook.BBOX, 2.0) and bm.MODEL_BBOXES["corridor"][1] == 4.0
+    assert bm.MODEL_BBOXES["harbor"] == (bm.HARBOR_BBOX, 2.0) and bm.HARBOR_BBOX[2] >= 41.942 and bm.MODEL_BBOXES["corridor"][1] == 4.0
     g = bm.local_grid(cook.BBOX, 2.0)
     assert bm.overlaps(g, cook.BBOX) and not bm.overlaps(bm.local_grid((41.95, -87.648, 41.975, -87.60), 4.0), cook.BBOX)
 
