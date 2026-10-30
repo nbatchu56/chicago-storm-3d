@@ -294,6 +294,20 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
   .card.open .more { position: static; width: auto !important; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: 4px 0 0; margin-top: 4px; max-height: 30vh; }
   #controls { bottom: calc(var(--gut) + 92px + env(safe-area-inset-bottom, 0px)); max-height: 58% !important; z-index: 4; }
 }
+/* the legend folds to its title with the − button (tap the title to unfold); on a phone its short form leaves out the explainer */
+#legend > b { padding-right: 24px; }
+#legend .lgx { position: absolute; top: 2px; right: 3px; width: 24px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font: 600 16px/1 var(--font-ui); cursor: pointer; }
+#legend .lgx:hover { color: var(--fg); }
+#legend.tiny > :not(b):not(.lgx) { display: none !important; }
+#legend.tiny { width: max-content !important; max-width: calc(100vw - 2 * var(--gut)); right: auto !important; padding: 5px 8px; }
+@media (max-width: 760px), (max-height: 560px) { #legend.min > .lead { display: none; } }
+/* settings sit above the cards and the legend; on a short screen (a phone on its side) the panel hangs from its button over the cards */
+#controls { z-index: 6 !important; }
+@media (max-height: 560px) {
+  #controls { top: calc(var(--gut) + 46px + env(safe-area-inset-top, 0px)) !important; bottom: auto !important; box-sizing: border-box; max-height: calc(100vh - 2 * var(--gut) - 46px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important; max-height: calc(100dvh - 2 * var(--gut) - 46px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important; }
+  #legend { bottom: auto !important; left: auto !important; top: calc(var(--gut) + 46px + env(safe-area-inset-top, 0px)) !important; right: calc(var(--gut) + env(safe-area-inset-right, 0px)) !important; width: min(260px, 45vw); }
+  #legend.tiny { right: calc(var(--gut) + env(safe-area-inset-right, 0px)) !important; }
+}
 </style>
 
 <div id="app">
@@ -3327,9 +3341,13 @@ function renderLegend() {
       <span class="lead">How cloudy the water is (sediment stirred up by storms, river and outfall plumes). Under 2 FNU you can see well down; over 15 the water looks brown.</span>
       <span>${E2 ? `${E2.label} (clear-sky water pixels; Nechad red-band turbidity). ${Object.entries(E2.launches || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v} FNU`).join(" · ")}` : "No clear Sentinel-2 pass in the last 10 days"}</span><span>A satellite snapshot from that pass, not live; today's clouds, rain and lightning are hidden while it is shown.</span>`; }
   else if (S.ov === "radar") { h = `<b>Radar reflectivity</b><div class="bar" style="background:linear-gradient(90deg,${DBZ_STOPS.slice(0, 13).map(([, c]) => c).join(",")})"></div><div class="tk"><span>5</span><span>35</span><span>65 dBZ</span></div>`; }
-  if (h) h += `<span class="more">${matchMedia("(hover: hover)").matches ? "Click" : "Tap"} for details</span>`;
+  if (!el.dataset.init) { el.dataset.init = "1"; el.classList.add("min"); let tiny = false; try { tiny = localStorage.getItem("lakeview-legend") === "tiny"; } catch (e) {} el.classList.toggle("tiny", tiny);
+    el.onclick = (ev) => { const fold = ev.target.closest(".lgx");
+      if (fold || el.classList.contains("tiny")) { const t = !el.classList.contains("tiny"); el.classList.toggle("tiny", t); try { localStorage.setItem("lakeview-legend", t ? "tiny" : "open"); } catch (e) {} renderLegend(); }
+      else el.classList.toggle("min"); }; }
+  const tiny = el.classList.contains("tiny");
+  if (h) h += `<span class="more">${matchMedia("(hover: hover)").matches ? "Click" : "Tap"} for details</span><button class="lgx" type="button" aria-label="${tiny ? "Show the legend" : "Fold the legend"}" title="${tiny ? "Show" : "Fold"}">${tiny ? "+" : "−"}</button>`;
   el.innerHTML = h; el.hidden = !h;
-  if (!el.dataset.init) { el.dataset.init = "1"; el.classList.add("min"); el.onclick = () => el.classList.toggle("min"); }
 }
 
 // ---------------------------------------------------------------- frame loop
