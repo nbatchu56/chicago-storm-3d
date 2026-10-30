@@ -205,8 +205,8 @@ Files: `README.md`, `plans/`
 ## Progress
 | Phase | Status |
 | --- | --- |
-| 1 survey in the lake bottom | pending |
-| 2 rigid walls | pending |
+| 1 survey in the lake bottom | done (bathy.yml run 41096808739 on the branch) |
+| 2 rigid walls | done (probe: 99.2% inside / 99.4% outside, from 19% / 88%) |
 | 3 aerial imagery | pending |
 | 4 harbor SWAN | pending |
 | 5 FUNWAVE to the sill | pending |

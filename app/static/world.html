@@ -541,8 +541,7 @@ const WATERWAYS = [
   // the gap between the jetties: open to the lake (its chop reflects off the walls), not sheltered harbour; the outer basin
   // inside them is traced in WATER_AREAS (a 26 m-wide "turn basin" stroke here spilled onto the park south of the channel)
   ["Diversey Harbor mouth", 18, 2.5, [[41.93264, -87.63112], [41.93254, -87.63091], [41.93242, -87.63076], [41.93228, -87.63060], [41.93212, -87.63048]], 1],
-  ["Channel south of Diversey Harbor (east side)", 18, 1.2, [[41.92330, -87.63110], [41.92288, -87.63096], [41.92215, -87.63082], [41.92179, -87.63063]]],
-  ["Channel south of Diversey Harbor", 26, 1.2, [[41.92438, -87.63175], [41.92368, -87.63150], [41.92294, -87.63118], [41.92221, -87.63072], [41.92172, -87.63048]]],
+  // (the basin, the channel under Fullerton and the South Lagoon come from the 2023 survey's shoreline polygon, bathy.survey)
 ];
 // water areas the map leaves as land, traced from the mapped walls and the harbor chart: [name, depth m, [[lat, lon], ...], class]
 // Diversey Harbor's outer basin: OSM closes the coastline across the mouth and maps no water inside it, so without this the basin
@@ -998,7 +997,7 @@ void main(){
   vec2 muv = (p - uMapMin) / uMapSize;
   float cls = inMap ? floor(texture2D(uMapMask, muv).r * 3.0 + 0.5) : (inLake(p) ? 1.0 : 0.0);
   // rounded shoreline: the smoothed water fraction decides water vs land within a pixel or two of the edge
-  vec3 looks = inMap ? texture2D(uMapLooks, muv).rgb : vec3(cls > 0.5 ? 1.0 : 0.0, 0.0, 1.0); float wetF = looks.r, edgeN = vnoise(p * 300.0) * 0.12 - 0.06;
+  vec4 looks4 = inMap ? texture2D(uMapLooks, muv) : vec4(cls > 0.5 ? 1.0 : 0.0, 0.0, 1.0, 0.0); vec3 looks = looks4.rgb; float wetF = looks.r, edgeN = (vnoise(p * 300.0) * 0.12 - 0.06) * (1.0 - looks4.a);
   if (inMap) { if (wetF + edgeN > 0.5 && cls < 0.5) cls = 1.0; else if (wetF + edgeN <= 0.5 && cls > 0.5) cls = 0.0; }
   vec3 col;
   if (cls > 0.5) {
@@ -1141,6 +1140,36 @@ async function buildMap(LF) {
   const wd = w.getImageData(0, 0, WPX, HPX).data;
   for (let i = 0; i < mask.length; i++) if (!mask[i]) { if (wd[i * 4] > 128) mask[i] = 2; else if (wd[i * 4 + 1] > 128) mask[i] = 3; }
   await yieldUI();
+  // the 2023 USGS / Cook County echo-sounder survey: its shoreline polygons are the walls of Diversey Harbor, the channel under
+  // Fullerton and the South Lagoon (and the two ponds), to the foot. Inside them the water is certain (sheltered harbour, or
+  // pond for the ponds); within ~30 m outside, no later heuristic (lidar, dock carving, waterways, specks) may add water, and
+  // the edge itself is drawn hard (svHard: no blur, no shoreline noise). The open lake's flood (the mouth) keeps its class.
+  const svIn = new Uint8Array(WPX * HPX), svCls = new Uint8Array(WPX * HPX); let svHard = null, svGuard = null;
+  if (BATHY.survey && BATHY.survey.polys && BATHY.survey.polys.length) {
+    const sc0 = document.createElement("canvas"); sc0.width = WPX; sc0.height = HPX; const sx0 = sc0.getContext("2d", { willReadFrequently: true });
+    for (const poly of BATHY.survey.polys) {
+      const cls = /pond/i.test(poly.name || "") ? 3 : 2;
+      sx0.clearRect(0, 0, WPX, HPX); sx0.fillStyle = "#fff"; sx0.beginPath();
+      for (const ring of poly.rings) ring.forEach((pt, i) => { const [px, py] = P(...m2k(pt)); i ? sx0.lineTo(px, py) : sx0.moveTo(px, py); });
+      sx0.closePath(); sx0.fill("evenodd");
+      const sd0 = sx0.getImageData(0, 0, WPX, HPX).data;
+      for (let i = 0; i < mask.length; i++) if (sd0[i * 4 + 3] >= 128) { svIn[i] = 1; svCls[i] = cls; if (mask[i] === 0 || mask[i] === 3) mask[i] = cls; }
+    }
+    // the outside guard band (~30 m) and the hard-edge band (~8 m either side): a chamfer distance from the polygon's edge
+    const dil = (src, rPx) => { const out = new Uint8Array(src.length); const r = Math.max(1, rPx), r2 = r * r;
+      for (let i = 0; i < src.length; i++) { if (!src[i]) continue; const x = i % WPX, y = (i / WPX) | 0;
+        for (let dy = -r; dy <= r; dy++) { const yy = y + dy; if (yy < 0 || yy >= HPX) continue; for (let dx = -r; dx <= r; dx++) { if (dx * dx + dy * dy > r2) continue; const xx = x + dx; if (xx >= 0 && xx < WPX) out[yy * WPX + xx] = 1; } } }
+      return out; };
+    const edge = new Uint8Array(WPX * HPX);   // boundary pixels: inside with an outside 4-neighbour, or the reverse
+    for (let i = 0; i < svIn.length; i++) { const x = i % WPX, y = (i / WPX) | 0, v = svIn[i];
+      if ((x > 0 && svIn[i - 1] !== v) || (x < WPX - 1 && svIn[i + 1] !== v) || (y > 0 && svIn[i - WPX] !== v) || (y < HPX - 1 && svIn[i + WPX] !== v)) edge[i] = 1; }
+    svHard = dil(edge, Math.round(8 / MPP));
+    const out30 = dil(svIn, Math.round(30 / MPP)); svGuard = new Uint8Array(WPX * HPX); for (let i = 0; i < out30.length; i++) svGuard[i] = out30[i] && !svIn[i] ? 1 : 0;
+    let n = 0; for (let i = 0; i < svIn.length; i++) n += svIn[i]; MAP.survey = n;
+    await yieldUI();
+  }
+  if (svGuard) for (let i = 0; i < mask.length; i++) if (svGuard[i] && mask[i] === 3) mask[i] = 0;   // a mapped pond that spills past its surveyed shore
+  const svBase = svGuard ? mask.slice() : null;   // what the guard band held before the heuristics
   // colour map (land only matters; water is shaded live)
   const cv = document.createElement("canvas"); cv.width = WPX; cv.height = HPX; const c = cv.getContext("2d");
   c.fillStyle = "#b9b4a4"; c.fillRect(0, 0, WPX, HPX);
@@ -1245,7 +1274,7 @@ async function buildMap(LF) {
     if (deepened) BATHY.assumed = (BATHY.assumed || 0) + deepened;
     if (BATHY.assumed) { const half = U.uBathy.value.image.data; for (let q = 0; q < half.length; q++) half[q] = THREE.DataUtils.toHalfFloat(BATHY.dep[q]); U.uBathy.value.needsUpdate = true; }
     MAP.lidarWater = fixed; await yieldUI(); }
-  const pd = pcx.getImageData(0, 0, WPX, HPX).data; for (let i = 0; i < mask.length; i++) if (pd[i * 4] > 128) mask[i] = 0;
+  const pd = pcx.getImageData(0, 0, WPX, HPX).data; for (let i = 0; i < mask.length; i++) if (pd[i * 4] > 128) mask[i] = svIn[i] ? svCls[i] : 0;
   // marinas: boats moored at the docks read as dry land in the lidar, which cut Diversey Harbor's west half off. Docks only
   // float on water, so the water runs under and ~7 m around every floating dock (where the survey is less than ~3.5 m above
   // the lake: hulls, not the park), with a nominal 2.5 m depth where the survey reads dry
@@ -1312,6 +1341,7 @@ async function buildMap(LF) {
       while (ov.length) { const i = ov.pop(); for (let d = 0; d < 4; d++) { const n = i + NB[d]; if (n >= 0 && n < mask.length && !mask[n] && !seen[n]) { seen[n] = 1; ov.push(n); } } }
       if (!big && !edge && !solid && wcls) { for (let k = 0; k < t; k++) mask[q[k]] = wcls; filled += t; } }
     MAP.specks = filled; }
+  if (svGuard) { let undone = 0; for (let i = 0; i < mask.length; i++) { if (svIn[i]) { if (mask[i] !== 1) mask[i] = svCls[i]; } else if (svGuard[i] && mask[i] !== svBase[i] && mask[i] !== 1) { mask[i] = svBase[i]; undone++; } } MAP.surveyGuarded = undone; }
   await yieldUI();
   // one byte per pixel (class * 85); DataTexture rows run south->north, canvas rows north->south
   const flipped = new Uint8Array(WPX * HPX); for (let y = 0; y < HPX; y++) { const src = (HPX - 1 - y) * WPX, dst = y * WPX; for (let x = 0; x < WPX; x++) flipped[dst + x] = mask[src + x] * 85; }
@@ -1334,13 +1364,15 @@ async function buildMap(LF) {
   const sd = scx.getImageData(0, 0, WPX, HPX).data;   // steel breakers: the water is drawn right up to (and over) them; the 3-D wall stands out of it
   const wet = new Uint8Array(WPX * HPX); for (let i = 0; i < wet.length; i++) wet[i] = mask[i] || sd[i * 4] > 64 ? 255 : 0;
   await blur(wet, Math.max(1, Math.round(4.5 / MPP)), 2);   // ~5 m: rounds pixel and survey-grid steps
-  for (let i = 0; i < wet.length; i++) if (pd[i * 4] > 128 && sd[i * 4] <= 64) wet[i] = Math.min(wet[i], 70);   // but piers and breakwaters stay solid (steel breakers: water to the wall)
+  for (let i = 0; i < wet.length; i++) if (pd[i * 4] > 128 && sd[i * 4] <= 64 && !svIn[i]) wet[i] = Math.min(wet[i], 70);   // but piers and breakwaters stay solid (steel breakers: water to the wall)
+  if (svHard) for (let i = 0; i < wet.length; i++) if (svHard[i]) wet[i] = mask[i] ? 255 : 0;   // the surveyed walls: a hard edge, no blur
   const lc = document.createElement("canvas"); lc.width = WPX; lc.height = HPX; const lx = lc.getContext("2d", { willReadFrequently: true });
   lx.fillStyle = "#000"; lx.fillRect(0, 0, WPX, HPX); lx.lineCap = "round"; lx.strokeStyle = "#fff";
   feats.filter((f) => f.kind === "road").forEach((f) => { lx.lineWidth = 4 * SC; path(lx, f.pts, false); lx.stroke(); });
   lx.strokeStyle = "#999"; lx.lineWidth = 3 * SC; feats.filter((f) => f.kind === "building" && f.closed).forEach((f) => { path(lx, f.pts, true); lx.stroke(); });
   const ld = lx.getImageData(0, 0, WPX, HPX).data, light = new Uint8Array(WPX * HPX); for (let i = 0; i < light.length; i++) light[i] = ld[i * 4];
   await blur(light, Math.max(2, Math.round(5 / MPP)), 2);
+  //  A = hard edge: 255 along the surveyed harbour walls, where the shoreline is exact (no noise, no rounding)
   //  B = distance from the shore (land, piers and walls) in km, 0-1, on a coarser grid: where shore-fast ice forms
   const DS = 4, DW = Math.ceil(WPX / DS), DH = Math.ceil(HPX / DS), dist = new Float32Array(DW * DH).fill(1e6);
   for (let y = 0; y < DH; y++) for (let x = 0; x < DW; x++) { const i = Math.min(y * DS, HPX - 1) * WPX + Math.min(x * DS, WPX - 1); if (!mask[i] || pd[i * 4] > 128) dist[y * DW + x] = 0; }
@@ -1352,7 +1384,7 @@ async function buildMap(LF) {
   await yieldUI();
   const looks = new Uint8Array(WPX * HPX * 4);
   for (let y = 0; y < HPX; y++) { const src = (HPX - 1 - y) * WPX, dst = y * WPX, dy = Math.min(Math.floor((HPX - 1 - y) / DS), DH - 1) * DW;
-    for (let x = 0; x < WPX; x++) { const o = (dst + x) * 4; looks[o] = wet[src + x]; looks[o + 1] = Math.min(255, light[src + x] * 1.6); looks[o + 2] = Math.min(255, Math.round(dist[dy + Math.min(Math.floor(x / DS), DW - 1)] * DS * MPP / 1000 * 255)); looks[o + 3] = 255; } }
+    for (let x = 0; x < WPX; x++) { const o = (dst + x) * 4; looks[o] = wet[src + x]; looks[o + 1] = Math.min(255, light[src + x] * 1.6); looks[o + 2] = Math.min(255, Math.round(dist[dy + Math.min(Math.floor(x / DS), DW - 1)] * DS * MPP / 1000 * 255)); looks[o + 3] = svHard && svHard[src + x] ? 255 : 0; } }
   const looksTex = new THREE.DataTexture(looks, WPX, HPX, THREE.RGBAFormat); looksTex.unpackAlignment = 1; looksTex.minFilter = looksTex.magFilter = THREE.LinearFilter; looksTex.needsUpdate = true;
   U.uMapLooks.value = looksTex;
   const colTex = new THREE.CanvasTexture(cv); colTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); colTex.minFilter = THREE.LinearMipmapLinearFilter;
@@ -1643,7 +1675,8 @@ async function setBathy(b) {
   const t = new THREE.DataTexture(half, g.nx, g.ny, THREE.RedFormat, THREE.HalfFloatType); t.minFilter = t.magFilter = THREE.LinearFilter; t.needsUpdate = true;
   const x0 = g.x0 / 1000, y0 = g.y0 / 1000, w = (g.nx - 1) * g.dx / 1000, h = (g.ny - 1) * g.dx / 1000;
   U.uBathy.value = t; U.uBathyMin.value.set(x0, y0); U.uBathySize.value.set(w, h); U.uHasBathy.value = 1;
-  Object.assign(BATHY, { ok: true, g, dep, src: srcU8, level, x0, y0, w, h, sources: b.sources, probe: b.probe, cov: b.probe && b.probe.world && b.probe.world.coverage });
+  Object.assign(BATHY, { ok: true, g, dep, src: srcU8, level, x0, y0, w, h, sources: b.sources, probe: b.probe, cov: b.probe && b.probe.world && b.probe.world.coverage,
+    survey: b.survey && b.survey.polys ? b.survey : null });   // the 2023 harbour survey: its shoreline polygons (local m) are the harbour's walls (buildMap)
   // finer lidar grid (4 m, Monroe Harbor to Montrose, nearshore band only): the water's edge and nearshore depth
   const d = b.detail; BATHY.det = null;
   if (d && d.z_cm && d.src) { const dz = await unpackI16(d.z_cm), ds = await gunzipB64(d.src), dn = d.nx * d.ny, dd = new Float32Array(dn);
@@ -1992,7 +2025,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       vec2 pk = vec2(vW.x, -vW.z); float wetF = 1.0;
       if (uHasMap > 0.5 && pk.x > uMapMin.x && pk.y > uMapMin.y && pk.x < uMapMin.x + uMapSize.x && pk.y < uMapMin.y + uMapSize.y) {
         vec2 muv = (pk - uMapMin) / uMapSize; float cls = floor(texture2D(uMapMask, muv).r * 3.0 + 0.5); if (cls > 2.5) discard;
-        wetF = texture2D(uMapLooks, muv).r + noise(pk * 300.0) * 0.12 - 0.06; if (wetF <= 0.5 && vFlood < 0.5) discard; }
+        vec4 lk = texture2D(uMapLooks, muv); wetF = lk.r + (noise(pk * 300.0) * 0.12 - 0.06) * (1.0 - lk.a); if (wetF <= 0.5 && vFlood < 0.5) discard; }
       if (iceAt(pk, 0.2, noise(pk * 1.7)) > 0.3) discard;
       vec2 p = vP; vec3 V = normalize(uCamPos - vW); float foot = max(length(fwidth(p)), 1e-3);
       vec2 grad = vec2(0.0); float steep = 0.0, unres = 0.0, eta = 0.0, etaP = 0.0; vec2 tn = vec2(-uShoreN2.y, uShoreN2.x); float sAl = dot(p, tn), dO = distOff(p);
@@ -3878,7 +3911,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildLabels(); requestAnima
       for (const h of DATA.hist) await addHistory(h);
       if (!SRC.hist.length) { const o = document.createElement("option"); o.textContent = "No historical periods in this page"; $("#hist-pick").appendChild(o); } else histNote(); };
     { const o = document.createElement("option"); o.id = "hist-wait"; o.disabled = true; o.textContent = "Loading historical periods…"; $("#hist-pick").appendChild(o); }
-    const about = () => { $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""} GPU: ${GPU.name || "unknown"}, ${GPU.tex} textures, ${GPU.fvec} uniform vectors.${GPU.errs.length ? ` Shader problem: ${GPU.errs.join(" | ")}` : ""}`; };
+    const about = () => { $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}${BATHY.survey ? `; Diversey Harbor and the lagoon from the ${(BATHY.survey.date || "2023").slice(0, 4)} USGS / Cook County survey` : ""}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""} GPU: ${GPU.name || "unknown"}, ${GPU.tex} textures, ${GPU.fvec} uniform vectors.${GPU.errs.length ? ` Shader problem: ${GPU.errs.join(" | ")}` : ""}`; };
     await setBathy(DATA.bathy); await yieldUI();
     if (DATA.lake) { await buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
     mmFit(); buildMinimap(); await yieldUI();
