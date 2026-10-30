@@ -4,6 +4,8 @@ Aerial imagery of Diversey Harbor and the Lincoln Park lagoon for the page: Cook
 Cook County GIS serves its county-wide orthophotos (6 in / 0.15 m, RGB+NIR) from an ArcGIS ImageServer without a key.
 One export covers the harbour, the Fullerton channel and the South Lagoon (BOX) as a JPEG in plain lat/lon
 (EPSG:4326, so the page can drape it with its linear lat/lon-to-metres mapping), about 0.55 m per pixel, ~2-3 MB.
+The server keeps its pixels square in degrees and widens the box to fit the size asked for, so the export is made with
+f=json and the extent it reports is what the page uses (the box asked for would misplace the photo by up to ~170 m).
 The image hardly changes, so a previous snapshot's copy is reused for a month.
 
     python -m app.ortho --out data/ortho/diversey.jpg --meta ortho.json [--prev prev_ortho.json --prev-image prev.jpg]
@@ -50,15 +52,16 @@ def export_url(box=BOX, size=None, quality=82):
     return SERVICE + "?" + urllib.parse.urlencode(q)
 
 
-def meta_for(path, box=BOX, size=None, fetched=None):
-    s, w, n, e = box
-    wpx, hpx = size or size_for(box)
-    return {"src": path, "lat0": s, "lon0": w, "lat1": n, "lon1": e, "w": wpx, "h": hpx, "source": SOURCE, "year": YEAR,
-            "fetched": fetched or dt.datetime.now(UTC).isoformat(timespec="seconds")}
+def meta_for(path, extent, size, box=BOX, fetched=None):
+    """extent: (S, W, N, E) the image really covers, as the server reported it."""
+    s, w, n, e = extent
+    return {"src": path, "lat0": s, "lon0": w, "lat1": n, "lon1": e, "w": size[0], "h": size[1], "box": list(box), "extent": "server",
+            "source": SOURCE, "year": YEAR, "fetched": fetched or dt.datetime.now(UTC).isoformat(timespec="seconds")}
 
 
 def reusable(prev_meta, prev_image, box=BOX, now=None):
-    """The previous snapshot's image is used again when it is the same box and source and under REUSE_DAYS old."""
+    """The previous snapshot's image is used again when it is the same request and source, under REUSE_DAYS old, and
+    its extent came from the server (an older copy placed by the box asked for is fetched again)."""
     if not prev_meta or not prev_image or not os.path.exists(prev_image) or os.path.getsize(prev_image) < MIN_BYTES:
         return False
     m = prev_meta[0] if isinstance(prev_meta, list) else prev_meta
@@ -66,22 +69,28 @@ def reusable(prev_meta, prev_image, box=BOX, now=None):
         age = (now or dt.datetime.now(UTC)) - dt.datetime.fromisoformat(m["fetched"])
     except (KeyError, ValueError, TypeError):
         return False
-    same = all(abs(m.get(k, 1e9) - v) < 1e-6 for k, v in zip(("lat0", "lon0", "lat1", "lon1"), box)) and m.get("source") == SOURCE
+    same = m.get("box") == list(box) and m.get("extent") == "server" and m.get("source") == SOURCE
     return same and dt.timedelta(0) <= age < dt.timedelta(days=REUSE_DAYS)
 
 
-def fetch(out, box=BOX, timeout=300):
-    url = export_url(box)
+def _get(url, timeout):
     req = urllib.request.Request(url, headers={"User-Agent": lf.UA})
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        raw = r.read()
-        ctype = r.headers.get("Content-Type", "")
+        return r.read(), r.headers.get("Content-Type", "")
+
+
+def fetch(out, box=BOX, timeout=300, get=_get):
+    """Export, download, and return (bytes, the extent the image really covers as (S, W, N, E), (w, h))."""
+    meta, _ = get(export_url(box).replace("f=image", "f=json"), timeout)
+    m = json.loads(meta)
+    ext = m["extent"]
+    raw, ctype = get(m["href"], timeout)
     if len(raw) < MIN_BYTES or "image" not in ctype:
         raise RuntimeError(f"ortho export returned {len(raw)} bytes of {ctype}")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "wb") as fh:
         fh.write(raw)
-    return len(raw)
+    return len(raw), (ext["ymin"], ext["xmin"], ext["ymax"], ext["xmax"]), (m["width"], m["height"])
 
 
 def main():
@@ -105,8 +114,8 @@ def main():
         m = dict(prev[0] if isinstance(prev, list) else prev, src=a.rel)
         log.info("reused the previous ortho (%s)", m.get("fetched"))
     else:
-        n = fetch(a.out)
-        m = meta_for(a.rel)
+        n, ext, size = fetch(a.out)
+        m = meta_for(a.rel, ext, size)
         log.info("fetched %d KB from %s", n // 1000, SOURCE)
     with open(a.meta, "w") as fh:
         json.dump([m], fh)

@@ -16,12 +16,31 @@ def test_export_size_and_url():
 def test_reuse_rule(tmp_path):
     img = tmp_path / "prev.jpg"; img.write_bytes(b"x" * (ortho.MIN_BYTES + 1))
     now = dt.datetime(2026, 10, 30, tzinfo=dt.timezone.utc)
-    fresh = [ortho.meta_for("data/ortho/diversey.jpg", fetched="2026-10-15T00:00:00+00:00")]
-    old = [ortho.meta_for("data/ortho/diversey.jpg", fetched="2026-09-01T00:00:00+00:00")]
+    ext = (41.91166, -87.64, 41.93834, -87.626)
+    fresh = [ortho.meta_for("data/ortho/diversey.jpg", ext, (2110, 4021), fetched="2026-10-15T00:00:00+00:00")]
+    old = [ortho.meta_for("data/ortho/diversey.jpg", ext, (2110, 4021), fetched="2026-09-01T00:00:00+00:00")]
     assert ortho.reusable(fresh, str(img), now=now)
     assert not ortho.reusable(old, str(img), now=now)
     assert not ortho.reusable(fresh, str(tmp_path / "missing.jpg"), now=now)
-    moved = [dict(fresh[0], lat0=41.9)]
+    moved = [dict(fresh[0], box=[41.9, -87.64, 41.935, -87.626])]
     assert not ortho.reusable(moved, str(img), now=now)
+    placed_by_request = [{k: v for k, v in fresh[0].items() if k != "extent"}]     # an older copy without the server's extent
+    assert not ortho.reusable(placed_by_request, str(img), now=now)
     small = tmp_path / "small.jpg"; small.write_bytes(b"x" * 100)
     assert not ortho.reusable(fresh, str(small), now=now)
+
+
+def test_fetch_uses_the_servers_extent(tmp_path):
+    import json
+    calls = []
+
+    def get(url, timeout):
+        calls.append(url)
+        if "f=json" in url:
+            return json.dumps({"href": "https://x/img.jpg", "width": 2110, "height": 4021,
+                               "extent": {"xmin": -87.64, "ymin": 41.91166, "xmax": -87.626, "ymax": 41.93834}}).encode(), "application/json"
+        return b"j" * (ortho.MIN_BYTES + 5), "image/jpeg"
+    n, ext, size = ortho.fetch(str(tmp_path / "o.jpg"), get=get)
+    assert ext == (41.91166, -87.64, 41.93834, -87.626) and size == (2110, 4021) and calls[1] == "https://x/img.jpg"
+    m = ortho.meta_for("data/ortho/diversey.jpg", ext, size)
+    assert m["lat0"] == 41.91166 and m["lat1"] == 41.93834 and m["extent"] == "server"
