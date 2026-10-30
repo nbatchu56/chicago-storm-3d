@@ -73,6 +73,22 @@ Assumptions to know: the NOAA chart's interpolated nearshore cells are floored a
 
 **Diversey Harbor on the page**: the survey's shoreline polygons are the water mask (`bathy.survey.polys`): inside them the water is certain, within 30 m outside no map heuristic may add water, and the edge is drawn hard (no blur, no shoreline noise). The harbour's waves come from the harbor SWAN domain: the lake's sea through the mouth plus the wind's own chop (the Water card's *Harbor chop* and *Through the mouth* rows, with the fetch), and the Diversey launch rating uses them. *Satellite → Aerial 2024* drapes Cook County's 2024 orthophoto (6 in, `app/ortho.py`, one ~2 MB JPEG at 0.55 m beside the page, refreshed monthly) over the harbour and the lagoon. The **lagoon's 1000 m rowing course** (Lincoln Park Boat Club's Chicago Sprints) is drawn from the south face of the Fullerton bridge along the lagoon's centreline with a mark every 100 m (`tools/lagoon_course.py`; Settings → *Lagoon 1000 m course*). `node tools/page_probe.mjs --site <built page dir> --harbor` checks a built page's harbour edge headless (Playwright) and takes screenshots.
 
+## El Niño tracker (Experimental → El Niño)
+
+`app/enso.py now` runs in every snapshot: NOAA CPC's ONI, RONI, weekly Niño 1+2/3/3.4/4 and SOI, NOAA PSL's MEI v2, the
+newest OISST equatorial Pacific anomaly map, the weekly Niño-3.4 trend (4 and 12 weeks), the current event against the
+strong ones since 1979 (1982-83, 1997-98, 2015-16, 2023-24) season by season, and the cold season so far at O'Hare.
+`app/enso.py climate` (the *El Niño composites* workflow, monthly → `enso` branch) classes the winters since 1979 by
+their Dec-Feb ONI and compares them off Chicago: O'Hare temperature, nights ≤ 0 °F and snow (NCEI GHCN-D), Lake
+Michigan's maximum ice (GLERL), days with ice at the Diversey nearshore cell (GLERL gridded ice), December lake
+temperature (GLSEA), Calumet Harbor's Dec-Apr level change and ERA5 gale hours at buoy 45198. In strong El Niño winters
+O'Hare ran about 5 °F warmer with a third of the sub-zero nights, the lake's ice peaked near 23% against 37%, the Chicago
+shore had ~13 ice days against ~33 (open water and waves through more of the winter), and onshore gales were more
+frequent. *View → El Niño* draws the gridded difference (Jan-Mar ice, strong or any El Niño; December water) on the lake.
+The El Niño symbol (`ensoIcon()` in the page: a warm sun-disc riding a Pacific swell with an eastward arrow) marks the
+tracker, the layer's legend, Upsets cards that fit the El Niño winter pattern (southerly gales, rain events, Nov-Mar)
+and an "El Niño-mild" pill on the Air card when an El Niño cold-season day runs 5 °F or more above usual.
+
 ## Learned correction and scorecard (experimental)
 
 The wave model's misses are fairly consistent (too high in some winds, too low in others), so it can learn from the buoys:

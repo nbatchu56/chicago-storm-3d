@@ -94,6 +94,11 @@ if (has("--eval")) {   // run a JS expression file in the page (window.__world i
   const r = await page.evaluate(readFileSync(opt("--eval"), "utf8")); console.log(JSON.stringify(r, null, 1));
 }
 
+if (has("--el")) {   // a screenshot of one element: --el <selector> out.png (after --eval, which can open a panel)
+  const out = args[args.indexOf("--el") + 2] || "el.png"; await page.waitForTimeout(800);
+  await page.locator(opt("--el")).first().screenshot({ path: out, timeout: 150000 }); console.log("wrote " + out);
+}
+
 if (has("--shot")) {
   const v = VIEWS[opt("--shot")] || opt("--shot").split(",").map(Number); const out = args[args.indexOf("--shot") + 2] || "shot.png";
   await page.evaluate(([la, lo, d, h, p]) => { const W = window.__world; const [x, y] = W.ll(la, lo); W.flyTo(x, y, d, h, p, true); }, v);

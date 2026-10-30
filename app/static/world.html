@@ -66,6 +66,17 @@ body.kiosk #timeline #scrub { pointer-events: none; } body.kiosk #hud .sub { fon
 #exp-lab, .xpanel { display: contents; } #exp-lab[hidden], .xpanel[hidden] { display: none; }
 #exp-tabs { grid-template-columns: repeat(4, 1fr); grid-auto-flow: row; }
 .upsets { display: grid; gap: 8px; }
+/* El Niño tracker: the one symbol (ensoIcon), the status, the Pacific map, the charts, the Lake Michigan table */
+.enso-ic { display: inline-block; vertical-align: -3px; width: 16px; height: 16px; flex: none; }
+.enso-badge { display: inline-flex; align-items: center; gap: 3px; font: 600 10px var(--font-data); color: #ffb380; padding: 1px 5px 1px 2px; border: 1px solid rgba(255, 140, 70, .45); border-radius: 9px; background: rgba(255, 110, 40, .1); white-space: nowrap; }
+.enso { display: grid; gap: 8px; }
+.enso .hd { display: flex; gap: 8px; align-items: center; } .enso .hd .enso-ic { width: 30px; height: 30px; }
+.enso .hd b { font: 600 14px var(--font-ui, inherit); color: #ffb380; } .enso .hd span { font: 11px var(--font-data); color: var(--muted); display: block; }
+.enso canvas { width: 100%; border-radius: 4px; border: 1px solid var(--line); display: block; }
+.enso svg.chart { width: 100%; height: auto; display: block; }
+.enso table { width: 100%; border-collapse: collapse; font: 10.5px var(--font-data); } .enso td, .enso th { padding: 2px 3px; text-align: right; border-bottom: 1px solid var(--line); }
+.enso td:first-child, .enso th:first-child { text-align: left; color: var(--muted); } .enso th { font-weight: 600; color: var(--fg); } .enso td.now { color: #ffb380; }
+.enso ul { margin: 0; padding-left: 16px; font: 11px/1.4 var(--font-data); } .enso h3 { margin: 4px 0 0; font: 600 11px var(--font-data); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 .upsets .strip { position: relative; height: 34px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: rgba(255, 255, 255, .03); }
 .upsets .strip i { position: absolute; top: 0; bottom: 14px; opacity: .85; } .upsets .strip i.glass { background: rgba(95, 201, 168, .22); }
 .upsets .strip i.ev { top: 4px; bottom: 16px; border-radius: 2px; opacity: 1; }
@@ -241,7 +252,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
   #timeline { grid-template-columns: auto 1fr; } .speed { display: none; }
   #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 128px + env(safe-area-inset-bottom, 0px)) !important; width: auto; max-width: 420px; padding: 6px 9px; gap: 3px; cursor: pointer; }
 }
-/* ---- the information toolbar: a header strip and a row of cards (radar map, Air, Air vs water, Water) above the timeline */
+/* ---- the information toolbar: a header strip and a row of cards (radar map, Air vs water compass, Air, Water, Atmosphere) above the timeline */
 :root { --barh: 212px; --cardh: 256px; }   /* every card the same height; the radar map fills its card */
 #bar { position: absolute; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 84px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 6px; pointer-events: none; z-index: 3; }
 #bar > * { pointer-events: auto; }
@@ -329,8 +340,8 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
     <div id="kstrip" hidden></div>
     <div id="cards">
       <div id="minimap" class="panel card"><canvas id="mm" width="300" height="444" aria-label="Map: click to go there"></canvas><div class="mmstat" id="mmstat" hidden></div><div class="cap"><button id="mmview" type="button" title="Switch between the radar map and the local map">Local map</button><span id="mmscale"></span></div></div>
-      <div class="panel card cat air" id="cat-air"><button class="cathead" type="button" aria-expanded="false"><span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h9a3 3 0 1 0-3-3M3 12h13a3 3 0 1 1-3 3M3 16h7a2 2 0 1 1-2 2"/></svg>Air</span></button><div class="hero" id="hero-air"></div><div class="wxline" id="wx-air"></div><dl class="readouts" id="ro-air-top"></dl><div class="more"><dl class="readouts" id="ro-air"></dl></div></div>
       <div class="panel card" id="vsbox"><div class="cathead" style="color:var(--muted)"><span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>Air vs water · drag to turn</span></div><div class="vs" id="vs" title="Air and water as two pushes on the compass you are looking at: each arrow points the way that force travels, its length is its strength. Drag the rose to turn the view; double-click to face north."></div></div>
+      <div class="panel card cat air" id="cat-air"><button class="cathead" type="button" aria-expanded="false"><span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h9a3 3 0 1 0-3-3M3 12h13a3 3 0 1 1-3 3M3 16h7a2 2 0 1 1-2 2"/></svg>Air</span></button><div class="hero" id="hero-air"></div><div class="wxline" id="wx-air"></div><dl class="readouts" id="ro-air-top"></dl><div class="more"><dl class="readouts" id="ro-air"></dl></div></div>
       <div class="panel card cat water" id="cat-water"><button class="cathead" type="button" aria-expanded="false"><span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12c2.5 0 2.5-3 5-3s2.5 3 5 3 2.5-3 5-3 2.5 3 5 3M2 18c2.5 0 2.5-3 5-3s2.5 3 5 3 2.5-3 5-3 2.5 3 5 3"/></svg>Water</span></button><div class="hero" id="hero-water"></div><div class="wxline" id="wx-water"></div><dl class="readouts" id="ro-water-top"></dl><div class="more"><dl class="readouts" id="ro-water"></dl><div class="launches" id="launches" hidden></div></div></div>
       <div class="panel card cat sky" id="cat-sky"><div class="cathead"><span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Atmosphere</span></div><dl class="readouts" id="ro-sky"></dl></div>
       <dl class="readouts panel card" id="readouts" hidden></dl>
@@ -389,7 +400,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
     </section>
     <section id="sec-exp" hidden>
       <h2>Experimental</h2>
-      <div class="seg" role="group" aria-label="Experimental tab" id="exp-tabs"><button data-xtab="lab" aria-pressed="true">Weather lab</button><button data-xtab="upsets" aria-pressed="false" title="The weather that takes the glass away: wind runs, wave events, wind shifts, storms and water-level swings, past two days and the forecast">Upsets</button><button data-xtab="hist" aria-pressed="false" title="Archived radar, observations and lake temperature for a past time">Historical</button><button data-xtab="import" aria-pressed="false" title="Conditions read from a forecast app's screenshot">Screenshot</button></div>
+      <div class="seg" role="group" aria-label="Experimental tab" id="exp-tabs"><button data-xtab="lab" aria-pressed="true">Weather lab</button><button data-xtab="upsets" aria-pressed="false" title="The weather that takes the glass away: wind runs, wave events, wind shifts, storms and water-level swings, past two days and the forecast">Upsets</button><button data-xtab="hist" aria-pressed="false" title="Archived radar, observations and lake temperature for a past time">Historical</button><button data-xtab="import" aria-pressed="false" title="Conditions read from a forecast app's screenshot">Screenshot</button><button data-xtab="enso" aria-pressed="false" title="El Niño tracker: the Pacific, the indices and their trend, and what El Niño winters do to Lake Michigan off Chicago" hidden>El Niño</button></div>
       <div id="exp-hist" class="xpanel" hidden>
       <select id="hist-pick" aria-label="Historical period"></select>
       <p class="note" id="hist-note" hidden></p>
@@ -407,6 +418,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
       <p class="note" id="imp-note">Wind, gusts and waves read from a forecast app's screenshot drive the world: the waves enter SWAN as the offshore condition and are carried to the shore over the real lake bottom.</p>
       <div id="imp-table" style="overflow-x:auto;max-height:180px;font:11px var(--font-data)"></div>
       </div>
+      <div id="exp-enso" class="enso" hidden></div>
       <div id="exp-upsets" class="upsets" hidden>
         <p class="note" id="ups-now"></p>
         <div id="ups-strip" class="strip" aria-label="Upsets timeline"></div>
@@ -436,7 +448,8 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
     <section>
       <h2>View</h2>
       <div class="seg" role="group" aria-label="Overlay"><button data-ov="natural" aria-pressed="true">Natural</button><button data-ov="temp" aria-pressed="false">Water temp</button><button data-ov="radar" aria-pressed="false">Radar</button></div>
-      <div class="seg" role="group" aria-label="Lake overlay"><button data-ov="depth" aria-pressed="false">Depth</button><button data-ov="hs" aria-pressed="false">Wave height</button><button data-ov="chop" aria-pressed="false">Chop</button><button data-ov="flow" aria-pressed="false" title="Wave energy, with streaks moving the way it travels">Energy flow</button><button data-ov="spots" aria-pressed="false">Chop spots</button></div>
+      <div class="seg" role="group" aria-label="Lake overlay"><button data-ov="depth" aria-pressed="false">Depth</button><button data-ov="hs" aria-pressed="false">Wave height</button><button data-ov="chop" aria-pressed="false">Chop</button><button data-ov="flow" aria-pressed="false" title="Wave energy, with streaks moving the way it travels">Energy flow</button><button data-ov="spots" aria-pressed="false">Chop spots</button><button data-ov="enso" aria-pressed="false" title="How El Niño winters differ from all winters on southern Lake Michigan (ice cover or December water temperature)" hidden>El Niño</button></div>
+      <div class="seg" role="group" aria-label="El Niño layer" id="enso-seg" hidden><button data-enso="strong" aria-pressed="true">Ice, strong El Niño</button><button data-enso="ice" aria-pressed="false">Ice, any El Niño</button><button data-enso="sst" aria-pressed="false">Water, Dec</button></div>
       <div class="seg" role="group" aria-label="Chop spots" id="spots-seg" hidden><button data-spots="usual" aria-pressed="true">Usual</button><button data-spots="now" aria-pressed="false">Right now</button></div>
       <div class="row" hidden><label for="exag">Cloud height scale</label><output id="exag-o">×1</output></div>
       <input type="range" id="exag" min="1" max="5" step="0.5" value="1" hidden>
@@ -505,6 +518,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
 <script id="learn-data" type="application/json"></script>
 <script id="levels-data" type="application/json"></script>
 <script id="ortho-data" type="application/json"></script>
+<script id="enso-data" type="application/json"></script>
 <script id="earth-data" type="application/json"></script>
 <script id="wn3-data" type="application/json"></script>
 <script id="meta-data" type="application/json"></script>
@@ -1621,6 +1635,98 @@ function gridValue(G, xk, yk) { if (!G) return null; const fx = clamp((xk - G.mi
   const i0 = Math.min(Math.floor(fx), G.n[0] - 2), j0 = Math.min(Math.floor(fy), G.n[1] - 2), tx = fx - i0, ty = fy - j0, v = (j, i) => G.vals[j * G.n[0] + i];
   return (v(j0, i0) * (1 - tx) + v(j0, i0 + 1) * tx) * (1 - ty) + (v(j0 + 1, i0) * (1 - tx) + v(j0 + 1, i0 + 1) * tx) * ty; }
 
+// ---------------------------------------------------------------- El Niño tracker (enso-data: app.enso)
+// the one El Niño symbol, used wherever the page or a report points at El Niño's hand: the warm pool (an orange sun-disc)
+// riding east on the Pacific's surface (a blue swell) with the arrow of the warm water's eastward slosh
+function ensoIcon(cls = "enso-ic") { return `<svg class="${cls}" viewBox="0 0 24 24" aria-label="El Niño" role="img"><defs><radialGradient id="enso-g" cx="40%" cy="38%" r="62%"><stop offset="0" stop-color="#ffd27a"/><stop offset=".55" stop-color="#ff7a2f"/><stop offset="1" stop-color="#d9361f"/></radialGradient></defs>
+  <circle cx="10" cy="9.5" r="6.2" fill="url(#enso-g)"/><path d="M1.5 17.2c2.2 0 2.2-2 4.4-2s2.2 2 4.4 2 2.2-2 4.4-2 2.2 2 4.4 2" fill="none" stroke="#3fb6e6" stroke-width="2" stroke-linecap="round"/>
+  <path d="M15.5 9.5h6.2m-2.4-2.4 2.4 2.4-2.4 2.4" fill="none" stroke="#ffb380" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`; }
+const ENSO = { d: null, cur: null, kind: "strong", tex: {}, layer() { return ENSO.cur; } };
+// diverging ramps for the lake layer: ice (less = warm orange, more = ice blue), water (cold blue, warm red)
+// (hex strings here; ensoRamp makes them RGB when first used, after hexRGB below is defined)
+// ("as usual" is a lake grey-blue, so the layer still reads as water where El Niño changes little)
+const ENSO_ICE_HEX = [[0, "#c8321c"], [0.25, "#ff8a3d"], [0.5, "#5f8396"], [0.75, "#9fd8ff"], [1, "#f4fbff"]], ENSO_SST_HEX = [[0, "#2b6fd6"], [0.25, "#8fd0ff"], [0.5, "#5f8396"], [0.75, "#ff9a4a"], [1, "#d9361f"]];
+const ENSO_SPAN = { ice: 20, sst: 0.5 };   // display range: +-20 percentage points of ice, +-0.5 C of water
+const ensoRamp = (sst) => (sst ? ENSO_SST_HEX : ENSO_ICE_HEX).map(([f, h]) => [f, hexRGB(h)]);
+const ensoActive = () => { const i = ENSO.d && ENSO.d.indices; return !!(i && /El Niño/.test(i.status || "")); };
+const coldSeason = (t) => { const m = new Date(t).getMonth(); return m >= 10 || m <= 2; };   // Nov-Mar, when El Niño's hand shows over the Great Lakes
+async function setEnso(d) {
+  if (!d || !d.indices) return; ENSO.d = d;
+  document.querySelector('[data-xtab="enso"]').hidden = false; document.querySelector('[data-ov="enso"]').hidden = !(d.climate && d.climate.grids);
+  await ensoLayer(ENSO.kind);
+}
+async function ensoLayer(kind) {
+  ENSO.kind = kind; const G = ENSO.d && ENSO.d.climate && ENSO.d.climate.grids; if (!G) { ENSO.cur = null; return; }
+  const key = kind === "sst" ? "sst_dec_en_minus_all" : kind === "strong" ? "ice_strong_minus_all" : "ice_en_minus_all", g = G[key];
+  if (!g) { ENSO.cur = null; return; }
+  if (!ENSO.tex[key]) ENSO.tex[key] = await satTexture(g, (v) => rampAt(ensoRamp(kind === "sst"), (v + ENSO_SPAN[kind === "sst" ? "sst" : "ice"]) / (2 * ENSO_SPAN[kind === "sst" ? "sst" : "ice"])));
+  ENSO.cur = ENSO.tex[key];
+  document.querySelectorAll("[data-enso]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.enso === kind)));
+  if (S.ov === "enso") { setSat(); renderLegend(); }
+}
+document.querySelectorAll("[data-enso]").forEach((b) => b.onclick = () => ensoLayer(b.dataset.enso));
+// the Pacific map: the OISST anomaly grid with the Niño boxes, on a canvas
+async function ensoPacific(cv, P) {
+  const q = await gunzipB64(P.b64), W = P.nlon, H = P.nlat, sc = 4; cv.width = W * sc; cv.height = H * sc; const c = cv.getContext("2d"), img = c.createImageData(W, H);
+  const RAMP = [[0, "#1d3f8f"], [0.35, "#6aa9e0"], [0.5, "#eef0f2"], [0.65, "#ffb06a"], [0.85, "#e8452a"], [1, "#7a0d12"]].map(([f, h]) => [f, hexRGB(h)]);   // (called after load)
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) { const v = q[j * W + i], o = ((H - 1 - j) * W + i) * 4;
+    const col = v ? rampAt(RAMP, (v - 1) / 253) : [52, 58, 60]; img.data[o] = col[0]; img.data[o + 1] = col[1]; img.data[o + 2] = col[2]; img.data[o + 3] = 255; }
+  const tmp = document.createElement("canvas"); tmp.width = W; tmp.height = H; tmp.getContext("2d").putImageData(img, 0, 0);
+  c.imageSmoothingEnabled = true; c.drawImage(tmp, 0, 0, W * sc, H * sc);
+  const X = (lon) => (lon - P.lon0) / (P.lon1 - P.lon0) * (W - 1) * sc + sc / 2, Y = (lat) => (P.lat1 - lat) / (P.lat1 - P.lat0) * (H - 1) * sc + sc / 2;
+  c.lineWidth = 1.2; c.font = "10px monospace"; c.textBaseline = "top";
+  for (const [name, [la0, la1, lo0, lo1]] of Object.entries(P.regions || {})) { const x0 = X(lo0), x1 = X(lo1), y0 = Y(la1), y1 = Y(la0);
+    c.strokeStyle = name === "Niño 3.4" ? "#111" : "rgba(20,20,20,.55)"; c.setLineDash(name === "Niño 3.4" ? [] : [3, 3]); c.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    c.fillStyle = "rgba(10,10,10,.8)"; c.fillText(name, x0 + 2, y0 + 2); }
+  c.setLineDash([]); c.strokeStyle = "rgba(0,0,0,.35)"; c.beginPath(); c.moveTo(0, Y(0)); c.lineTo(W * sc, Y(0)); c.stroke();
+}
+// a small line chart: series [{pts: [[x, y]], color, w, dash, label}], x and y ranges, horizontal reference lines
+function ensoChart(series, xr, yr, refs, xTicks) {
+  const w = 300, h = 120, L = 26, R = 6, T = 6, B = 16, X = (x) => L + (x - xr[0]) / (xr[1] - xr[0]) * (w - L - R), Y = (y) => T + (yr[1] - y) / (yr[1] - yr[0]) * (h - T - B);
+  let s = `<svg class="chart" viewBox="0 0 ${w} ${h}">`;
+  for (const [v, c, lab] of refs) s += `<line x1="${L}" x2="${w - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="${c}" stroke-width="0.8" stroke-dasharray="${v ? "3 3" : ""}"/><text x="${L - 3}" y="${Y(v) + 3}" font-size="8" fill="#9aa7b0" text-anchor="end">${lab}</text>`;
+  for (const [x, lab] of xTicks) s += `<text x="${X(x)}" y="${h - 4}" font-size="8" fill="#9aa7b0" text-anchor="middle">${lab}</text>`;
+  for (const q of series) { const d = q.pts.filter((p) => p[1] != null).map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)} ${Y(p[1]).toFixed(1)}`).join("");
+    if (d) s += `<path d="${d}" fill="none" stroke="${q.color}" stroke-width="${q.w || 1.4}" ${q.dash ? `stroke-dasharray="${q.dash}"` : ""}/>`; }
+  return s + "</svg>";
+}
+function renderEnso() {
+  const el = $("#exp-enso"), d = ENSO.d; if (!d) { el.innerHTML = `<p class="note">No El Niño data in this page.</p>`; return; }
+  const I = d.indices, Wk = I.weekly || {}, sgn = (v, n = 1) => v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(n)}`;
+  const trend = Wk.slope12 == null ? "" : Wk.slope12 > 0.03 ? `rising ${sgn(Wk.slope12, 2)} °C a week over 12 weeks` : Wk.slope12 < -0.03 ? `falling ${sgn(Wk.slope12, 2)} °C a week over 12 weeks` : "steady over 12 weeks";
+  const C = d.climate, cmp = C && C.composite, row = (lab, key, fmt, nowv) => { const g = (cls) => cmp && cmp[key] && cmp[key][cls] ? fmt(cmp[key][cls].mean) : "—";
+    return `<tr><td>${lab}</td><td>${g("strong El Niño")}</td><td>${g("El Niño")}</td><td>${g("neutral")}</td><td>${g("La Niña")}</td><td>${g("all")}</td>${nowv !== undefined ? `<td class="now">${nowv}</td>` : "<td></td>"}</tr>`; };
+  const f0 = (v) => v.toFixed(0), f1 = (v) => v.toFixed(1), Ssn = d.season || {}, A = Ssn.air || {};
+  // the weekly Niño-3.4 over two years, and the current event against the strong events season by season
+  const wk = (I.series && I.series.weekly) || [], t0 = wk.length ? Date.parse(wk[0][0]) : 0, t1 = wk.length ? Date.parse(wk[wk.length - 1][0]) : 1;
+  const yrTicks = []; for (let y = new Date(t0).getUTCFullYear() + 1; y <= new Date(t1).getUTCFullYear(); y++) yrTicks.push([Date.UTC(y, 0, 1), String(y)]);
+  const weekly = ensoChart([{ pts: wk.map((r) => [Date.parse(r[0]), r[1]]), color: "#ff7a2f", w: 1.8 }, { pts: wk.map((r) => [Date.parse(r[0]), r[2]]), color: "#e8452a", w: 0.8, dash: "2 2" }],
+    [t0, t1], [-2, Math.max(4, ...wk.map((r) => r[2] || 0))], [[0, "#5a6670", "0"], [0.5, "#8a6a40", "+0.5"], [1.5, "#b8653a", "+1.5"], [2.5, "#d9361f", "+2.5"]], yrTicks);
+  const AN = I.analogs || {}, seasons = AN.seasons || [], ac = { "1982-83": "#8fd0ff", "1997-98": "#c7a4ff", "2015-16": "#f7d940", "2023-24": "#5fc9a8" };
+  const analog = ensoChart(Object.entries(AN.events || {}).map(([k, v]) => ({ pts: v.map((y, i) => [i, y]), color: ac[k] || "#999", w: 1 }))
+    .concat(AN.current ? [{ pts: AN.current.oni.map((y, i) => [i, y]), color: "#ff7a2f", w: 2.4 }] : []), [0, seasons.length - 1], [0, 3], [[0.5, "#5a6670", "+0.5"], [1.5, "#8a6a40", "+1.5"], [2.5, "#b8653a", "+2.5"]],
+    seasons.map((s, i) => [i, i % 2 ? "" : s]));
+  const flags = (d.flags || []).map((f) => `<li>${f.text}.</li>`).join("");
+  el.innerHTML = `<div class="hd">${ensoIcon()}<div><b>${I.strength && I.status && /El Niño/.test(I.status) ? `${I.strength[0].toUpperCase()}${I.strength.slice(1)} El Niño` : (I.status || "ENSO")}</b>
+      <span>Niño-3.4 ${sgn(Wk.n34)} °C (week of ${Wk.t ? fmtDay(Wk.t) : "?"}) · ${trend}</span>
+      <span>ONI ${I.oni ? `${I.oni.season} ${sgn(I.oni.anom, 2)}` : "—"} · RONI ${I.roni ? sgn(I.roni.anom, 2) : "—"} · MEI ${I.mei ? sgn(I.mei.v, 2) : "—"} · SOI ${I.soi ? sgn(I.soi.v, 1) : "—"}${I.run_seasons ? ` · ${I.run_seasons} seasons above +0.5` : ""}</span></div></div>
+    ${d.pacific ? `<h3>Equatorial Pacific, ${fmtDay(d.pacific.t.slice(0, 10))} (SST anomaly, −4 to +4 °C)</h3><canvas id="enso-map"></canvas>` : ""}
+    <h3>Niño-3.4 weekly, two years <span style="color:#ff7a2f">━ 3.4</span> <span style="color:#e8452a">┅ 1+2</span></h3>${weekly}
+    <h3>This event against the strong ones (ONI by season)</h3>${analog}
+    <div class="legend" style="display:flex;flex-wrap:wrap;gap:8px;font:10px var(--font-data);color:var(--muted)">${Object.keys(AN.events || {}).map((k) => `<span><i style="display:inline-block;width:10px;height:3px;background:${ac[k]};vertical-align:middle"></i> ${k}</span>`).join("")}${AN.current ? `<span><i style="display:inline-block;width:10px;height:3px;background:#ff7a2f;vertical-align:middle"></i> ${AN.current.label}</span>` : ""}</div>
+    ${cmp ? `<h3>Lake Michigan off Chicago, winters ${C.first}-${C.last + 1}</h3>
+    <table><tr><th></th><th title="DJF ONI >= +1.5">Strong EN</th><th title="DJF ONI >= +0.5">El Niño</th><th>Neutral</th><th>La Niña</th><th>All</th><th title="Since ${Ssn.since || "Oct 1"}">So far</th></tr>
+      ${row("Dec-Feb air (°F)", "djf_f", f1, A.mean_f != null ? `${f1(A.mean_f)}*` : "")}${row("Nights ≤ 0 °F", "cold_days", f0, A.cold_days ?? "")}${row("Snow (in)", "snow_in", f0, A.snow_in ?? "")}
+      ${row("Max lake ice (%)", "max_ice_pct", f0)}${row("Ice days, Chicago shore", "chicago_ice_days", f0)}${row("Dec water (°C)", "dec_sst_c", f1)}
+      ${row("Level Dec→Apr (cm)", "level_dec_apr_cm", (v) => sgn(v, 0))}${row("Onshore gales (h)", "onshore10_h", f0)}${row("Southerly gales (h)", "south10_h", f0)}</table>
+    <p class="note">Winters classed by their Dec-Feb ONI. Air, nights and snow at O'Hare (NCEI); ice: GLERL (Lake Michigan's annual maximum, and days with ice off Diversey); water: GLSEA (1995-2023); level: Calumet Harbor; gales: hours of ERA5 wind ≥ 10 m/s at buoy 45198 (1991 on) from N-ESE (they put waves on the lakefront) or S. *So far: since ${Ssn.since || "Oct 1"}, not a winter mean.</p>` : ""}
+    ${flags ? `<h3>${ensoIcon()} El Niño's hand this season</h3><ul>${flags}</ul>` : ""}
+    <p class="note">${C && C.grids ? `<button id="enso-show">Show El Niño on the lake</button> ` : ""}Sources: NOAA CPC (ONI, RONI, weekly Niño regions, SOI), NOAA PSL (MEI v2), OISST v2.1 (map). Updated ${fmtDay(d.generated.slice(0, 10))}.</p>`;
+  if (d.pacific) ensoPacific($("#enso-map"), d.pacific);
+  const b = $("#enso-show"); if (b) b.onclick = () => document.querySelector('[data-ov="enso"]').click();
+}
+const fmtDay = (iso) => new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+
 // ---------------------------------------------------------------- Earth Engine layers (earth.json): Sentinel-1/2 overlays, GOES, GFS, normals
 const EARTH = { s1: null, s2: null };
 const hexRGB = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -1657,8 +1763,8 @@ async function setEarth(E) {
     $("#sat-note").textContent = (parts.length ? `Passes: ${parts.join(" · ")}. ` : "") + (EARTH.ortho ? `Aerial: ${EARTH.ortho.meta.source}. ` : "") + "One image at a time: each is a snapshot from that satellite's pass, and today's clouds, rain and lightning are hidden while it is shown."; }
   setSat();
 }
-const SAT_OVS = ["s1", "s2", "ortho"];
-function setSat() { const L = SAT_OVS.includes(S.ov) && EARTH[S.ov]; U.uSatOn.value = L ? 1 : 0; U.uSatKind.value = L && S.ov === "ortho" ? 1 : 0;
+const SAT_OVS = ["s1", "s2", "ortho", "enso"];
+function setSat() { const L = SAT_OVS.includes(S.ov) && (S.ov === "enso" ? ENSO.layer() : EARTH[S.ov]); $("#enso-seg").hidden = S.ov !== "enso"; U.uSatOn.value = L ? 1 : 0; U.uSatKind.value = L && S.ov === "ortho" ? 1 : 0;
   U.uSpotTex.value = L ? L.tex : (SPOTS.tex || blank2D);   // the satellite layers share the chop spots' texture slot
   if (L) { U.uSatMin.value.set(...L.min); U.uSatSize.value.set(...L.size); } }
 function satAt(L, xk, yk) { if (!L) return null; const g = L.g, fx = (xk - L.min[0]) / L.size[0] * (g.nlon - 1), fy = (yk - L.min[1]) / L.size[1] * (g.nlat - 1);
@@ -3230,6 +3336,7 @@ window.addEventListener("resize", resize);
 // ---------------------------------------------------------------- UI
 const MODE_NOTE = {
   live: "One timeline. Pale blue: the past 12 h as the buoys and shore stations measured it. Blue: the latest KLOT radar scans; violet: the radar nowcast, then the 48-hour NWS forecast (wind, cloud cover, waves from the wind-wave model). Magenta: Google DeepMind WeatherNext 3 (experimental) as far as its 15-day run goes, ensemble-mean wind with waves grown from it over the fetch here. Drag or play to move through time; Back to now returns to the live minute. The page refreshes hourly.",
+  enso: "El Niño tracker: where the tropical Pacific stands, how fast it is moving, the strong events it is tracking against, and what El Niño winters have done to Lake Michigan off Chicago since 1979. Updated with every snapshot (the indices weekly, the composites monthly).",
   upsets: "The weather that takes the glass away, rated red / yellow / green: wind runs, leftover waves, wind shifts, storms and water-level swings over the past two days and the forecast. A card's buttons open the timeline at that event or set the weather lab to its wind.",
   history: "Archived KLOT radar, NDBC observations and satellite lake temperature for a past time.",
   import: "Conditions read from a forecast screenshot, hour by hour. Its waves are treated as the offshore sea and transformed to the shore by SWAN over the real lake bottom; local chop grows from its wind.",
@@ -3244,7 +3351,7 @@ function sessionTrack() { const H = S.mode === "history" ? SRC.hist[S.histIdx] :
 function setMode(m) { S.mode = m; const expish = m !== "live"; if (expish) S.xmode = m;
   document.querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === (expish ? "exp" : "live"))));
   if (m === "history") { S.xtab = "hist"; ensureHist(S.histIdx); } else if (m === "import") S.xtab = "import"; else if (m === "exp") S.xtab = "lab";
-  $("#sec-exp").hidden = !(expish || S.xtab === "upsets"); syncXTab(); $("#mode-note").textContent = MODE_NOTE[m];
+  $("#sec-exp").hidden = !(expish || S.xtab === "upsets" || S.xtab === "enso"); syncXTab(); $("#mode-note").textContent = MODE_NOTE[m];
   const chip = $("#status"); chip.className = "chip " + m; const [t0, t1] = range();
   S.follow = m === "live"; $("#nowbtn").hidden = true; sessionTrack();
   S.t = m === "import" ? clamp(Date.now(), t0, t1) : m === "live" ? Date.now() : m === "history" ? (DATA.track && DATA.track.start ? new Date(DATA.track.start).getTime() : t0 + 10 * 60e3) : t0;
@@ -3347,10 +3454,11 @@ function upsetEvents(rows) {
 S.xtab = "lab"; S.xmode = "exp";
 // the Experimental section's tabs: the weather lab, Upsets, past periods and screenshots; three of them are modes of their own
 function syncXTab() { const tab = S.xtab; document.querySelectorAll("[data-xtab]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.xtab === tab)));
-  $("#exp-lab").hidden = tab !== "lab"; $("#exp-upsets").hidden = tab !== "upsets"; $("#exp-hist").hidden = tab !== "hist"; $("#exp-import").hidden = tab !== "import"; }
+  $("#exp-lab").hidden = tab !== "lab"; $("#exp-upsets").hidden = tab !== "upsets"; $("#exp-hist").hidden = tab !== "hist"; $("#exp-import").hidden = tab !== "import"; $("#exp-enso").hidden = tab !== "enso"; }
 function setXTab(tab) { S.xtab = tab; syncXTab();
   const want = { lab: "exp", hist: "history", import: "import" }[tab]; if (want && S.mode !== want) setMode(want);
-  if (tab === "upsets") { renderUpsets(); $("#mode-note").textContent = MODE_NOTE.upsets; } }
+  if (tab === "upsets") { renderUpsets(); $("#mode-note").textContent = MODE_NOTE.upsets; }
+  if (tab === "enso") { renderEnso(); $("#mode-note").textContent = MODE_NOTE.enso; } }
 document.querySelectorAll("[data-xtab]").forEach((b) => b.onclick = () => setXTab(b.dataset.xtab));
 function renderUpsets() {
   const rows = upsetSeries(), ev = upsetEvents(rows), now = Date.now(), fmtWd = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" }), fmtH = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" });
@@ -3370,7 +3478,9 @@ function renderUpsets() {
   $("#ups-now").innerHTML = rows.length ? `<b>Now:</b> ${cur.wind != null ? `${mph(cur.wind)} mph ${compass(cur.dir)}` : "no wind reading"}${cur.hs != null ? ` · ${ft(cur.hs)} ft` : ""} — ${glass(cur) ? "glass" : "not glass"}. ${ahead.length ? `${ahead.length} upset${ahead.length > 1 ? "s" : ""} now or ahead, worst <b style="color:${UPS_C[worst]}">${worst}</b>.` : "Nothing in the way of glass in the forecast."}` : "No wind or wave series on this page.";
   const [f0, f1] = [Date.now() - 12 * HOUR, forecastRange()[1]];
   const rel = (e) => e.t0 <= now && e.t1 > now ? "now" : e.t1 <= now ? `ended ${Math.round((now - e.t1) / HOUR)} h ago` : e.t0 - now < 36 * HOUR ? `in ${Math.max(1, Math.round((e.t0 - now) / HOUR))} h` : `in ${Math.round((e.t0 - now) / HOUR / 24)} d`;
-  $("#ups-list").innerHTML = ev.length ? ev.map((e, i) => `<div class="ups ${e.level}"><b>${e.title}</b><span class="tag">${rel(e)}</span>
+  // El Niño's hand: in an El Niño cold season, southerly gales (the southern storm track) and rain where snow would be usual
+  const ensoMark = (e) => ensoActive() && coldSeason(e.t0) && ((e.kind === "wind" && e.dir >= 135 && e.dir <= 225) || e.kind === "storm") ? ` <span class="enso-badge" title="Fits the El Niño winter pattern: the storm track runs south of the lakes, bringing southerly winds and rain more than snow">${ensoIcon()}El Niño</span>` : "";
+  $("#ups-list").innerHTML = ev.length ? ev.map((e, i) => `<div class="ups ${e.level}"><b>${e.title}${ensoMark(e)}</b><span class="tag">${rel(e)}</span>
     <span class="when">${fmtDH.format(e.t0)} → ${fmtDH.format(e.t1)}${e.hours > 1 ? ` · ${e.hours} h` : ""} · ${e.src}</span>
     <span class="why">${e.detail}${e.why ? `. ${e.why}` : ""}</span>
     <span class="acts">${e.t1 > f0 && e.t0 < f1 ? `<button data-ups-fc="${i}" title="Open the timeline at the start of this event">Show on the timeline</button>` : ""}${e.kind === "wind" ? `<button data-ups-lab="${i}" title="Set the weather lab to this wind">Recreate in the lab</button>` : ""}</span></div>`).join("")
@@ -3488,6 +3598,11 @@ function renderLegend() {
       <div class="zones"><span style="width:27%">clear</span><span style="width:17%">slightly cloudy</span><span style="width:23%">murky</span><span style="width:33%">very murky</span></div>
       <span class="lead">How cloudy the water is (sediment stirred up by storms, river and outfall plumes). Under 2 FNU you can see well down; over 15 the water looks brown.</span>
       <span>${E2 ? `${E2.label} (clear-sky water pixels; Nechad red-band turbidity). ${Object.entries(E2.launches || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v} FNU`).join(" · ")}` : "No clear Sentinel-2 pass in the last 10 days"}</span><span>A satellite snapshot from that pass, not live; today's clouds, rain and lightning are hidden while it is shown.</span>`; }
+  else if (S.ov === "enso") { const C = ENSO.d && ENSO.d.climate, k = ENSO.kind, ice = k !== "sst", st = ensoRamp(!ice), bar = st.map(([f, c]) => `rgb(${c}) ${Math.round(f * 100)}%`).join(",");
+    h = `<b>${ensoIcon()} El Niño on the lake: ${k === "sst" ? "December water" : k === "strong" ? "ice, strong events" : "ice, Jan-Mar"}</b><div class="bar" style="background:linear-gradient(90deg,${bar})"></div>
+      <div class="tk">${ice ? "<span>20 pts less</span><span></span><span>as usual</span><span></span><span>20 pts more</span>" : "<span>0.5 °C colder</span><span></span><span>as usual</span><span></span><span>0.5 °C warmer</span>"}</div>
+      <span class="lead">${ice ? `Mean Jan-Mar ice cover in ${k === "strong" ? "strong El Niño winters (1982-83, 1991-92, 1997-98, 2015-16, 2023-24)" : "El Niño winters"} minus all winters ${C ? `${C.first}-${C.last + 1}` : ""}, in percentage points: orange = less ice than usual (open water, waves all winter), white = more. Off Chicago the strong events ran about 17 points below a usual 24%.` : "December lake surface temperature in El Niño winters minus all winters (GLSEA, 1995-2023): red = warmer."}</span>
+      <span>GLERL gridded ice (1.4 km) and GLSEA, weekly samples; ${ENSO.d && ENSO.d.indices ? `now: ${ENSO.d.indices.status}` : ""}. The weather of the moment is hidden while it is shown.</span>`; }
   else if (S.ov === "ortho") { const M = EARTH.ortho && EARTH.ortho.meta; h = `<b>Aerial photo</b><span class="lead">${M ? `${M.source} (${M.year}, 6 in / 0.15 m), drawn over Diversey Harbor, the Fullerton channel and the South Lagoon at about 0.55 m per pixel.` : "No aerial photo in this page."}</span><span>The photo is one day's snapshot: today's clouds, rain and lightning are hidden while it is shown; the water's surface is still drawn live over it.</span>`; }
   else if (S.ov === "radar") { h = `<b>Radar reflectivity</b><div class="bar" style="background:linear-gradient(90deg,${DBZ_STOPS.slice(0, 13).map(([, c]) => c).join(",")})"></div><div class="tk"><span>5</span><span>35</span><span>65 dBZ</span></div>`; }
   if (!el.dataset.init) { el.dataset.init = "1"; el.classList.add("min"); let tiny = false; try { tiny = localStorage.getItem("lakeview-legend") === "tiny"; } catch (e) {} el.classList.toggle("tiny", tiny);
@@ -3613,7 +3728,7 @@ function tick() {
   // radar volume
   RS = radarState(S.t);
   // the satellite layers are one pass's snapshot: no radar clouds, rain, lightning or satellite cloud field over them
-  const satView = SAT_OVS.includes(S.ov) && !!EARTH[S.ov], RV = satView ? null : RS;
+  const satView = SAT_OVS.includes(S.ov) && !!(S.ov === "enso" ? ENSO.cur : EARTH[S.ov]), RV = satView ? null : RS;
   if (satView) { U.uExtra.value = 0; U.uGoesOn.value = 0; }
   if (RV) { const g = RS.grid; U.uCloudA.value = RS.A.tc; U.uCloudB.value = RS.B.tc; U.uDbzA.value = RS.A.td; U.uDbzB.value = RS.B.td; U.uMix.value = RS.f;
     U.uShiftA.value.set(...RS.shiftA); U.uShiftB.value.set(...RS.shiftB); U.uGridMin.value.set(g.x0_km, g.y0_km, 0); U.uGridN.value.set(g.nx, g.ny, g.nz); U.uGridD.value.set(g.dx_km, g.dz_km); }
@@ -3692,7 +3807,9 @@ function updateHud(rr, tp) {
   const E = DATA.earth || {}, UP = E.water && E.water.upwelling, NM = E.normals || {};
   if (live && UP && UP.upwelling) ww += pill("", `Upwelling: shore water ${Math.round(UP.delta_c * 1.8)}° colder than offshore`, "spc", "background:#8fd0ff;color:#0b2540");
   if (live && NM.era5 && NM.era5.wind_ms && C.wind > NM.era5.wind_ms.p90) wl += pill("", "Windier than 9 in 10 hours this time of year", "spc", "background:#ffd38a;color:#3a2400");
-  if (live && NM.era5 && NM.era5.air_c && C.airC != null) { const d = (C.airC - NM.era5.air_c.p50) * 1.8; if (Math.abs(d) >= 5) wl += pill("", `<i>Air</i> ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° vs usual`); }
+  if (live && NM.era5 && NM.era5.air_c && C.airC != null) { const d = (C.airC - NM.era5.air_c.p50) * 1.8; if (Math.abs(d) >= 5) wl += pill("", `<i>Air</i> ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° vs usual`);
+    // a mild cold-season spell in an El Niño winter: the pattern's signature (strong El Niño winters ran ~5 °F warmer at O'Hare)
+    if (d >= 5 && ensoActive() && coldSeason(S.t)) wl += pill("", `${ensoIcon()} El Niño-mild`, "spc", "background:rgba(255,122,47,.18);color:#ffb380"); }
   const spc = W.spc, nowMs = Date.now(), tRef = S.mode === "live" ? S.t : nowMs;   // today's headlines only while the shown hour is inside them
   if (live && spc && spc.cat && (!spc.expire || new Date(spc.expire).getTime() > tRef) && (!spc.valid || new Date(spc.valid).getTime() < tRef + 24 * 3600e3))
     wl += pill("", spc.cat === "TSTM" ? "Thunder possible" : `Severe: ${spc.label.replace(/ risk$/i, "")} ${spc.level}/5`, "spc", `background:${spc.color || "#f6f67f"}`);
@@ -4034,6 +4151,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     if (DATA.lake) { await buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
     mmFit(); buildMinimap(); await yieldUI();
     await setEarth(DATA.earth); await yieldUI();
+    try { DATA.enso = parseJSON("enso-data") || await split("enso-data"); await setEnso(DATA.enso); } catch (e) { console.warn("enso", e); }
     showHintOnce(); initRefresh(); await initImport();
     SRC.live = await decodeScene(DATA.scene);
     if (!DATA.track) { try { const t = JSON.parse(localStorage.getItem("lakelocal-track") || "null"); if (t && t.pts && t.pts.length) DATA.track = t; } catch (e) {} }   // your last GPX, in this browser only
