@@ -1769,8 +1769,9 @@ function swanWindBlend(D, u10, dir, only) {
   const scale = u10 < us[0] ? u10 / us[0] : u10 > us[us.length - 1] ? u10 / us[us.length - 1] : 1, tScale = Math.sqrt(scale);
   let wsum = 0;
   for (const [dv, wa] of wd) for (const [uv, wb] of wu) { const ci = W.idx.get(`${dv}|${uv}`); if (ci == null) continue; const w = wa * wb; wsum += w; const off = ci * D.n;
-    for (let i = 0; i < n; i++) { const q = off + k0 + i; hs[i] += w * W.hs[q] / 100; tp[i] += w * W.tp[q] / 10; const a = W.dir[q] / 256 * 2 * Math.PI; dd[2 * i] += w * Math.sin(a); dd[2 * i + 1] += w * Math.cos(a); } }
-  if (wsum > 0) for (let i = 0; i < n; i++) { hs[i] *= scale / wsum; tp[i] *= tScale / wsum; }
+    // the period and direction are weighted by each case's height too, so a calm case (0 cm, no period) doesn't drag them down
+    for (let i = 0; i < n; i++) { const q = off + k0 + i, h = W.hs[q] / 100; hs[i] += w * h; tp[i] += w * h * W.tp[q] / 10; const a = W.dir[q] / 256 * 2 * Math.PI; dd[2 * i] += w * h * Math.sin(a); dd[2 * i + 1] += w * h * Math.cos(a); } }
+  if (wsum > 0) for (let i = 0; i < n; i++) { tp[i] = hs[i] > 0 ? tp[i] / hs[i] * tScale : 0; hs[i] *= scale / wsum; }
   return { hs, tp, dir: dd, ok: wsum > 0 };
 }
 // which of a domain's cells are harbour water (mask class 2): the wind library counts only there; over the open lake inside

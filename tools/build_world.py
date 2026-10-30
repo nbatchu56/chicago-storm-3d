@@ -199,6 +199,8 @@ def chop_spots(swan, climate):
             continue
         # the paddling-season cases only (the climate's waves): the storm cases would change the blend between them
         keep = [i for i, c in enumerate(v["cases"]) if c["hs"] in (0.6, 1.8) and c["tp"] <= 6.0]
+        if not keep:                                 # a domain with only storm cases (so far): nothing for the climate
+            continue
         r = np.frombuffer(gzip.decompress(base64.b64decode(v["ratio"])), np.uint8).reshape(nc, g["ny"], g["nx"])[keep].astype(np.float32) / 100
         doms.append((g, [v["cases"][i] for i in keep], r))
     if not doms:

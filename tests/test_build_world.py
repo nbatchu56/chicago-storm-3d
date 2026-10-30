@@ -46,3 +46,5 @@ def test_coarsen_swan_with_wind_library():
     tt = np.frombuffer(gzip.decompress(base64.b64decode(h["wind"]["tp"])), np.uint8).reshape(2, 2, 2)
     assert rr[0, 0, 0] == 0 and rr[0, 0, 1] == 80 and hh[1, 1, 1] == 30 and hh[1, 1, 0] == 0 and tt[0, 0, 1] == 22
     assert bw.chop_spots({"domains": {"harbor": {"grid": g, "cases": [], "wind": h["wind"]}}}, {"hours": 10, "bins": {}}) is None
+    storm_only = {"domains": {"harbor": {"grid": g, "cases": [{"id": "d045_t6p0_h3p5", "dir": 45, "tp": 6.0, "hs": 3.5}], "ratio": enc(r), "dir": enc(d)}}}
+    assert bw.chop_spots(storm_only, {"hours": 10, "bins": {"45|4.0|0.5": 3}}) is None          # no paddling-season case yet: skipped, no crash
