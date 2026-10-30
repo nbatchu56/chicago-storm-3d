@@ -346,6 +346,8 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
     <section>
       <h2>Go to a place</h2>
       <select id="goto" aria-label="Go to a place"><option value="">Choose a place…</option></select>
+      <div class="row" style="margin-top:6px"><label for="viewcopy" title="Where the camera is looking right now: place, distance, heading and tilt. Copy it to send a view, or to make it a page's fixed view">This view</label><button id="viewcopy" type="button" style="padding:3px 9px;font-size:11px">Copy</button></div>
+      <p class="note" id="viewnum" style="font:11px var(--font-data);word-break:break-all"></p>
     </section>
     <section>
       <h2>Conditions from</h2>
@@ -2997,6 +2999,11 @@ function toggleHelp() { $("#help").hidden = !$("#help").hidden; hideHint(); }
 $("#helpbtn").onclick = toggleHelp; $("#helpx").onclick = () => { $("#help").hidden = true; };
 function hideHint() { const h = $("#hint"); if (!h.hidden) { h.style.opacity = "0"; setTimeout(() => { h.hidden = true; }, 600); try { localStorage.setItem("lakelocal-hint", "1"); } catch (e) {} } }
 function showHintOnce() { let seen = false; try { seen = localStorage.getItem("lakelocal-hint") === "1"; } catch (e) {} if (seen) return; const h = $("#hint"); h.hidden = false; h.style.opacity = "1"; setTimeout(hideHint, 9000); }
+// the current view in numbers (lat, lon, km, heading, pitch), the same form the presets and a page's start view use
+function viewNumbers() { const v = viewState(); return { lat: +(ORIGIN.lat + v.ty / KY).toFixed(5), lon: +(ORIGIN.lon + v.tx / KX).toFixed(5), km: +v.dist.toFixed(3), hdg: +v.hdg.toFixed(1), pitch: +v.pitch.toFixed(1) }; }
+setInterval(() => { const el = $("#viewnum"); if (!el || $("#controls").hidden) return; const n = viewNumbers(); el.textContent = `${n.lat}, ${n.lon} · ${n.km} km · ${n.hdg}° · ${n.pitch}° down`; }, 700);
+$("#viewcopy").onclick = async () => { const n = viewNumbers(), txt = JSON.stringify([n.lat, n.lon, n.km, n.hdg, n.pitch]), b = $("#viewcopy");
+  try { await navigator.clipboard.writeText(txt); b.textContent = "Copied"; } catch (e) { $("#viewnum").textContent = txt; b.textContent = "Select above"; } setTimeout(() => { b.textContent = "Copy"; }, 1800); };
 { const sel = $("#goto");
   GOTO.forEach((g, i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = g[0]; sel.appendChild(o); });
   sel.onchange = () => { if (sel.value === "") return; gotoPreset(+sel.value); hideHint(); sel.value = ""; sel.blur(); }; }
