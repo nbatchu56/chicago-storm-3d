@@ -1,0 +1,107 @@
+2026-10-30 22:07:35,867 INFO world grid 871x1493 at 10 m
+2026-10-30 22:08:35,605 INFO route grid 1037x1106 at 4 m
+2026-10-30 22:09:13,380 INFO montrose grid 995x692 at 4 m
+2026-10-30 22:09:48,136 INFO corridor grid 1617x3373 at 4 m
+2026-10-30 22:10:40,673 INFO harbor grid 664x1659 at 2 m
+{
+ "level": {
+  "station": "9087044",
+  "m_igld85": 176.442,
+  "t": "2026-10-30 21:42"
+ },
+ "isgs": {
+  "pages": 2,
+  "candidates": [
+   "https://chf.isgs.illinois.edu/coastal/Chicago_Topobathymetry_Data/FB.zip",
+   "https://chf.isgs.illinois.edu/coastal/Chicago_Topobathymetry_Data/MB.zip",
+   "https://chf.isgs.illinois.edu/coastal/Chicago_Topobathymetry_Data/63rd.zip",
+   "https://chf.isgs.illinois.edu/coastal/Chicago_Topobathymetry_Data/RB.zip"
+  ],
+  "log": [],
+  "rasters": []
+ },
+ "world": {
+  "lidar_dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/": {
+   "objects": 5297,
+   "tifs": 2642,
+   "sample": [
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_m9970_EPSG-6345.vrt",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/il/index.html",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/in/index.html",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/index.html",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/mi/index.html",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/collection.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM2979_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM2980_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM2981_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM3077_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM3078_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM3079_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM3080_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM3081_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM3082_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM3083_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM3084_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM3085_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM3086_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/stac/il/2020_NCMP_IL_Michigan_16TDM3087_BareEarth_1mGrid.json",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/il/2020_NCMP_IL_Michigan_16TDM2979_BareEarth_1mGrid.tif",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/il/2020_NCMP_IL_Michigan_16TDM2980_BareEarth_1mGrid.tif",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/il/2020_NCMP_IL_Michigan_16TDM2981_BareEarth_1mGrid.tif",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/il/2020_NCMP_IL_Michigan_16TDM3077_BareEarth_1mGrid.tif",
+    "dem/USACE_Lake_Mich_IL_IN_MI_WI_DEM_2020_9970/il/2020_NCMP_IL_Michigan_16TDM3078_BareEarth_1mGrid.tif"
+   ],
+   "overlap": 75,
+   "crs": [
+    "COMPD_CS[\"NAD83(2011) / UTM zone 16N + IGLD 1985 height\",PROJCS[\"NAD83(2011) / UTM zone 16N\",GEOGCS[\"NAD83(2011)\",DATUM[\"NAD83_National_Spatial_Reference_System_2011\",SPHEROID[\"GRS 1980\",6378137,298.257222101,AUTHORITY[\"EPSG\",\"7019\"]],AUTHORITY[\"EPSG\",\"1116\"]],PRIMEM[\"Greenwich\",0,AUTHORITY[\"EPSG\",\"8901\"]],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY[\"EPSG\",\"6318\"]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],PARAMETER[\"central_meridian\",-87],PARAMETER[\"scale_factor\",0.9996],PARAMETER[\"false_easting\",500000],PARAMETER[\"false_northing\",0],UNIT[\"metre\",1,AUTHORITY[\"EPSG\",\"9001\"]],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH],AUTHORITY[\"EPSG\",\"6345\"]],VERT_CS[\"IGLD 1985 height\",VERT_DATUM[\"International Great Lakes Datum 1985\",2005,AUTHORITY[\"EPSG\",\"5205\"]],UNIT[\"metre\",1,AUTHORITY[\"EPSG\",\"9001\"]],AXIS[\"Gravity-related height\",UP],AUTHORITY[\"EPSG\",\"5609\"]]]"
+   ],
+   "header_errors": 0,
+   "coverage": 0.389
+  },
+  "lidar_dem/USACE_Lake_Mich_DEM_2012_9265/": {
+   "objects": 106,
+   "tifs": 95,
+   "sample": [
+    "dem/USACE_Lake_Mich_DEM_2012_9265/USACE_Lake_Mich_DEM_2012_EPSG-6318.vrt",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/il/index.html",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/in/index.html",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/index.html",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/mi/index.html",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/stac/index.html",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/tileindex_USACE_Lake_Mich_DEM_2012.zip",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/urllist9265.txt",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/usace2012_lake_mi_dem_m9265_met.xml",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/usace2012_lake_mi_dem_m9265_met_forHumans.html",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/wi/index.html",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/il/2012_NCMP_IL_Michigan_01_BareEarth_1mGrid.tif",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/il/2012_NCMP_IL_Michigan_02_BareEarth_1mGrid.tif",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/il/2012_NCMP_IL_Michigan_03_BareEarth_1mGrid.tif",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/il/2012_NCMP_IL_Michigan_04_BareEarth_1mGrid.tif",
+    "dem/USACE_Lake_Mich_DEM_2012_9265/il/2012_NCMP_IL_Michigan_05_BareEarth_1mGrid.tif"
+   ],
+   "overlap": 0,
+   "crs": [
+    "EPSG:6318"
+   ],
+   "header_errors": 0
+  },
+  "ncei": {
+   "url": "https://gis.ngdc.noaa.gov/arcgis/rest/services/DEM_mosaics/DEM_all/ImageServer/exportImage",
+   "coverage": 1.0,
+   "range": [
+    -12.512946128845215,
+    261.48516845703125
+   ]
+  },
+  "cook": {
+   "raster": {
+    "px": [
+     1452,
+     3024
+    ],
+    "crs": "EPSG:3435",
+    "cells": 2097,
+    "max_m": 7.62
+   },
+   "level":
+wrote /home/runner/work/_temp/out/bathy.json in 761 s
