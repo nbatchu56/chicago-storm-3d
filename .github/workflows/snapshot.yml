@@ -106,7 +106,7 @@ jobs:
             --history "$M"/history-*.json --sessions sessions/*.json --imports examples/*.json --split \
             --learn "$RUNNER_TEMP/correction.json" --scorecard "$RUNNER_TEMP/L/scorecard.json" \
             --start '{"mode":"live","view":[41.9203,-87.6195,1.58,284,34]}' \
-            --also "$OUT/outlook.html"='{"mode":"live","kiosk":{"name":"Diversey Outlook","hours":3,"loopSec":15,"reloadMin":30,"staleH":6},"view":[41.93255,-87.63027,0.319,149.6,16.4]}'
+            --also "$OUT/outlook.html"='{"mode":"live","kiosk":{"name":"Diversey Outlook","hours":3,"loopSec":15,"slowSec":5,"reloadMin":30,"staleH":6},"view":[41.93255,-87.63027,0.319,149.6,16.4]}'
       - name: Publish to the snapshot branch
         env:
           OUT: ${{ runner.temp }}/storm

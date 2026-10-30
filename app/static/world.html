@@ -3345,9 +3345,9 @@ function tick() {
   if (S.playing && !(S.mode === "live" && S.follow)) { S.t += dt * 1000 * S.speed; if (S.t > t1) S.t = t0; }   // one steady rate: S.speed seconds of the timeline per real second
   // the kiosk's clock runs on wall time, not frame time: one loop takes exactly loopSec real seconds however the frames come
   // (frame-based stepping slowed down while the wave libraries loaded or the frame rate dipped, then looked like a speed-up)
-  if (S.kiosk) { const K = S.kiosk, L = K.loopSec * 1000; let el = now - K.started;
-    if (el >= L) { K.t0 = Date.now(); K.t1 = kioskEnd(K.t0); K.started = now; el = 0; buildTicks(); }   // the loop starts over at the present
-    S.t = K.t0 + el / L * (K.t1 - K.t0); }
+  if (S.kiosk) { const K = S.kiosk; let el = now - K.started;
+    if (el >= K.plan.total) { K.t0 = Date.now(); K.t1 = kioskEnd(K.t0); K.plan = kioskPlan(K); K.started = now; el = 0; buildTicks(); }   // the loop starts over at the present
+    S.t = kioskTime(K, el); }
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   navStep(dt);
@@ -3694,12 +3694,27 @@ async function initRefresh() {
 }
 
 // ---------------------------------------------------------------- kiosk: a fixed view that plays the next hours by itself
-// meta.start.kiosk = { name, hours: 3 (loop ends this long after sunrise), loopSec: 15 (one loop, real seconds, 10-20), reloadMin: 30, staleH: 6 }
+// meta.start.kiosk = { name, hours: 3 (loop ends this long after sunrise), loopSec: 15 (one loop, real seconds, 10-20), slowSec: 5 (more, spent on the hour either side of sunrise), reloadMin: 30, staleH: 6 }
 function kioskEnd(now) {   // the end of the loop: 3 h after sunrise, today's if that is still ahead, else tomorrow's
   const k = S.kiosk, after = (k.hours ?? 3) * 3600e3;
   let r = sunTimes(now).rise; if (r == null || r + after <= now + 30 * 60e3) r = sunTimes(now + 86400e3).rise;
+  k.rise = r;
   return Math.min(r == null ? now + 12 * 3600e3 : r + after, now + 24 * 3600e3);   // never more than a day ahead
 }
+// The clip's clock: loopSec real seconds for the whole span at one rate, plus slowSec more spent on the hour either side of
+// sunrise (the light changing), so that part runs slower. Returns the segments [{a, b, ms}] of the loop and its length in ms.
+function kioskPlan(K) {
+  const base = K.loopSec * 1000, slow = (K.slowSec ?? 5) * 1000, span = K.t1 - K.t0, segs = [];
+  const wa = K.rise != null ? Math.max(K.t0, K.rise - 3600e3) : null, wb = K.rise != null ? Math.min(K.t1, K.rise + 3600e3) : null;
+  if (wa != null && wb > wa) {
+    const rate = span / base;                                                // ms of the day per ms of the clip, outside the sunrise hours
+    if (wa > K.t0) segs.push({ a: K.t0, b: wa, ms: (wa - K.t0) / rate });
+    segs.push({ a: wa, b: wb, ms: (wb - wa) / rate + slow });
+    if (K.t1 > wb) segs.push({ a: wb, b: K.t1, ms: (K.t1 - wb) / rate });
+  } else segs.push({ a: K.t0, b: K.t1, ms: base });
+  return { segs, total: segs.reduce((x, g) => x + g.ms, 0) };
+}
+function kioskTime(K, el) { let at = 0; for (const g of K.plan.segs) { if (el < at + g.ms || g === K.plan.segs[K.plan.segs.length - 1]) return g.a + Math.min(1, (el - at) / g.ms) * (g.b - g.a); at += g.ms; } return K.t1; }
 function kiosk(k) {
   S.kiosk = Object.assign({ name: "Diversey Outlook", hours: 3, loopSec: 15, reloadMin: 30, staleH: 6 }, k || {});
   S.kiosk.loopSec = Math.min(20, Math.max(10, +S.kiosk.loopSec || 15));   // a clip of 10-20 s
@@ -3707,7 +3722,7 @@ function kiosk(k) {
   const h1 = $("#hud h1"); if (h1 && !$("#hud .sub")) { const sub = document.createElement("div"); sub.className = "sub"; sub.textContent = S.kiosk.name; h1.after(sub); }
   controls.enabled = false; camTween = null; S.follow = false; $("#nowbtn").hidden = true; hideHint();
   document.querySelectorAll("#vsbox .cathead span").forEach((el) => { if (/drag to turn/i.test(el.textContent)) el.lastChild.textContent = el.lastChild.textContent.replace(/\s*·\s*drag to turn/i, ""); });
-  const now = Date.now(); S.kiosk.t0 = now; S.kiosk.t1 = kioskEnd(now); S.kiosk.started = performance.now();
+  const now = Date.now(); S.kiosk.t0 = now; S.kiosk.t1 = kioskEnd(now); S.kiosk.plan = kioskPlan(S.kiosk); S.kiosk.started = performance.now();
   S.t = now; setPlaying(true); buildTicks();
   // a fresh copy of the page every so often (the artifact is republished a few times a day), at the top of a loop
   setInterval(() => { if (document.visibilityState !== "hidden" && navigator.onLine !== false) location.reload(); }, Math.max(5, S.kiosk.reloadMin) * 60e3);
