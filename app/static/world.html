@@ -37,6 +37,11 @@ body.kiosk #play { visibility: hidden; }
 #kstrip .kt .k .arw { width: 11px; height: 11px; fill: currentColor; flex: none; }
 #kstrip .kt .v { font: 700 24px/1.1 var(--font-data); margin-top: 3px; white-space: nowrap; } #kstrip .kt .v .u { font: 500 12px var(--font-data); color: var(--muted); margin-left: 3px; }
 #kstrip .kt .s { font: 11px/1.3 var(--font-data); color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#kstrip .kt.force { border-left: 3px solid #8ea2b4; } #kstrip .kt.force.g { border-left-color: #5fd38a; } #kstrip .kt.force.y { border-left-color: #f7d940; } #kstrip .kt.force.r { border-left-color: #f2584a; }
+#kstrip .kt.force .k .l { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.12); flex: none; } #kstrip .kt.force .k .l + .l { margin-left: -2px; }
+#kstrip .kt.force.r .l.r { background: #f2584a; box-shadow: 0 0 5px #f2584a; } #kstrip .kt.force.y .l.y { background: #f7d940; box-shadow: 0 0 5px #f7d940; } #kstrip .kt.force.g .l.g { background: #5fd38a; box-shadow: 0 0 5px #5fd38a; }
+#kstrip .kt.force .v { font-size: 20px; text-transform: uppercase; letter-spacing: .04em; } #kstrip .kt.force.r .v { color: #ff8a7a; } #kstrip .kt.force.y .v { color: #f7d940; } #kstrip .kt.force.g .v { color: #7fe0a4; }
+#kstrip .kt .s.rel b { color: var(--fg); font-weight: 600; } #kstrip .khz { display: flex; gap: 4px; margin-top: 4px; } #kstrip .khz .hz { width: 20px; height: 20px; }
 #kstrip .kt.air { border-left: 3px solid #90c841; } #kstrip .kt.water { border-left: 3px solid #05a0cb; } #kstrip .kt.sky { border-left: 3px solid #e8b84a; } #kstrip .kt.temp { border-left: 3px solid #7ad0ff; }
 @media (max-width: 760px) {
   body.kiosk #cards { display: none; } body.kiosk #kstrip:not([hidden]) { display: grid; grid-template-columns: 1fr 1fr; }
@@ -45,6 +50,7 @@ body.kiosk #play { visibility: hidden; }
   body.kiosk #timeline { padding: 6px 10px; }
 }
 @media (max-width: 760px) and (orientation: landscape) { body.kiosk #kstrip:not([hidden]) { grid-template-columns: repeat(4, 1fr); } }
+body.kiosk #vsbox { order: -1; }   /* the Outlook leads with the forces and the paddling light */
 body.kiosk canvas#gl, body.kiosk #bar, body.kiosk #timeline, body.kiosk #hud { pointer-events: none; } body.kiosk #timeline .track { pointer-events: none; }
 body.kiosk #timeline #scrub { pointer-events: none; } body.kiosk #hud .sub { font: 500 13px/1.2 var(--font-ui); color: var(--muted); margin: -2px 0 6px; letter-spacing: .01em; }
 #hud { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); left: calc(var(--gut) + env(safe-area-inset-left, 0px)); padding: 12px 14px; width: min(330px, calc(100vw - 2 * var(--gut))); display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
@@ -4171,11 +4177,16 @@ function updateHud(rr, tp) {
   if (S.kiosk) {   // the phone's strip: one number per category
     const arrow = (d) => `<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${(d + 180) % 360}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg>`;
     const iceTxt = (S.mode === "exp" && S.x.ice > 0 || GRIDS.ice) ? iceWords(S.mode === "exp" ? Math.min(1, S.x.ice * 1.5) : GRIDS.iceMax || 0, U.uFdd.value, hs) : "";
+    // first the paddling light with the forces line and the hazard icons; then wind; waves and water temperature together; sky
+    const P = PSTAT, lvC = P ? ["g", "y", "r"][P.lv] : "", rel = ($("#vs .rel") || {}).innerHTML || "", hz = ($("#wxrow") || {}).hidden === false ? $("#wxrow").innerHTML : "";
+    const wt = C.waterC != null ? `${Math.round(cToF(C.waterC))}°F water` : "", sunTxt = (() => { const su = C.sun || solar(new Date(S.t)); return `sun ${su.el > 0 ? Math.round(su.el) + "° up" : "down"}`; })();
     const st = $("#kstrip"); st.hidden = false; st.innerHTML =
+      `<div class="kt force ${lvC}"><div class="k"><i class="l r"></i><i class="l y"></i><i class="l g"></i>Paddling</div><div class="v">${P ? PADDLE_TXT[P.lv] : "—"}</div>` +
+        `<div class="s">${P && P.why.length ? P.why[0][1] : "all clear"}</div>${rel ? `<div class="s rel">${rel}</div>` : ""}${hz ? `<div class="wxrow khz">${hz}</div>` : ""}</div>` +
       `<div class="kt air"><div class="k">Wind ${arrow(C.dir)}</div><div class="v">${mph(C.wind)}<span class="u">mph</span></div><div class="s">from ${compass(C.dir)}${C.gust ? ` · gusts ${mph(C.gust)}` : ""}</div></div>` +
-      `<div class="kt water"><div class="k">Waves ${hs > 0.01 ? arrow(wdirW) : ""}</div><div class="v">${hs > 0.01 ? `${ft(hs)}<span class="u">ft</span>` : "Calm"}</div><div class="s">${hs > 0.01 ? `from ${compass(wdirW)} · ${tpk.toFixed(1)} s` : "under 0.1 ft"}</div></div>` +
-      `<div class="kt sky"><div class="k">Sky</div><div class="v">${C.airC != null ? `${Math.round(cToF(C.airC))}<span class="u">°F air</span>` : "—"}</div><div class="s">${wx}</div></div>` +
-      `<div class="kt temp"><div class="k">Water</div><div class="v">${C.waterC != null ? `${Math.round(cToF(C.waterC))}<span class="u">°F</span>` : "—"}</div><div class="s">${iceTxt || (() => { const su = C.sun || solar(new Date(S.t)); return `sun ${su.el > 0 ? Math.round(su.el) + "° up" : "down"}`; })()}</div></div>`; }
+      `<div class="kt water"><div class="k">Waves &amp; water ${hs > 0.01 ? arrow(wdirW) : ""}</div><div class="v">${hs > 0.01 ? `${ft(hs)}<span class="u">ft</span>` : "Calm"}${wt ? `<span class="u"> · ${wt}</span>` : ""}</div>` +
+        `<div class="s">${hs > 0.01 ? `from ${compass(wdirW)} · ${tpk.toFixed(1)} s` : "under 0.1 ft"}${iceTxt ? ` · ${iceTxt}` : ""}</div></div>` +
+      `<div class="kt sky"><div class="k">Sky</div><div class="v">${C.airC != null ? `${Math.round(cToF(C.airC))}<span class="u">°F air</span>` : "—"}</div><div class="s">${wx} · ${sunTxt}</div></div>`; }
   renderAlerts(live ? (W.alerts || []) : [], tRef);
   // the readouts, by topic: wind (other stations and models), waves, water, your paddle
   const wind = [], waves = [], water = [], you = [];
