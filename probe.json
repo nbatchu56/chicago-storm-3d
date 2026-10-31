@@ -1,0 +1,58 @@
+{
+ "erddap_search": {
+  "https://apps.glerl.noaa.gov/erddap": [
+   [
+    "glerl_p_m_lcb",
+    "Images, Data, GLSEA, 1995-now, Great Lakes"
+   ],
+   [
+    "GL_Ice_Concentration_GCS",
+    "Ice Concentration from Great Lakes Surface Environmental Analysis (GLSEA) and NIC, Geodetic coordinate system (LAT, LON), 1995-present"
+   ],
+   [
+    "GLSEA_GCS",
+    "Sea Surface Temperature (SST) from Great Lakes Surface Environmental Analysis (GLSEA), Geodetic coordinate system (LAT, LON), 1995-2023"
+   ],
+   [
+    "ncepetagl",
+    "Average Surface Water Temperature from Great Lakes Surface Environmental Analysis (GLSEA), NECP necpetagl.dat"
+   ],
+   [
+    "GLSEA_ACSPO_IMG",
+    "Sea Surface Temperature (SST) from Great Lakes Surface Environmental Analysis (ACSPO GLSEA), PNG,ASC,Dat, (2006-present)"
+   ],
+   [
+    "GLSEA_ACSPO_GCS",
+    "Sea Surface Temperature (SST) from Great Lakes Surface Environmental Analysis (ACSPO GLSEA), The ACSPO GLSEA is the developed product that uses the Advanced Clear-sky Processor for Oceans (ACSPO) L3S-LEO SST as the input data source. The L3S-LEO SST is the level 3 Super Collated data from Low Earth Orbit satellites sensor including NPP, N20, and MetOp A/B/C. Geodetic coordinate system (LAT, LON), 2006-present"
+   ],
+   [
+    "glsea-avgtemps2",
+    "Daily Lake Average Surface Water Temperature (Degree C) from Great Lakes Surface Environmental Analysis (GLSEA), 1995-present"
+   ],
+   [
+    "glsea_avgtemps_3",
+    "Daily Lake Average Surface Water Temperature (Degree C) from ACSPO Great Lakes Surface Environmental Analysis (GLSEA 3), 2006-present"
+   ]
+  ]
+ },
+ "erddap_vars": {
+  "https://apps.glerl.noaa.gov/erddap/GLSEA_ACSPO_GCS": [
+   "sst"
+  ],
+  "https://apps.glerl.noaa.gov/erddap/GLSEA_GCS": [
+   "sst"
+  ],
+  "https://apps.glerl.noaa.gov/erddap/GL_Ice_Concentration_GCS": [
+   "ice_concentration"
+  ]
+ },
+ "erddap_times": {
+  "GLSEA_ACSPO_GCS.sst": "2026-10-30T12:00:00Z",
+  "GL_Ice_Concentration_GCS.ice_concentration": "2026-06-30T12:00:00Z"
+ },
+ "station_errors": [
+  "45177: HTTP Error 404: Not Found",
+  "BHRI3: HTTP Error 404: Not Found",
+  "JAKI2: HTTP Error 404: Not Found"
+ ]
+}
