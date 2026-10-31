@@ -2,7 +2,11 @@
 The Lincoln Park South Lagoon's 1000 m course line for the page: the lagoon's centreline from the south face of the
 Fullerton Avenue bridge southward, from the 2023 survey's shoreline polygon (bathy.json, survey.polys "Diversey Harbor").
 
-    python tools/lagoon_course.py --bathy bathy.json            # prints the LAGOON_COURSE constant (lat, lon every 50 m)
+    python tools/lagoon_course.py --bathy bathy.json            # prints the LAGOON_COURSE constant: a straight 1000 m line
+    python tools/lagoon_course.py --bathy bathy.json --follow   # the centreline instead (lat, lon every 50 m)
+
+The course is straight, as a rowing course is: from the channel's centre at the bridge's south face toward the
+centreline's point 1000 m down the lagoon, 1000 m long (it keeps at least ~10 m off either bank in the 2023 survey).
 
 Rowing on the lagoon (Lincoln Park Boat Club's Chicago Sprints) is a 1,000 m course between the Fullerton bridge and the
 zoo; the page draws the line with a mark every 100 m and a label every 250 m (app/static/world.html, LAGOON_COURSE).
@@ -61,15 +65,25 @@ def waypoints(P, d, every=EVERY, length=LENGTH):
     return out
 
 
+def straight(P, d, length=LENGTH):
+    """A straight course: from the start toward the centreline's point `length` m along, `length` m long."""
+    start = P[0]; end = np.array([np.interp(length, d, P[:, 0]), np.interp(length, d, P[:, 1])])
+    v = (end - start) / np.linalg.norm(end - start); e = start + v * length
+    return [(0, round(lf.REF[0] + start[1] / lf.KY, 6), round(lf.REF[1] + start[0] / lf.KX, 6)),
+            (round(length), round(lf.REF[0] + e[1] / lf.KY, 6), round(lf.REF[1] + e[0] / lf.KX, 6))]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--bathy", required=True)
+    ap.add_argument("--follow", action="store_true", help="follow the lagoon's centreline instead of a straight line")
     a = ap.parse_args()
     b = json.load(open(a.bathy))
     poly = next(p for p in b["survey"]["polys"] if p["name"].lower().startswith("diversey"))
     P, d = centreline(poly["rings"][0])
-    wp = waypoints(P, d)
-    print(f"// the lagoon's centreline south of the Fullerton bridge: {d[-1]:.0f} m to the end; {len(wp)} waypoints every {EVERY:.0f} m")
+    wp = waypoints(P, d) if a.follow else straight(P, d)
+    print(f"// the lagoon's centreline south of the Fullerton bridge: {d[-1]:.0f} m to the end; {len(wp)} waypoints every {EVERY:.0f} m" if a.follow
+          else "// the 1000 m course: a straight line from the Fullerton bridge's south face down the South Lagoon")
     print("const LAGOON_COURSE = [" + ", ".join(f"[{la}, {lo}]" for _, la, lo in wp) + "];")
 
 

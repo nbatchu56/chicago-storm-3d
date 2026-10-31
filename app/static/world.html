@@ -100,14 +100,15 @@ body.kiosk #timeline #scrub { pointer-events: none; } body.kiosk #hud .sub { fon
 .cathead { font: 700 11px var(--font-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--cat); }
 .cat .hero { grid-template-columns: 1fr; border-top: 0; padding-top: 0; } .cat .tile { background: rgba(255, 255, 255, .03); border-color: rgba(255, 255, 255, .06); }
 .cat .hero .arw path { fill: var(--cat); } .cat .readouts dt { color: var(--muted); } .cat .readouts { gap: 2px 12px; }
-.plight { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px 2px 4px; border-radius: 10px; background: rgba(0,0,0,.35); border: 1px solid var(--line); font: 700 10.5px var(--font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--fg); white-space: nowrap; }
+.plight { all: unset; box-sizing: border-box; width: 100%; margin-top: 4px; cursor: pointer; display: flex; align-items: center; gap: 3px; padding: 3px 8px 3px 6px; border-radius: 10px; background: rgba(0,0,0,.35); border: 1px solid var(--line); font: 700 10.5px var(--font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--fg); white-space: nowrap; }
 .plight .l { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,.12); }
 .plight[data-lv="2"] .l.r { background: #f2584a; box-shadow: 0 0 6px #f2584a; } .plight[data-lv="1"] .l.y { background: #f7d940; box-shadow: 0 0 6px #f7d940; } .plight[data-lv="0"] .l.g { background: #5fd38a; box-shadow: 0 0 6px #5fd38a; }
+.plight .pwhy { margin-left: 6px; font: 400 10.5px var(--font-data); letter-spacing: 0; text-transform: none; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .plight[data-lv="2"] b { color: #ff8a7a; } .plight[data-lv="1"] b { color: #f7d940; } .plight[data-lv="0"] b { color: #7fe0a4; } .plight b { margin-left: 3px; }
 .pcrit { position: absolute; inset: 0; z-index: 5; overflow: auto; padding: 8px 10px; background: rgba(9,15,21,.97); border-radius: inherit; font: 11px/1.4 var(--font-data); text-transform: none; letter-spacing: 0; }
 .pcrit h4 { margin: 0 0 4px; font: 700 11px var(--font-ui); letter-spacing: .1em; text-transform: uppercase; } .pcrit ul { margin: 0 0 6px; padding-left: 16px; }
 .pcrit .crit { padding-left: 12px; font-size: 10.5px; } .pcrit .crit li { margin-bottom: 2px; } .pcrit .crit b { font-weight: 600; } .pcrit td, .pcrit th { padding: 2px 4px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); font-weight: 400; }
-.pcrit th { font: 600 10px var(--font-ui); text-transform: uppercase; } .pcrit .g { color: #7fe0a4; } .pcrit .y { color: #f7d940; } .pcrit .r { color: #ff8a7a; } .pcrit .x { float: right; cursor: pointer; }
+.pcrit th { font: 600 10px var(--font-ui); text-transform: uppercase; } .pcrit .g { color: #7fe0a4; } .pcrit .y { color: #f7d940; } .pcrit .r { color: #ff8a7a; } .pcrit .x { all: unset; float: right; cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 6px; margin: -2px -4px 0 4px; border-radius: 4px; } .pcrit .x:hover { background: rgba(255,255,255,.12); }
 .vs { display: grid; grid-template-columns: 96px 1fr; gap: 4px 10px; align-items: center; padding: 4px 0; font-size: 11.5px; }
 .vs:empty { display: none; } .vs svg { width: 96px; height: 96px; display: block; } .vs .row { display: grid; grid-template-columns: auto 1fr; gap: 0 6px; align-items: baseline; }
 .vs .row b { font: 600 10px var(--font-ui); letter-spacing: .1em; text-transform: uppercase; } .vs .row span { font: 11px var(--font-data); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -301,7 +302,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
 .card.open .more { display: block; position: absolute; left: -3px; right: 0; bottom: calc(100% + 6px); max-height: 46vh; overflow-y: auto; padding: 8px 10px; background: var(--panel-solid); border: 1px solid var(--line); border-left: 3px solid var(--cat); border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, .4); }
 .cat.water.open .more { width: 330px; right: auto; }
 .card .launches { border-top: 0; padding-top: 4px; }
-#vsbox .cathead { align-items: center; gap: 6px; } #vsbox { flex: 1.1 1 0 !important; width: auto; min-width: 256px; max-width: 340px; } #vsbox .cathead { cursor: default; }
+#vsbox { flex: 1.1 1 0 !important; width: auto; min-width: 256px; max-width: 340px; } #vsbox .cathead { cursor: default; }
 .vs { grid-template-columns: 108px 1fr; gap: 4px 8px; padding: 2px 0 0; } .vs svg { width: 108px; height: 108px; cursor: grab; touch-action: none; user-select: none; } .vs.drag svg { cursor: grabbing; }
 .vs .row span { white-space: nowrap; line-height: 1.3; } .vs .row { grid-template-columns: 1fr; gap: 0; align-items: start; } .vs .row + .row { margin-top: 4px; } .vs .hdg { grid-column: 1 / -1; font: 10px var(--font-data); color: var(--muted); }
 #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; bottom: calc(var(--gut) + 92px + var(--barh) + env(safe-area-inset-bottom, 0px)) !important; }
@@ -351,7 +352,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
     <div id="kstrip" hidden></div>
     <div id="cards">
       <div id="minimap" class="panel card"><canvas id="mm" width="300" height="444" aria-label="Map: click to go there"></canvas><div class="mmstat" id="mmstat" hidden></div><div class="cap"><button id="mmview" type="button" title="Switch between the radar map and the local map">Local map</button><button id="mmjet" type="button" aria-pressed="false" title="The jet stream: 250 hPa winds (about 34,000 ft) over North America from NOAA's GFS, and where Chicago sits under it" hidden>Jet stream</button><span id="mmscale"></span></div></div>
-      <div class="panel card" id="vsbox"><div class="cathead" style="color:var(--muted)"><span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>Air vs water</span><button type="button" id="plight" class="plight" aria-haspopup="dialog" title="Paddling status: tap for the reasons and the criteria"><i class="l r"></i><i class="l y"></i><i class="l g"></i><b>—</b></button></div><div id="pcrit" class="pcrit" role="dialog" aria-label="Paddling status criteria" hidden></div><div class="vs" id="vs" title="Air and water as two pushes on the compass you are looking at: each arrow points the way that force travels, its length is its strength. Drag the rose to turn the view; double-click to face north."></div></div>
+      <div class="panel card" id="vsbox"><div class="cathead" style="color:var(--muted)"><span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>Air vs water</span></div><div id="pcrit" class="pcrit" role="dialog" aria-label="Paddling status criteria" hidden></div><div class="vs" id="vs" title="Air and water as two pushes on the compass you are looking at: each arrow points the way that force travels, its length is its strength. Drag the rose to turn the view; double-click to face north."></div><button type="button" id="plight" class="plight" aria-haspopup="dialog" title="Paddling status: tap for the reasons and the criteria"><i class="l r"></i><i class="l y"></i><i class="l g"></i><b>—</b><span class="pwhy"></span></button></div>
       <div class="panel card cat air" id="cat-air"><button class="cathead" type="button" aria-expanded="false"><span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h9a3 3 0 1 0-3-3M3 12h13a3 3 0 1 1-3 3M3 16h7a2 2 0 1 1-2 2"/></svg>Air</span></button><div class="hero" id="hero-air"></div><div class="wxline" id="wx-air"></div><dl class="readouts" id="ro-air-top"></dl><div class="more"><dl class="readouts" id="ro-air"></dl></div></div>
       <div class="panel card cat water" id="cat-water"><button class="cathead" type="button" aria-expanded="false"><span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12c2.5 0 2.5-3 5-3s2.5 3 5 3 2.5-3 5-3 2.5 3 5 3M2 18c2.5 0 2.5-3 5-3s2.5 3 5 3 2.5-3 5-3 2.5 3 5 3"/></svg>Water</span></button><div class="hero" id="hero-water"></div><div class="wxline" id="wx-water"></div><dl class="readouts" id="ro-water-top"></dl><div class="more"><dl class="readouts" id="ro-water"></dl><div class="launches" id="launches" hidden></div></div></div>
       <div class="panel card cat sky" id="cat-sky"><div class="cathead"><span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Atmosphere</span></div><dl class="readouts" id="ro-sky"></dl></div>
@@ -597,9 +598,9 @@ const PLACES = [["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Theater on th
 // the Montrose hook pier (the ends of the mapped breakwaters)
 const PIER_LIGHTS = [["North Ave Beach pier light", 41.91477, -87.62099], ["Montrose Beach pier light", 41.96817, -87.63180]];
 // the Lincoln Park South Lagoon's 1000 m course (Lincoln Park Boat Club's Chicago Sprints run 1,000 m between the Fullerton
-// bridge and the zoo): the lagoon's centreline from the south face of the Fullerton Avenue bridge southward, a point every
-// 50 m, from the 2023 survey's shoreline polygon (tools/lagoon_course.py)
-const LAGOON_COURSE = [[41.925638, -87.632224], [41.925197, -87.632094], [41.924759, -87.631942], [41.924329, -87.631767], [41.923896, -87.631591], [41.923462, -87.631428], [41.923035, -87.631229], [41.922617, -87.630999], [41.922188, -87.63081], [41.921753, -87.630644], [41.921313, -87.630506], [41.92087, -87.630389], [41.920424, -87.630288], [41.91998, -87.63017], [41.919544, -87.630009], [41.919113, -87.629829], [41.918676, -87.629672], [41.918238, -87.629525], [41.917799, -87.629378], [41.917367, -87.629203], [41.916942, -87.628996]];
+// bridge and the zoo): a straight 1000 m line from the channel's centre at the south face of the Fullerton Avenue bridge
+// down the lagoon, at least ~10 m off either bank in the 2023 survey's shoreline polygon (tools/lagoon_course.py)
+const LAGOON_COURSE = [[41.925638, -87.632224], [41.916925, -87.628989]];
 const COURSE_LEN = 1000, COURSE_TICK = 100, COURSE_LABEL = 250;
 // the local world: the Lake Michigan Water Trail from Monroe Harbor to Montrose, out past the Harrison-Dever crib
 const LB = (() => { const [x0, y0] = ll(41.870, -87.650), [x1, y1] = ll(41.970, -87.562); return { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; })();
@@ -4010,7 +4011,7 @@ function paddleStatus(C, rr) {
 }
 function paddleCriteria(P) {
   const row = (k, g, y, rd) => `<li><b>${k}</b>: ${[g && `<span class="g">${g}</span>`, y && `<span class="y">${y}</span>`, rd && `<span class="r">${rd}</span>`].filter(Boolean).join(" · ")}</li>`, M = (v) => mph(v);
-  return `<span class="x" id="pcritx" title="Close">✕</span><h4>Paddling: <span class="${["g", "y", "r"][P.lv]}">${PADDLE_TXT[P.lv]}</span></h4>
+  return `<button type="button" class="x" title="Close" aria-label="Close">✕</button><h4>Paddling: <span class="${["g", "y", "r"][P.lv]}">${PADDLE_TXT[P.lv]}</span></h4>
     ${P.why.length ? `<ul>${P.why.map(([l, t]) => `<li class="${l === 2 ? "r" : "y"}">${t}</li>`).join("")}</ul>` : `<p style="margin:0 0 6px">Every factor is in the green here.</p>`}
     <h4>Proposed criteria · worst factor wins</h4>
     <p style="margin:0 0 3px"><span class="g">● go</span> <span class="y">● caution</span> <span class="r">● stay off</span></p>
@@ -4027,9 +4028,12 @@ function paddleCriteria(P) {
 }
 let PSTAT = null;
 function renderPaddle(C, rr) { const P = paddleStatus(C, rr); PSTAT = P; const b = $("#plight"); if (!b) return;
-  b.dataset.lv = String(P.lv); b.querySelector("b").textContent = PADDLE_TXT[P.lv]; b.title = `Paddling: ${PADDLE_TXT[P.lv]}${P.why.length ? ` (${P.why.map((w) => w[1]).join("; ")})` : ""}. Tap for the criteria.`;
-  const pc = $("#pcrit"); if (!pc.hidden) { pc.innerHTML = paddleCriteria(P); $("#pcritx").onclick = (e) => { e.stopPropagation(); pc.hidden = true; }; } }
-$("#plight").onclick = (e) => { e.stopPropagation(); const pc = $("#pcrit"); pc.hidden = !pc.hidden; if (!pc.hidden && PSTAT) { pc.innerHTML = paddleCriteria(PSTAT); $("#pcritx").onclick = (ev) => { ev.stopPropagation(); pc.hidden = true; }; } };
+  b.dataset.lv = String(P.lv); b.querySelector("b").textContent = PADDLE_TXT[P.lv]; b.querySelector(".pwhy").textContent = P.why.length ? P.why[0][1] : "all clear";
+  b.title = `Paddling: ${PADDLE_TXT[P.lv]}${P.why.length ? ` (${P.why.map((w) => w[1]).join("; ")})` : ""}. Tap for the criteria.`;
+  const pc = $("#pcrit"); if (!pc.hidden) { const h = paddleCriteria(P); if (h !== pc.dataset.h) { pc.dataset.h = h; pc.innerHTML = h; } } }   // rewritten only when it changes, so the close button stays put
+$("#plight").onclick = (e) => { e.stopPropagation(); const pc = $("#pcrit"); pc.hidden = !pc.hidden; if (!pc.hidden && PSTAT) { const h = paddleCriteria(PSTAT); pc.dataset.h = h; pc.innerHTML = h; } };
+$("#pcrit").addEventListener("click", (e) => { e.stopPropagation(); if (e.target.closest(".x")) $("#pcrit").hidden = true; });
+addEventListener("keydown", (e) => { if (e.key === "Escape") $("#pcrit").hidden = true; });
 function updateHud(rr, tp) {
   const C = COND; if (!C) return; const [t0, t1] = range();
   $("#clock").textContent = fmtFull.format(new Date(S.t)).replace(/^\w+, /, "");
@@ -4262,8 +4266,9 @@ async function initRefresh() {
 
 // ---------------------------------------------------------------- kiosk: a fixed view that plays the next hours by itself
 // meta.start.kiosk = { name, hours: 3 (loop ends this long after sunrise), loopSec: 15 (one loop, real seconds, 10-20), slowSec: 5 (more, spent on the hour either side of sunrise), reloadMin: 30, staleH: 6 }
-function kioskEnd(now) {   // the end of the loop: 3 h after sunrise, today's if that is still ahead, else tomorrow's
+function kioskEnd(now) {   // the end of the loop: a fixed span ahead (kiosk.span hours), else 3 h after sunrise, today's if that is still ahead, else tomorrow's
   const k = S.kiosk, after = (k.hours ?? 3) * 3600e3;
+  if (k.span) { k.rise = null; return now + Math.min(48, Math.max(1, +k.span)) * 3600e3; }   // one even sweep, no slowing at sunrise
   let r = sunTimes(now).rise; if (r == null || r + after <= now + 30 * 60e3) r = sunTimes(now + 86400e3).rise;
   k.rise = r;
   return Math.min(r == null ? now + 12 * 3600e3 : r + after, now + 24 * 3600e3);   // never more than a day ahead
