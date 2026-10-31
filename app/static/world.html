@@ -2209,7 +2209,8 @@ const makeOcean = (L, NF, NC, kMin = 0) => {
   const gauss = () => { const u = Math.max(rnd(), 1e-9), v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
   // wind-wave spectrum (Pierson-Moskowitz shape for this wind, cos^2 spreading about the wind) above omegaCut, tapered in
   function setSea(wind, windTo, wpMain) {
-    const U = Math.max(wind, 0), key = [U.toFixed(1), windTo[0].toFixed(2), windTo[1].toFixed(2), wpMain.toFixed(2)].join();
+    // coarse key: rebuilding both spectra costs a frame or more, and a played forecast nudges the wind every few frames
+    const U = Math.max(wind, 0), q = (v, st) => (Math.round(v / st) * st).toFixed(2), key = [q(U, 0.5), q(windTo[0], 0.05), q(windTo[1], 0.05), q(wpMain, 0.1)].join();
     if (key === st.key) return; st.key = key;
     const wWind = 0.877 * g / Math.max(U, 0.3), wCut = 2.3 * wpMain, gate = clamp((U - 0.4) / 2.6, 0, 1), alpha = 0.0081;
     const spec = (kx, kz) => { const k = Math.hypot(kx, kz); if (k < 1e-6) return 0; const w = Math.sqrt(g * k);
@@ -2487,8 +2488,8 @@ let PROFILE = null;
 const dean = (d) => { if (!PROFILE) return deanP(d); const x = clamp(d, 0, DMAX) / (DMAX / (TABW - 1)), i = Math.min(Math.floor(x), TABW - 2), f = x - i;
   return Math.max(0.25, PROFILE[i] * (1 - f) + PROFILE[i + 1] * f); };
 // systems: [{hs, tp, dir (from, deg), spread}], defined at distance dRef (m) offshore
+const hash01 = (n) => { let x = (n * 2654435761) >>> 0; x ^= x >>> 15; x = Math.imul(x, 2246822519) >>> 0; x ^= x >>> 13; x = Math.imul(x, 3266489917) >>> 0; x ^= x >>> 16; return (x >>> 0) / 4294967296; };
 function setWaves(systems, shoreFrame, dRef, wind) {
-  let seed = 4321; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const { nx, nz } = shoreFrame, tx = -nz, tz = nx, hRef = dean(dRef);
   const sys = systems.filter((c) => c.hs > 0.004 && c.tp > 0.5);
   const energy = sys.map((c) => c.hs * c.hs), eT = energy.reduce((a, b) => a + b, 0) || 1;
@@ -2496,9 +2497,17 @@ function setWaves(systems, shoreFrame, dRef, wind) {
   sys.forEach((c, ci) => { const n = Math.max(3, Math.round(NW * energy[ci] / eT)), fp = 1 / c.tp, fs = [], Sp = [];
     for (let i = 0; i < n; i++) { const f = fp * (0.78 + 1.5 * i / Math.max(n - 1, 1)), sg = f <= fp ? 0.07 : 0.09; Sp.push(Math.pow(f, -5) * Math.exp(-1.25 * Math.pow(fp / f, 4)) * Math.pow(3.3, Math.exp(-((f - fp) ** 2) / (2 * sg * sg * fp * fp)))); fs.push(f); }
     const tot = Sp.reduce((a, b) => a + b, 0);
-    for (let i = 0; i < n; i++) { const w = 2 * Math.PI * fs[i], a = (c.hs / 4) * Math.sqrt(2 * Sp[i] / tot), b = (c.dir + (rnd() - 0.5) * 2 * c.spread * (0.4 + 0.6 * i / n)) * Math.PI / 180;
-      const px = -Math.sin(b), pz = Math.cos(b); waves.push({ a, w, cn: px * nx + pz * nz, ct: px * tx + pz * tz, ph: rnd() * 6.283 }); } });
-  waves.sort((a, b) => b.a - a.a); waves.length = Math.min(waves.length, NW); while (waves.length < NW) waves.push({ a: 0, w: 1, cn: 1, ct: 0, ph: 0 });
+    // each component's direction offset and phase come from its own (system, index) hash, not a running random stream, so a
+    // change in one system's energy doesn't reshuffle the others
+    for (let i = 0; i < n; i++) { const id = ci * 1000 + i, hA = hash01(id * 2 + 1), hP = hash01(id * 2 + 2);
+      const w = 2 * Math.PI * fs[i], a = (c.hs / 4) * Math.sqrt(2 * Sp[i] / tot), b = (c.dir + (hA - 0.5) * 2 * c.spread * (0.4 + 0.6 * i / n)) * Math.PI / 180;
+      const px = -Math.sin(b), pz = Math.cos(b); waves.push({ id, a, w, cn: px * nx + pz * nz, ct: px * tx + pz * tz, ph: hP * 6.283 }); } });
+  waves.sort((a, b) => b.a - a.a); waves.length = Math.min(waves.length, NW); while (waves.length < NW) waves.push({ id: -1, a: 0, w: 1, cn: 1, ct: 0, ph: 0 });
+  // keep each component's phase continuous at the patch origin when its frequency changes (a played forecast retunes the waves
+  // every few frames; without this the sea jumped each time): -w'·t + p' = -w·t + p
+  { const t = U.uTime.value, prev = WAVES.phase || new Map(), next = new Map();
+    for (const wv of waves) { const o = prev.get(wv.id); if (o && wv.id >= 0) wv.ph = (o.ph + (wv.w - o.w) * t) % 6.283185307; if (wv.id >= 0) next.set(wv.id, { w: wv.w, ph: wv.ph }); }
+    WAVES.phase = next; }
   const step = DMAX / (TABW - 1);
   waves.forEach((wv, i) => {
     const kb = wavenum(wv.w, hRef), ky = kb * wv.ct, sgn = wv.cn >= 0 ? 1 : -1, cgb = cgOf(wv.w, kb, hRef), fluxB = cgb * Math.max(Math.abs(kb * wv.cn), 1e-4) / kb;
@@ -2922,8 +2931,18 @@ function synthFrame(params, tMin) {
 const SRC = { live: null, hist: [] };
 const supSpots = () => (DATA.sup && DATA.sup.spots) || [];
 function nearestSpot(xk, yk) { let best = null, bd = 1e9; for (const s of supSpots()) { const [x, y] = ll(s.lat, s.lon), d = (x - xk) ** 2 + (y - yk) ** 2; if (d < bd) { bd = d; best = s; } } return best; }
-function supHour(spot, tMs) { if (!spot || !spot.hourly.length) return null; const t0 = new Date(spot.hourly[0].t).getTime(); const i = clamp(Math.round((tMs - t0) / 3600e3), 0, spot.hourly.length - 1);
-  const h = spot.hourly[i]; return S.learned && h.learned ? { ...h, ...h.learned, raw: h } : h; }   // experimental: the learned correction swapped in
+// the forecast hour at tMs, blended linearly with the next hour (angles the short way round), so a played timeline glides
+// instead of stepping on the hour; per-hour lists (the wave components) come from the nearer hour
+function supHour(spot, tMs) { if (!spot || !spot.hourly.length) return null; const H = spot.hourly, t0 = new Date(H[0].t).getTime(), fx = clamp((tMs - t0) / 3600e3, 0, H.length - 1);
+  const i = Math.floor(fx), f = fx - i, pick = (h) => S.learned && h.learned ? { ...h, ...h.learned, raw: h } : h;   // experimental: the learned correction swapped in
+  const a = pick(H[i]); if (f < 1e-3 || i >= H.length - 1) return a; const b = pick(H[i + 1]);
+  const out = { ...(f < 0.5 ? a : b) };
+  for (const k of ["wind", "gust", "hs_offshore", "tp", "air_c", "sky", "pop"]) if (typeof a[k] === "number" && typeof b[k] === "number") out[k] = a[k] + (b[k] - a[k]) * f;
+  for (const k of ["dir", "wave_dir"]) if (typeof a[k] === "number" && typeof b[k] === "number") out[k] = (a[k] + angd(b[k], a[k]) * f + 360) % 360;
+  if (a.components && b.components && a.components.length === b.components.length)
+    out.components = a.components.map((q, j) => { const r = b.components[j], o = { ...q }; for (const k of ["hs", "tp"]) if (typeof q[k] === "number" && typeof r[k] === "number") o[k] = q[k] + (r[k] - q[k]) * f;
+      for (const k of ["dir", "ang"]) if (typeof q[k] === "number" && typeof r[k] === "number") o[k] = q[k] + angd(r[k], q[k]) * f; return o; });
+  return out; }
 function supEnd(spot) { return spot && spot.hourly.length ? new Date(spot.hourly[spot.hourly.length - 1].t).getTime() : -Infinity; }   // the wave model's last hour
 // WeatherNext 3 beyond the NWS hours: the ensemble-mean wind at North Ave for the hour nearest tMs, with how long that wind
 // has held (hours back while the direction stays within 45 degrees and the speed above 60% of now), for the wave model's duration limit
@@ -3831,6 +3850,18 @@ function renderLegend() {
 const clock = new THREE.Clock(); let lastHud = 0, lastCond = 0, COND = null, RS = null, flashT = -1e9, nextStrike = 0, flashPos = [0, 0, 5];
 // the shelter map (SHELTER_GLSL) for the current wave direction: one small render pass when the direction changes
 const SHEL = { dir: null };
+// ---------------------------------------------------------------- the kiosk's smooth clip: the light follows the clock every
+// frame and the scene's weather uniforms ease toward each new reading (~0.3 s) instead of stepping a few times a second
+const KS_KEYS = ["uHs", "uTp", "uWindSpd", "uWhitecap", "uExtra", "uExtraBase", "uFlowTp", "uWcFetch", "uLevelD", "uSetupShore"], KS_V2 = ["uWaveDir", "uFlowDir"];
+const KS = { target: null, ready: false };
+function ksSnap() { const o = {}; for (const k of KS_KEYS) if (WU[k]) o[k] = WU[k].value; for (const k of KS_V2) if (WU[k]) o[k] = [WU[k].value.x, WU[k].value.y]; return o; }
+function ksSet(o) { for (const k of KS_KEYS) if (WU[k] && o[k] != null) WU[k].value = o[k]; for (const k of KS_V2) if (WU[k] && o[k]) WU[k].value.set(o[k][0], o[k][1]); }
+function kioskSmooth(dt) {
+  const sun = setLight(new Date(S.t)); if (COND) COND.sun = sun;
+  const T = KS.target; if (!T) return; const f = 1 - Math.exp(-dt / 0.3);
+  for (const k of KS_KEYS) if (WU[k] && T[k] != null) WU[k].value += (T[k] - WU[k].value) * f;
+  for (const k of KS_V2) if (WU[k] && T[k]) { const v = WU[k].value; v.set(v.x + (T[k][0] - v.x) * f, v.y + (T[k][1] - v.y) * f); const n = Math.hypot(v.x, v.y) || 1; v.set(v.x / n, v.y / n); }
+}
 function updateShelter() {
   if (!U.uHasMap.value || !MAP.WPX) return;
   const d = U.uWaveDir.value; if (SHEL.dir && Math.abs(SHEL.dir.x - d.x) + Math.abs(SHEL.dir.y - d.y) < 0.02) return;
@@ -3886,7 +3917,7 @@ function tick() {
     camera.position.set(bx, h0 + 0.0017, -by); camera.lookAt(bx + Math.sin(yr) * Math.cos(pr), h0 + 0.0017 + Math.sin(pr), -(by + Math.cos(yr) * Math.cos(pr)));
   } else { controls.update(); clampView(); }
   // conditions (a few times a second)
-  if (now - lastCond > 250) { lastCond = now;
+  if (now - lastCond > (S.kiosk ? 120 : 250)) { lastCond = now; const keep = S.kiosk && KS.ready ? ksSnap() : null;
     const cx = paddle ? bx : camera.position.y < 0.6 ? camera.position.x : tgt.x, cy = paddle ? by : camera.position.y < 0.6 ? -camera.position.z : -tgt.z;
     renderLaunches();
     COND = conditions(S.t, cx, cy); const C = COND;
@@ -3909,7 +3940,9 @@ function tick() {
       if (on) { U.uExtra.value = Math.max(U.uExtra.value, clamp((G.sky_area_pct ?? G.sky_local_pct ?? 0) / 100, 0.02, 1) * 0.95); if (G.top_km) U.uExtraBase.value = clamp(G.top_km - 1.6, 0.6, 7); }
       else U.uExtraBase.value = 1.3; }
     // wave patch: origin at the nearest shore frame; rebuild when conditions or place change
-    const sf = C.shore, key = JSON.stringify([SWAN.key, sys.map((q) => [q.hs.toFixed(3), q.tp.toFixed(1), Math.round(q.dir)]), C.dRef, Math.round(sf.nx * 50), Math.round(sf.ny * 50), Math.round(C.wind)]);
+    // (the kiosk rounds coarser: each rebuild costs a few ms, and its eased uniforms carry the change in between)
+    const kq = S.kiosk ? (q) => [(Math.round(q.hs / 0.02) * 0.02).toFixed(2), q.tp.toFixed(1), Math.round(q.dir / 3) * 3] : (q) => [q.hs.toFixed(3), q.tp.toFixed(1), Math.round(q.dir)];
+    const sf = C.shore, key = JSON.stringify([SWAN.key, sys.map(kq), C.dRef, Math.round(sf.nx * 50), Math.round(sf.ny * 50), Math.round(C.wind)]);
     const ox = cx + sf.nx * (sf.d - C.dRef / 1000) * 0 , oy = cy;
     if (key !== WAVES.key || Math.hypot(cx - WAVES.origin[0], cy - WAVES.origin[1]) > 2.5) {
       const shoreFrame = { nx: sf.nx, nz: -sf.ny };   // toward land, in (x east, z south)
@@ -3919,7 +3952,9 @@ function tick() {
       WAVES.profile = !!PROFILE;
       setWaves(sys, shoreFrame, Math.max(20, Math.min(1400, WAVES.dShore)), { dir: C.dir, speed: C.wind, gust: C.gust });
       WU.uShoreD2.value = Math.max(20, Math.min(1400, WAVES.dShore)); WAVES.key = key; }
+    if (S.kiosk) { KS.target = ksSnap(); if (keep) ksSet(keep); KS.ready = true; }   // the kiosk eases toward these, below
   }
+  if (S.kiosk) kioskSmooth(dt);
   // place the patch under the camera, snapped so it doesn't swim
   const low = camera.position.y < 0.45; patch.visible = low && WAVES.ready;
   if (patch.visible || board.visible || camera.position.y < 3) { OCEAN.update(U.uTime.value, 0.85); if (camera.position.y < 0.15) OCEAN_FINE.update(U.uTime.value, 0.6); }   // fine ripples only when close
@@ -4530,6 +4565,6 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     } catch (e) { console.warn("background load", e); }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
+window.__world = { setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
 })();
 </script>
