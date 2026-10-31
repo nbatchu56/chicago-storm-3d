@@ -64,7 +64,15 @@ body.kiosk #timeline #scrub { pointer-events: none; } body.kiosk #hud .sub { fon
 .alerts .al.warn { border-color: var(--danger); background: rgba(242, 112, 90, .13); } .alerts .al.stmt { border-color: var(--muted); background: rgba(142, 162, 180, .08); }
 .alerts .al b { font-weight: 600; } .alerts .al span { color: var(--muted); font: 11px var(--font-data); text-align: right; white-space: nowrap; }
 #exp-lab, .xpanel { display: contents; } #exp-lab[hidden], .xpanel[hidden] { display: none; }
-#exp-tabs { grid-template-columns: repeat(4, 1fr); grid-auto-flow: row; }
+#exp-tabs { grid-template-columns: repeat(3, 1fr); grid-auto-flow: row; }
+/* Credits: every source behind the page, one card per organization, grouped by sector; the sector's colour on the card's edge */
+.credits { display: grid; gap: 6px; }
+.credits h3 { margin: 6px 0 0; font: 600 11px var(--font-data); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.credits .org { display: grid; gap: 3px; padding: 6px 8px 7px 10px; border-left: 3px solid var(--line); border-radius: 4px; background: rgba(255, 255, 255, .04); }
+.credits .org b { font: 600 13px var(--font-ui); color: var(--fg); } .credits .org b small { font: 400 11px var(--font-data); color: var(--muted); margin-left: 6px; }
+.credits ul { margin: 0; padding-left: 14px; font: 11px/1.45 var(--font-data); color: var(--fg); } .credits li { margin: 1px 0; } .credits li span { color: var(--muted); }
+.credits a { color: var(--obs); text-decoration: none; border-bottom: 1px dotted rgba(92, 200, 232, .5); } .credits a:hover, .credits a:focus-visible { border-bottom-style: solid; }
+.credits .fine { font: 10.5px/1.45 var(--font-data); color: var(--muted); }
 .upsets { display: grid; gap: 8px; }
 /* El Niño tracker: the one symbol (ensoIcon), the status, the Pacific map, the charts, the Lake Michigan table */
 .enso-ic { display: inline-block; vertical-align: -3px; width: 16px; height: 16px; flex: none; }
@@ -422,7 +430,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
     </section>
     <section id="sec-exp" hidden>
       <h2>Experimental</h2>
-      <div class="seg" role="group" aria-label="Experimental tab" id="exp-tabs"><button data-xtab="lab" aria-pressed="true">Weather lab</button><button data-xtab="upsets" aria-pressed="false" title="The weather that takes the glass away: wind runs, wave events, wind shifts, storms and water-level swings, past two days and the forecast">Upsets</button><button data-xtab="hist" aria-pressed="false" title="Archived radar, observations and lake temperature for a past time">Historical</button><button data-xtab="import" aria-pressed="false" title="Conditions read from a forecast app's screenshot">Screenshot</button><button data-xtab="enso" aria-pressed="false" title="El Niño tracker: the Pacific, the indices and their trend, and what El Niño winters do to Lake Michigan off Chicago" hidden>El Niño</button></div>
+      <div class="seg" role="group" aria-label="Experimental tab" id="exp-tabs"><button data-xtab="lab" aria-pressed="true">Weather lab</button><button data-xtab="upsets" aria-pressed="false" title="The weather that takes the glass away: wind runs, wave events, wind shifts, storms and water-level swings, past two days and the forecast">Upsets</button><button data-xtab="hist" aria-pressed="false" title="Archived radar, observations and lake temperature for a past time">Historical</button><button data-xtab="import" aria-pressed="false" title="Conditions read from a forecast app's screenshot">Screenshot</button><button data-xtab="enso" aria-pressed="false" title="El Niño tracker: the Pacific, the indices and their trend, and what El Niño winters do to Lake Michigan off Chicago" hidden>El Niño</button><button data-xtab="credits" aria-pressed="false" title="Who the radar, forecasts, lake bottom, waves, satellite passes and code in this page come from, by organization">Credits</button></div>
       <div id="exp-hist" class="xpanel" hidden>
       <select id="hist-pick" aria-label="Historical period"></select>
       <p class="note" id="hist-note" hidden></p>
@@ -441,6 +449,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
       <div id="imp-table" style="overflow-x:auto;max-height:180px;font:11px var(--font-data)"></div>
       </div>
       <div id="exp-enso" class="enso" hidden></div>
+      <div id="exp-credits" class="credits" hidden></div>
       <div id="exp-upsets" class="upsets" hidden>
         <p class="note" id="ups-now"></p>
         <div id="ups-strip" class="strip" aria-label="Upsets timeline"></div>
@@ -3560,6 +3569,7 @@ const MODE_NOTE = {
   upsets: "The weather that takes the glass away, rated red / yellow / green: wind runs, leftover waves, wind shifts, storms and water-level swings over the past two days and the forecast. A card's buttons open the timeline at that event or set the weather lab to its wind.",
   history: "Archived KLOT radar, NDBC observations and satellite lake temperature for a past time.",
   import: "Conditions read from a forecast screenshot, hour by hour. Its waves are treated as the offshore sea and transformed to the shore by SWAN over the real lake bottom; local chop grows from its wind.",
+  credits: "Where everything in this page comes from: the agencies, datasets, models and open-source software behind the radar, the forecasts, the lake bottom, the waves and the satellite passes, grouped by organization. Licence notices are on the cards.",
   exp: "Set the weather yourself. Storm structure follows the same profiles as the demo storms; waves grow from your wind over the real fetch.",
 };
 // a history period you paddled (sessions/*.json): its route rides along unless you've loaded a GPX of your own
@@ -3571,7 +3581,7 @@ function sessionTrack() { const H = S.mode === "history" ? SRC.hist[S.histIdx] :
 function setMode(m) { S.mode = m; const expish = m !== "live"; if (expish) S.xmode = m;
   document.querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === (expish ? "exp" : "live"))));
   if (m === "history") { S.xtab = "hist"; ensureHist(S.histIdx); } else if (m === "import") S.xtab = "import"; else if (m === "exp") S.xtab = "lab";
-  $("#sec-exp").hidden = !(expish || S.xtab === "upsets" || S.xtab === "enso"); syncXTab(); $("#mode-note").textContent = MODE_NOTE[m];
+  $("#sec-exp").hidden = !(expish || S.xtab === "upsets" || S.xtab === "enso" || S.xtab === "credits"); syncXTab(); $("#mode-note").textContent = MODE_NOTE[m];
   const chip = $("#status"); chip.className = "chip " + m; const [t0, t1] = range();
   S.follow = m === "live"; $("#nowbtn").hidden = true; sessionTrack();
   S.t = m === "import" ? clamp(Date.now(), t0, t1) : m === "live" ? Date.now() : m === "history" ? (DATA.track && DATA.track.start ? new Date(DATA.track.start).getTime() : t0 + 10 * 60e3) : t0;
@@ -3679,14 +3689,106 @@ function upsetEvents(rows) {
     for (const g of kept) { const t0 = (L.t0 + g.i * L.step_s) * 1000; ev.push({ kind: "level", level: g.d >= 25 ? "red" : "yellow", t0, t1: t0 + 2 * HOUR, hours: 2, title: `Water level swing ${g.sign >= 0 ? "+" : "−"}${Math.round(g.d / 2.54)} in`, detail: "In two hours or less, Calumet Harbor gauge", why: "A seiche or surge: the lake sloshes, currents run in the harbour mouths and the shoreline breathes.", src: "NOAA CO-OPS" }); } }
   return ev.sort((a, b) => a.t0 - b.t0);
 }
+// ---------------------------------------------------------------- Credits: every source behind the page, by organization
+// Each sector has a colour; each organization a card; each line is [what, how this page uses it, link]. The notices whose
+// wording the licences fix (OpenStreetMap, Copernicus, C3S, JRC, WeatherNext) are on the cards, with the year of the passes shown.
+function creditsYear() { const ys = []; for (const k of ["s1", "s2"]) { const x = DATA.earth && DATA.earth[k]; if (x && x.time) ys.push(x.time.slice(0, 4)); }
+  if (DATA.generated) ys.push(String(DATA.generated).slice(0, 4)); const u = [...new Set(ys)].sort(); return u.length ? (u.length > 1 ? `${u[0]}–${u[u.length - 1]}` : u[0]) : String(new Date().getFullYear()); }
+function creditsList() { const Y = creditsYear(), wn3 = (DATA.wn3 && DATA.wn3.terms) || "Experimental data, (c) DeepMind Technologies Limited; not intended, validated, or approved for real world use.";
+  const survey = (DATA.bathy && DATA.bathy.survey && DATA.bathy.survey.date) ? DATA.bathy.survey.date.slice(0, 4) : "2023";
+  return [
+  { sec: "Weather, water and waves — NOAA", color: "#5cc8e8", orgs: [
+    { name: "National Weather Service", sub: "NOAA · Chicago (LOT)", url: "https://www.weather.gov/lot/", items: [
+      ["KLOT NEXRAD Level II radar", "the clouds, rain, snow shafts and lightning: Chicago/Romeoville volume scans from the NOAA Open Data Dissemination archive on AWS (unidata-nexrad-level2, noaa-nexrad-level2)", "https://registry.opendata.aws/noaa-nexrad/"],
+      ["Forecasts and alerts (api.weather.gov)", "the 48-hour hourly wind and sky cover, the marine zone forecasts, the Nearshore Marine Forecast and active alerts for the Illinois nearshore waters", "https://api.weather.gov/"],
+      ["NWS Chicago event summaries", "the headlines and write-ups behind the Severe weather catalog, 2022–2026", "https://www.weather.gov/lot/"],
+      ["Storm Prediction Center", "the Day 1 convective outlook", "https://www.spc.noaa.gov/"],
+      ["Aviation Weather Center", "METARs from Midway and O'Hare", "https://aviationweather.gov/"]] },
+    { name: "National Centers for Environmental Prediction", sub: "NOAA NCEP · NOMADS", url: "https://nomads.ncep.noaa.gov/", items: [
+      ["HRRR", "3 km wind and gusts", "https://rapidrefresh.noaa.gov/hrrr/"],
+      ["GFS", "250 hPa winds for the jet stream study; GFS 0.25° through Earth Engine", "https://www.emc.ncep.noaa.gov/emc/pages/numerical_forecast_systems/gfs.php"],
+      ["Great Lakes Wave Unstructured (GLWU)", "WAVEWATCH III nearshore waves on the 2.5 km mesh, used to check the wave model", "https://polar.ncep.noaa.gov/waves/"]] },
+    { name: "National Data Buoy Center", sub: "NOAA NDBC · with GLOS partner stations", url: "https://www.ndbc.noaa.gov/", items: [
+      ["Buoys 45174 (Wilmette) and 45198 (Chicago)", "wind and waves measured on the lake, live and archived; 45177, 45186, 45187 and 45007 when they are nearer", "https://www.ndbc.noaa.gov/station_page.php?station=45174"],
+      ["Shore stations CHII2 and CNII2", "wind at the Harrison-Dever crib and Calumet", null]] },
+    { name: "Center for Operational Oceanographic Products and Services", sub: "NOAA CO-OPS", url: "https://tidesandcurrents.noaa.gov/", items: [
+      ["Calumet Harbor gauge 9087044", "the lake level (IGLD85) and its swings, seiches and surges; Milwaukee 9087031 as the fallback", "https://tidesandcurrents.noaa.gov/stationhome.html?id=9087044"]] },
+    { name: "Great Lakes Environmental Research Laboratory", sub: "NOAA GLERL · CoastWatch Great Lakes", url: "https://www.glerl.noaa.gov/", items: [
+      ["GLSEA (ACSPO) lake surface temperature", "the water temperature over the map, day by day", "https://coastwatch.glerl.noaa.gov/"],
+      ["Great Lakes ice concentration and annual maximum ice cover", "the ice on the lake in season (analyses from the U.S. National Ice Center)", "https://www.glerl.noaa.gov/data/ice/"]] },
+    { name: "Climate Prediction Center, Physical Sciences Laboratory and NCEI", sub: "NOAA", url: "https://www.noaa.gov/", items: [
+      ["ONI, RONI, weekly Niño regions and SOI (CPC)", "the El Niño tracker's indices", "https://www.cpc.ncep.noaa.gov/"],
+      ["MEI v2 and NCEP/NCAR Reanalysis 1 (PSL, with NCAR)", "the multivariate ENSO index; 250 hPa winds since 1948 for the jet climatology", "https://psl.noaa.gov/"],
+      ["OISST v2.1 (NCEI, served by CoastWatch West Coast)", "the Pacific sea-surface temperature map", "https://www.ncei.noaa.gov/products/optimum-interpolation-sst"],
+      ["GHCN-Daily, O'Hare (NCEI)", "daily temperature and snow for the El Niño winters", "https://www.ncei.noaa.gov/products/land-based-station/global-historical-climatology-network-daily"],
+      ["NCEI bathymetric DEM mosaic", "the lake bottom beyond the lidar", "https://www.ncei.noaa.gov/maps/bathymetry/"],
+      ["NOAA Digital Coast", "hosts the coastal lidar (noaa-nos-coastal-lidar-pds on AWS)", "https://coast.noaa.gov/digitalcoast/"],
+      ["GOES-19 ABI (through Earth Engine)", "the cloud picture from geostationary orbit", "https://www.goes-r.gov/"]] }] },
+  { sec: "Federal, state and county partners", color: "#7fd39a", orgs: [
+    { name: "NASA Land Processes DAAC", sub: "through Earth Engine", url: "https://lpdaac.usgs.gov/", items: [
+      ["MODIS (Terra and Aqua), VIIRS (Suomi NPP) and ECOSTRESS", "land and water surface temperature passes", null]] },
+    { name: "U.S. Geological Survey", url: "https://www.usgs.gov/", items: [
+      ["Landsat 8 and 9, Collection 2 Level 2", "surface temperature and clarity passes (through Earth Engine)", "https://www.usgs.gov/landsat-missions"],
+      [`Bathymetry and Water-Quality Data of Surface Water Bodies in Cook County, Illinois, ${survey} (with Cook County)`, "the surveyed bottom of Diversey Harbor, the Fullerton channel, the South Lagoon, North Pond and South Pond; public domain (CC0), doi:10.5066/P1VVHKFP", "https://doi.org/10.5066/P1VVHKFP"]] },
+    { name: "Cook County Government", sub: "Bureau of Technology · GIS", url: "https://gis.cookcountyil.gov/", items: [
+      ["2024 orthophoto (6 in)", "the aerial photo over Diversey Harbor and the lagoon", null],
+      [`${survey} bathymetric survey services`, "the depth raster and the surveyed shorelines (with USGS)", null]] },
+    { name: "U.S. Army Corps of Engineers", url: "https://www.usace.army.mil/", items: [
+      ["Coastal Engineering Manual, Part II-2", "fetch- and duration-limited wave growth: how the waves grow from the wind over the real fetch", "https://www.publications.usace.army.mil/USACE-Publications/Engineer-Manuals/"],
+      ["2020 National Coastal Mapping Program topobathy lidar (JALBTCX), 1 m, IGLD85", "the lake bottom and the beaches from the shore out; the 2012 survey as the fallback", "https://coast.noaa.gov/dataviewer/"]] },
+    { name: "Illinois State Geological Survey and the Chicago Park District", url: "https://clearinghouse.isgs.illinois.edu/", items: [
+      ["Chicago beaches topobathymetric models", "the beach profiles, where reachable", null]] }] },
+  { sec: "Europe", color: "#b892f5", orgs: [
+    { name: "European Union · Copernicus, ESA and ECMWF", url: "https://www.copernicus.eu/", items: [
+      ["Sentinel-1 (radar) and Sentinel-2 (optical)", `the lake's roughness and clarity passes. Contains modified Copernicus Sentinel data ${Y}`, "https://sentinels.copernicus.eu/"],
+      ["ERA5 and ERA5-Land (Copernicus Climate Change Service, ECMWF)", `the hourly reanalysis behind the normals, the ice growth and the El Niño winters. Contains modified Copernicus Climate Change Service information ${Y}; neither the European Commission nor ECMWF is responsible for any use that may be made of it`, "https://climate.copernicus.eu/"],
+      ["ecCodes (ECMWF)", "decodes the GRIB forecast files", "https://confluence.ecmwf.int/display/ECC"]] },
+    { name: "European Commission Joint Research Centre", url: "https://global-surface-water.appspot.com/", items: [
+      ["Global Surface Water (Pekel et al., 2016)", "where water is and isn't, for the satellite masks. Source: EC JRC/Google", null]] },
+    { name: "Delft University of Technology", url: "https://swanmodel.sourceforge.io/", items: [
+      ["SWAN 41.51", "the nearshore wave library: refraction, shoaling, breaking, diffraction and reflection over the real bottom (GNU GPL)", null]] }] },
+  { sec: "Google", color: "#f0b44c", orgs: [
+    { name: "Google Earth Engine", url: "https://earthengine.google.com/", items: [
+      ["Earth Engine Data Catalog", "the platform that serves the MODIS, VIIRS, ECOSTRESS, Landsat, Sentinel, GOES, GFS, ERA5 and JRC datasets above", "https://developers.google.com/earth-engine/datasets"]] },
+    { name: "Google DeepMind", url: "https://developers.google.com/weathernext", items: [
+      ["WeatherNext 3 (experimental)", `the 15-day ensemble wind beyond the NWS forecast. ${wn3}`, null]] },
+    { name: "Google Fonts and IBM", url: "https://fonts.google.com/", items: [
+      ["IBM Plex Sans Condensed and IBM Plex Mono", "the page's typefaces (SIL Open Font License)", null]] }] },
+  { sec: "Maps and community", color: "#f08a6c", orgs: [
+    { name: "OpenStreetMap contributors", url: "https://www.openstreetmap.org/copyright", items: [
+      ["Shoreline, harbours, piers, breakwaters, groynes and buildings", "the map the world stands on, from the Overpass API (overpass-api.de and the Kumi Systems mirror); the breakwaters are SWAN's obstacles too. © OpenStreetMap contributors, Open Database License (ODbL)", "https://www.openstreetmap.org/copyright"]] },
+    { name: "Natural Earth", url: "https://www.naturalearthdata.com/", items: [["1:50m coastline, lakes and boundaries", "the outlines on the small maps (public domain)", null]] },
+    { name: "Amazon Web Services Open Data and Unidata (UCAR)", url: "https://registry.opendata.aws/", items: [["Open Data Sponsorship Program", "free hosting of the NEXRAD archive and the coastal lidar", null]] },
+    { name: "Lincoln Park Boat Club", items: [["Chicago Sprints course", "the 1000 m lagoon course line, as a reference", null]] }] },
+  { sec: "Models, libraries and methods", color: "#8ea2b4", orgs: [
+    { name: "Open-source software", items: [
+      ["FUNWAVE-TVD", "individual waves at the harbour mouths: the fully nonlinear Boussinesq model by Fengyan Shi and colleagues, University of Delaware", "https://fengyanshi.github.io/build/html/index.html"],
+      ["Py-ART", "reads and grids the radar volumes (ARM, U.S. Department of Energy; BSD)", "https://arm-doe.github.io/pyart/"],
+      ["three.js r147", "draws the 3-D world (MIT)", "https://threejs.org/"],
+      ["NumPy, SciPy, OpenCV, Matplotlib, rasterio, pyproj, boto3, FastAPI, Uvicorn and Playwright", "the pipeline, the service and the page checks", null],
+      ["GitHub Actions", "runs the snapshots, the wave libraries and the tests", null]] },
+    { name: "Published methods", items: [
+      ["Battjes & Janssen (1978); JONSWAP; Pierson–Moskowitz; Tessendorf (2001)", "wave breaking, the spectra and the FFT ocean under the board", null],
+      ["Preetham, Shirley & Smits (1999)", "the daylight sky, as in three.js's Sky", null],
+      ["Nechad et al. (2009); Stefan's ice-growth law; Dean's equilibrium beach profile; Farnebäck (2003)", "turbidity from Sentinel-2, ice thickness from freezing degree-days, the beach slope, the radar motion tracking", null]] }] }]; }
+function renderCredits() { const el = $("#exp-credits"); if (!el || el.dataset.done) return; el.dataset.done = "1";
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const link = (t, u) => u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>` : esc(t);
+  const n = { orgs: 0, items: 0 }; let h = "";
+  for (const sec of creditsList()) { h += `<h3>${esc(sec.sec)}</h3>`;
+    for (const o of sec.orgs) { n.orgs++; n.items += o.items.length;
+      h += `<div class="org" style="border-left-color:${sec.color}"><b>${link(o.name, o.url)}${o.sub ? `<small>${esc(o.sub)}</small>` : ""}</b><ul>${o.items.map(([w, how, u]) => `<li>${link(w, u)}<span> — ${esc(how)}</span></li>`).join("")}</ul></div>`; } }
+  const built = DATA.generated ? ` This page was built ${new Intl.DateTimeFormat("en-US", { timeZone: TZ, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(DATA.generated))}.` : "";
+  el.innerHTML = `<p class="note">${n.items} data products, models and libraries from ${n.orgs} organizations make this page. Thank you to everyone who measures, models and shares.${built}</p>${h}<p class="fine">${esc((DATA.lake && DATA.lake.osm_attribution) || "© OpenStreetMap contributors (ODbL)")} · Earth Engine datasets as credited on each card · Any mistakes in this list are the page's, not the agencies'.</p>`; }
 S.xtab = "lab"; S.xmode = "exp";
 // the Experimental section's tabs: the weather lab, Upsets, past periods and screenshots; three of them are modes of their own
 function syncXTab() { const tab = S.xtab; document.querySelectorAll("[data-xtab]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.xtab === tab)));
-  $("#exp-lab").hidden = tab !== "lab"; $("#exp-upsets").hidden = tab !== "upsets"; $("#exp-hist").hidden = tab !== "hist"; $("#exp-import").hidden = tab !== "import"; $("#exp-enso").hidden = tab !== "enso"; }
+  $("#exp-lab").hidden = tab !== "lab"; $("#exp-upsets").hidden = tab !== "upsets"; $("#exp-hist").hidden = tab !== "hist"; $("#exp-import").hidden = tab !== "import"; $("#exp-enso").hidden = tab !== "enso"; $("#exp-credits").hidden = tab !== "credits"; }
 function setXTab(tab) { S.xtab = tab; syncXTab();
   const want = { lab: "exp", hist: "history", import: "import" }[tab]; if (want && S.mode !== want) setMode(want);
   if (tab === "upsets") { renderUpsets(); $("#mode-note").textContent = MODE_NOTE.upsets; }
-  if (tab === "enso") { renderEnso(); $("#mode-note").textContent = MODE_NOTE.enso; } }
+  if (tab === "enso") { renderEnso(); $("#mode-note").textContent = MODE_NOTE.enso; }
+  if (tab === "credits") { renderCredits(); $("#mode-note").textContent = MODE_NOTE.credits; } }
 document.querySelectorAll("[data-xtab]").forEach((b) => b.onclick = () => setXTab(b.dataset.xtab));
 function renderUpsets() {
   const rows = upsetSeries(), ev = upsetEvents(rows), now = Date.now(), fmtWd = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" }), fmtH = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" });
