@@ -50,7 +50,8 @@ body.kiosk #play { visibility: hidden; }
   body.kiosk #timeline { padding: 6px 10px; }
 }
 @media (max-width: 760px) and (orientation: landscape) { body.kiosk #kstrip:not([hidden]) { grid-template-columns: repeat(4, 1fr); } }
-body.kiosk #vsbox { order: -1; }   /* the Outlook leads with the forces and the paddling light */
+body.kiosk #vsbox { order: -1; }
+#kfade { position: absolute; inset: 0; background: #05080b; opacity: 0; pointer-events: none; z-index: 1; }   /* the Outlook leads with the forces and the paddling light */
 body.kiosk canvas#gl, body.kiosk #bar, body.kiosk #timeline, body.kiosk #hud { pointer-events: none; } body.kiosk #timeline .track { pointer-events: none; }
 body.kiosk #timeline #scrub { pointer-events: none; } body.kiosk #hud .sub { font: 500 13px/1.2 var(--font-ui); color: var(--muted); margin: -2px 0 6px; letter-spacing: .01em; }
 #hud { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); left: calc(var(--gut) + env(safe-area-inset-left, 0px)); padding: 12px 14px; width: min(330px, calc(100vw - 2 * var(--gut))); display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
@@ -2216,7 +2217,7 @@ const makeOcean = (L, NF, NC, kMin = 0) => {
   // wind-wave spectrum (Pierson-Moskowitz shape for this wind, cos^2 spreading about the wind) above omegaCut, tapered in
   function setSea(wind, windTo, wpMain) {
     // coarse key: rebuilding both spectra costs a frame or more, and a played forecast nudges the wind every few frames
-    const U = Math.max(wind, 0), q = (v, st) => (Math.round(v / st) * st).toFixed(2), key = [q(U, 0.5), q(windTo[0], 0.05), q(windTo[1], 0.05), q(wpMain, 0.1)].join();
+    const k = S.kiosk ? 4 : 1, U = Math.max(wind, 0), q = (v, st) => (Math.round(v / st) * st).toFixed(2), key = [q(U, 0.5 * k), q(windTo[0], 0.05 * k), q(windTo[1], 0.05 * k), q(wpMain, 0.1 * k)].join();
     if (key === st.key) return; st.key = key;
     const wWind = 0.877 * g / Math.max(U, 0.3), wCut = 2.3 * wpMain, gate = clamp((U - 0.4) / 2.6, 0, 1), alpha = 0.0081;
     const spec = (kx, kz) => { const k = Math.hypot(kx, kz); if (k < 1e-6) return 0; const w = Math.sqrt(g * k);
@@ -3856,6 +3857,17 @@ function renderLegend() {
 const clock = new THREE.Clock(); let lastHud = 0, lastCond = 0, COND = null, RS = null, flashT = -1e9, nextStrike = 0, flashPos = [0, 0, 5];
 // the shelter map (SHELTER_GLSL) for the current wave direction: one small render pass when the direction changes
 const SHEL = { dir: null };
+// the kiosk's frame budget: if frames average over ~24 ms for 2 s, drop the pixel ratio a step (at most every 3 s, down
+// to 0.6), so the clip keeps moving evenly instead of stuttering; and a short fade to dark across the loop's seam, where
+// the clock jumps back 24 hours
+const KPERF = { avg: 16, since: 0, last: 0, pr: 1 };
+function kioskPerf(dt, el, total) {
+  const ms = dt * 1000; if (ms > 0 && ms < 250) KPERF.avg += (ms - KPERF.avg) * 0.05;
+  KPERF.since += dt; const t = performance.now();
+  if (KPERF.since > 2 && KPERF.avg > 24 && KPERF.pr > 0.6 && t - KPERF.last > 3000) { KPERF.pr = Math.max(0.6, KPERF.pr * 0.8); KPERF.last = t; KPERF.since = 0;
+    renderer.setPixelRatio(KPERF.pr); resize(); }
+  const f = $("#kfade"); if (f) { const edge = Math.min(el, total - el), o = clamp(1 - edge / 450, 0, 1); if (Math.abs(o - (+f.dataset.o || 0)) > 0.01) { f.style.opacity = o.toFixed(2); f.dataset.o = o; } }
+}
 // ---------------------------------------------------------------- the kiosk's smooth clip: the light follows the clock every
 // frame and the scene's weather uniforms ease toward each new reading (~0.3 s) instead of stepping a few times a second
 const KS_KEYS = ["uHs", "uTp", "uWindSpd", "uWhitecap", "uExtra", "uExtraBase", "uFlowTp", "uWcFetch", "uLevelD", "uSetupShore"], KS_V2 = ["uWaveDir", "uFlowDir"];
@@ -3894,7 +3906,7 @@ function tick() {
   // (frame-based stepping slowed down while the wave libraries loaded or the frame rate dipped, then looked like a speed-up)
   if (S.kiosk) { const K = S.kiosk; let el = now - K.started;
     if (el >= K.plan.total) { K.t0 = Date.now(); K.t1 = kioskEnd(K.t0); K.plan = kioskPlan(K); K.started = now; el = 0; buildTicks(); }   // the loop starts over at the present
-    S.t = kioskTime(K, el); }
+    S.t = kioskTime(K, el); kioskPerf(dt, el, K.plan.total); }
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   navStep(dt);
@@ -4014,7 +4026,7 @@ function tick() {
   renderBloom();
   renderer.setRenderTarget(null); renderer.render(compScene, quadCam);
   updateLabels();
-  if (now - lastHud > 150) { lastHud = now; updateHud(rr, tp); updateCompass(); drawMinimap(); }
+  if (now - lastHud > (S.kiosk ? 300 : 150)) { lastHud = now; updateHud(rr, tp); updateCompass(); drawMinimap(); }
   if (WL.on && now - (WL.legT || 0) > 1000) { WL.legT = now; renderLegend(); }
 }
 const WXI = (() => { const cl = (y = 0) => `<path d="M7 ${18 - y}h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 ${11 - y}a3.5 3.5 0 0 0 1 7z"/>`, sv = (b) => `<svg viewBox="0 0 24 24" aria-hidden="true">${b}</svg>`;
@@ -4180,13 +4192,13 @@ function updateHud(rr, tp) {
     // first the paddling light with the forces line and the hazard icons; then wind; waves and water temperature together; sky
     const P = PSTAT, lvC = P ? ["g", "y", "r"][P.lv] : "", rel = ($("#vs .rel") || {}).innerHTML || "", hz = ($("#wxrow") || {}).hidden === false ? $("#wxrow").innerHTML : "";
     const wt = C.waterC != null ? `${Math.round(cToF(C.waterC))}°F water` : "", sunTxt = (() => { const su = C.sun || solar(new Date(S.t)); return `sun ${su.el > 0 ? Math.round(su.el) + "° up" : "down"}`; })();
-    const st = $("#kstrip"); st.hidden = false; st.innerHTML =
+    const st = $("#kstrip"); st.hidden = false; const kh =
       `<div class="kt force ${lvC}"><div class="k"><i class="l r"></i><i class="l y"></i><i class="l g"></i>Paddling</div><div class="v">${P ? PADDLE_TXT[P.lv] : "—"}</div>` +
         `<div class="s">${P && P.why.length ? P.why[0][1] : "all clear"}</div>${rel ? `<div class="s rel">${rel}</div>` : ""}${hz ? `<div class="wxrow khz">${hz}</div>` : ""}</div>` +
       `<div class="kt air"><div class="k">Wind ${arrow(C.dir)}</div><div class="v">${mph(C.wind)}<span class="u">mph</span></div><div class="s">from ${compass(C.dir)}${C.gust ? ` · gusts ${mph(C.gust)}` : ""}</div></div>` +
       `<div class="kt water"><div class="k">Waves &amp; water ${hs > 0.01 ? arrow(wdirW) : ""}</div><div class="v">${hs > 0.01 ? `${ft(hs)}<span class="u">ft</span>` : "Calm"}${wt ? `<span class="u"> · ${wt}</span>` : ""}</div>` +
         `<div class="s">${hs > 0.01 ? `from ${compass(wdirW)} · ${tpk.toFixed(1)} s` : "under 0.1 ft"}${iceTxt ? ` · ${iceTxt}` : ""}</div></div>` +
-      `<div class="kt sky"><div class="k">Sky</div><div class="v">${C.airC != null ? `${Math.round(cToF(C.airC))}<span class="u">°F air</span>` : "—"}</div><div class="s">${wx} · ${sunTxt}</div></div>`; }
+      `<div class="kt sky"><div class="k">Sky</div><div class="v">${C.airC != null ? `${Math.round(cToF(C.airC))}<span class="u">°F air</span>` : "—"}</div><div class="s">${wx} · ${sunTxt}</div></div>`;  if (kh !== st.dataset.h) { st.dataset.h = kh; st.innerHTML = kh; } }
   renderAlerts(live ? (W.alerts || []) : [], tRef);
   // the readouts, by topic: wind (other stations and models), waves, water, your paddle
   const wind = [], waves = [], water = [], you = [];
@@ -4422,7 +4434,11 @@ function kioskTime(K, el) {
   let at = 0; for (const g of K.plan.segs) { if (el < at + g.ms || g === K.plan.segs[K.plan.segs.length - 1]) return g.a + Math.min(1, (el - at) / g.ms) * (g.b - g.a); at += g.ms; } return K.t1; }
 function kiosk(k) {
   S.kiosk = Object.assign({ name: "Diversey Outlook", hours: 3, loopSec: 15, reloadMin: 30, staleH: 6 }, k || {});
-  S.kiosk.loopSec = Math.min(20, Math.max(10, +S.kiosk.loopSec || 15));   // a clip of 10-20 s
+  S.kiosk.loopSec = Math.min(40, Math.max(10, +S.kiosk.loopSec || 15));   // a clip of 10-40 s
+  // a steady frame rate matters more than sharpness here: lighter volume clouds, a pixel ratio capped at 1.25 (lowered
+  // further below if the frames still run long), and the fade at the loop's seam
+  S.quality = 0; renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25)); resize(); KPERF.pr = renderer.getPixelRatio();
+  { const f = document.createElement("div"); f.id = "kfade"; canvas.after(f); }
   document.body.classList.add("kiosk"); document.title = S.kiosk.name;
   const h1 = $("#hud h1"); if (h1 && !$("#hud .sub")) { const sub = document.createElement("div"); sub.className = "sub"; sub.textContent = S.kiosk.name; h1.after(sub); }
   controls.enabled = false; camTween = null; S.follow = false; $("#nowbtn").hidden = true; hideHint();
