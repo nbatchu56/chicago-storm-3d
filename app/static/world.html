@@ -30,7 +30,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 /* kiosk (Diversey Outlook): a view to leave on a monitor or open on a phone; nothing to click, the clock runs by itself */
 body.kiosk #controls, body.kiosk #toggle, body.kiosk #nav, body.kiosk #hint, body.kiosk #help, body.kiosk #legend, body.kiosk #refreshbox, body.kiosk #nowbtn, body.kiosk .cathead .more, body.kiosk #mmview, body.kiosk #mmjet, body.kiosk #timeline .speed { display: none !important; }
-body.kiosk #play { visibility: hidden; }
+body.kiosk #play, body.kiosk #timeline #scrub { pointer-events: auto; }   /* play / pause and seek stay usable in the kiosk */
 #kstrip { display: none; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 #kstrip .kt { background: var(--panel); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--line); border-radius: 10px; padding: 7px 9px 8px; min-width: 0; }
 #kstrip .kt .k { font: 600 10px/1.2 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; }
@@ -53,7 +53,7 @@ body.kiosk #play { visibility: hidden; }
 body.kiosk #vsbox { order: -1; }
 #kfade { position: absolute; inset: 0; background: #05080b; opacity: 0; pointer-events: none; z-index: 1; }   /* the Outlook leads with the forces and the paddling light */
 body.kiosk canvas#gl, body.kiosk #bar, body.kiosk #timeline, body.kiosk #hud { pointer-events: none; } body.kiosk #timeline .track { pointer-events: none; }
-body.kiosk #timeline #scrub { pointer-events: none; } body.kiosk #hud .sub { font: 500 13px/1.2 var(--font-ui); color: var(--muted); margin: -2px 0 6px; letter-spacing: .01em; }
+body.kiosk #hud .sub { font: 500 13px/1.2 var(--font-ui); color: var(--muted); margin: -2px 0 6px; letter-spacing: .01em; }
 #hud { top: calc(var(--gut) + env(safe-area-inset-top, 0px)); left: calc(var(--gut) + env(safe-area-inset-left, 0px)); padding: 12px 14px; width: min(330px, calc(100vw - 2 * var(--gut))); display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 #hud h1 { margin: 0; font-size: 20px; font-weight: 700; } #hud h1 .lk { color: #05a0cb; } #hud h1 .vw { color: #90c841; }   /* Lake = water, View = air */
 .hudhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -3200,6 +3200,7 @@ document.querySelectorAll("[data-move]").forEach((b) => b.onclick = () => setMov
 const KEYMAP = { KeyW: "fwd", ArrowUp: "fwd", KeyS: "back", ArrowDown: "back", KeyA: "left", ArrowLeft: "left", KeyD: "right", ArrowRight: "right", KeyQ: "rotl", KeyE: "rotr", KeyR: "in", Equal: "in", NumpadAdd: "in", KeyF: "out", Minus: "out", NumpadSubtract: "out" };
 const typing = (e) => /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || "") && e.target.type !== "range" && e.target.type !== "checkbox";
 window.addEventListener("keydown", (e) => {
+  if (S.kiosk && e.code === "Space" && !typing(e)) { e.preventDefault(); setPlaying(!S.playing); return; }   // the kiosk: space plays / pauses
   if (S.kiosk || typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
   const a = KEYMAP[e.code];
   if (a) { NAV.keys.add(a); NAV.shift = e.shiftKey; e.preventDefault(); hideHint(); return; }
@@ -3734,8 +3735,11 @@ function renderUpsets() {
 }
 const ICON_PLAY = "M3 1.5v13l11-6.5z", ICON_PAUSE = "M3 1.5h3.5v13H3zM9.5 1.5H13v13H9.5z";
 function setPlaying(p) { S.playing = p; $("#play-icon").setAttribute("d", p ? ICON_PAUSE : ICON_PLAY); $("#play").setAttribute("aria-label", p ? "Pause" : "Play"); }
-$("#play").onclick = () => { if (!S.playing && S.mode === "live" && S.follow) { S.follow = false; $("#nowbtn").hidden = false; } setPlaying(!S.playing); };
-$("#scrub").oninput = (e) => { S.t = tlT(+e.target.value / SCRUB_N); setPlaying(false); if (S.mode === "live") { S.follow = false; $("#nowbtn").hidden = false; } };
+$("#play").onclick = () => { if (S.kiosk) { setPlaying(!S.playing); return; }
+  if (!S.playing && S.mode === "live" && S.follow) { S.follow = false; $("#nowbtn").hidden = false; } setPlaying(!S.playing); };
+// the kiosk seeks its own loop: the clip time whose timeline time is the one picked (bisection; the clock is monotonic)
+function kioskSeek(t) { const K = S.kiosk; let a = 0, b = K.plan.total; for (let i = 0; i < 40; i++) { const m = (a + b) / 2; if (kioskTime(K, m) < t) a = m; else b = m; } K.el = (a + b) / 2; K.started = performance.now() - K.el; S.t = kioskTime(K, K.el); }
+$("#scrub").oninput = (e) => { if (S.kiosk) { kioskSeek(tlT(+e.target.value / SCRUB_N)); setPlaying(false); return; } S.t = tlT(+e.target.value / SCRUB_N); setPlaying(false); if (S.mode === "live") { S.follow = false; $("#nowbtn").hidden = false; } };
 $("#nowbtn").onclick = () => { S.follow = true; $("#nowbtn").hidden = true; };
 $("#showtrack").onchange = (e) => { S.showTrack = e.target.checked; if (S.ov === "spots") { SPOTS.built = ""; buildConfirmed(); } };
 $("#buoys").checked = BUOY.on; $("#buoys").onchange = (e) => { BUOY.on = e.target.checked; try { localStorage.setItem("lakelocal-buoys", BUOY.on ? "1" : "0"); } catch (err) {} };
@@ -3904,9 +3908,10 @@ function tick() {
   if (S.playing && !(S.mode === "live" && S.follow)) { S.t += dt * 1000 * S.speed; if (S.t > t1) S.t = t0; }   // one steady rate: S.speed seconds of the timeline per real second
   // the kiosk's clock runs on wall time, not frame time: one loop takes exactly loopSec real seconds however the frames come
   // (frame-based stepping slowed down while the wave libraries loaded or the frame rate dipped, then looked like a speed-up)
-  if (S.kiosk) { const K = S.kiosk; let el = now - K.started;
+  if (S.kiosk) { const K = S.kiosk; if (!S.playing) K.started = now - (K.el || 0);   // paused: the loop's clock holds where it is
+    let el = now - K.started;
     if (el >= K.plan.total) { K.t0 = Date.now(); K.t1 = kioskEnd(K.t0); K.plan = kioskPlan(K); K.started = now; el = 0; buildTicks(); }   // the loop starts over at the present
-    S.t = kioskTime(K, el); kioskPerf(dt, el, K.plan.total); }
+    K.el = el; S.t = kioskTime(K, el); kioskPerf(dt, el, K.plan.total); }
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   navStep(dt);
