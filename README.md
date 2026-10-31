@@ -89,6 +89,31 @@ The El Niño symbol (`ensoIcon()` in the page: a warm sun-disc riding a Pacific 
 tracker, the layer's legend, Upsets cards that fit the El Niño winter pattern (southerly gales, rain events, Nov-Mar)
 and an "El Niño-mild" pill on the Air card when an El Niño cold-season day runs 5 °F or more above usual.
 
+## Wind, the jet stream and the paddling light
+
+- **Wind & gusts layer** (View → Wind & gusts): NOAA HRRR 3 km hourly 10 m wind and surface gust (`app/hrrr.py`, NOMADS grib
+  filter, no key) over the radar map's region, turned from HRRR's Lambert grid to true north and resampled to a 3 km grid in
+  the page's frame. Streaks flow with the wind over whatever you look at, coloured by speed; gust patches drift downwind
+  and make the streaks surge and brighten as far as HRRR's gust over its mean wind. Observed hours are nudged to the
+  lakefront stations and buoys (each station's miss spread over ~20 km). Outside HRRR's hours the streaks follow the readout.
+- **Jet stream** (Radar map card → Jet stream): NOAA GFS 1° 250 hPa winds over North America (`app/jet.py now`), every 3 h
+  to +48 h: bands shaded by speed with flowing streaks, the nearest jet streak's core speed, and Chicago's quadrant
+  (under the core, left/right × entrance/exit). Outline: Natural Earth 1:50m (`tools/na_outline.py`).
+- **Jet in the model** (`app/jet.py climate`, monthly on the enso branch): NCEP/NCAR reanalysis 6-hourly 250 hPa
+  (2016-2025) through the same quadrant metrics against hourly gusts at CHII2, 45174 and 45198; wind-stratified ratios
+  of the gust factor and of the chance of a 30 mph gust, day-block bootstrap with a Bonferroni-corrected 90% interval,
+  and no change under 3% is applied. 2016-2025 found **no quadrant that makes the lakefront gustier than the surface
+  wind already says** (gust factor 1-2% lower under any jet streak; 30 mph gusts 8% less often under the core), so the
+  gusts and the Upsets are unchanged; the hook re-reads the study every month.
+- **Subtropical jet and El Niño** (Experimental → El Niño): the latitude of the 250 hPa zonal-wind maximum 15-38° N over
+  120-80° W, monthly 1948+, by winter ENSO phase: strong El Niño winters 28.3° N, La Niña 34.0° N (r = −0.62 with the
+  Dec-Feb ONI); the next 48 h from GFS against the month's 1991-2020 normal.
+- **Paddling light** (compass box): green / yellow / red for the spot at the view's centre and the timeline's time; the
+  worst factor wins. Go needs local chop under 70 J/m², wind under 7 mph, gusts under 16, offshore (SW-NW) wind under 9,
+  water 50 °F or warmer, no rain, no NWS advisory, daylight. Stay off at rough chop (≥160 J/m²), wind ≥16, gusts ≥21,
+  offshore ≥13, water under 40 °F, a thunderstorm core on radar, or an NWS warning / small craft advisory. Tap it for the
+  reasons and the full table (`PADDLE` in `world.html`).
+
 ## Learned correction and scorecard (experimental)
 
 The wave model's misses are fairly consistent (too high in some winds, too low in others), so it can learn from the buoys:

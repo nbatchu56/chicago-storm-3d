@@ -97,6 +97,20 @@ jobs:
         run: |
           git fetch -q --depth 1 origin enso 2>/dev/null && git show origin/enso:enso_climate.json > "$RUNNER_TEMP/enso_climate.json" || echo "no composites yet"
           python -m app.enso now --out "$OUT/enso.json" --climate "$RUNNER_TEMP/enso_climate.json"
+      - name: Wind and gusts (NOAA HRRR 3 km, hourly, the radar map's region) for the wind layer
+        continue-on-error: true
+        timeout-minutes: 6
+        env:
+          OUT: ${{ runner.temp }}/storm
+        run: pip install -q eccodes && python -m app.hrrr --out "$OUT/wind.json"
+      - name: Jet stream (NOAA GFS 250 hPa over North America; the gust study from the enso branch)
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          OUT: ${{ runner.temp }}/storm
+        run: |
+          git fetch -q --depth 1 origin enso 2>/dev/null && git show origin/enso:jet_climate.json > "$RUNNER_TEMP/jet_climate.json" || echo "no jet study yet"
+          pip install -q eccodes && python -m app.jet now --out "$OUT/jet.json" --climate "$RUNNER_TEMP/jet_climate.json"
       - name: Aerial photo of Diversey Harbor and the lagoon (Cook County's orthophoto; the last snapshot's copy is reused for a month)
         continue-on-error: true
         timeout-minutes: 6
@@ -120,7 +134,7 @@ jobs:
           python -m app.levels --days 800 --out "$M/levels.json" || echo "no water levels"
           ls -la "$M"
           python tools/build_world.py --out "$OUT/world.html" --scene "$OUT/scene.json" --sup "$OUT/sup.json" --lakefront "$OUT/lakefront.json" \
-            --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M"/funwave_*.json --validate "$M/validate.json" --levels "$M/levels.json" --earth "$OUT/earth.json" --wn3 "$OUT/wn3.json" --ortho "$OUT/ortho.json" --enso "$OUT/enso.json" \
+            --bathy "$M/bathy.json" --swan "$M/swan.json" --funwave "$M"/funwave_*.json --validate "$M/validate.json" --levels "$M/levels.json" --earth "$OUT/earth.json" --wn3 "$OUT/wn3.json" --ortho "$OUT/ortho.json" --enso "$OUT/enso.json" --wind "$OUT/wind.json" --jet "$OUT/jet.json" \
             --history "$M"/history-*.json --sessions sessions/*.json --imports examples/*.json --split \
             --learn "$RUNNER_TEMP/correction.json" --scorecard "$RUNNER_TEMP/L/scorecard.json" \
             --start '{"mode":"live","view":[41.9203,-87.6195,1.58,284,34]}' \
@@ -130,7 +144,7 @@ jobs:
           OUT: ${{ runner.temp }}/storm
         run: |
           mkdir -p "$RUNNER_TEMP/pub" && cd "$RUNNER_TEMP/pub"
-          for f in scene.json status.json sup.json lakefront.json probe.json wn3.json earth.json ortho.json enso.json world.html outlook.html; do [ -f "$OUT/$f" ] && cp "$OUT/$f" .; done
+          for f in scene.json status.json sup.json lakefront.json probe.json wn3.json earth.json ortho.json enso.json wind.json jet.json world.html outlook.html; do [ -f "$OUT/$f" ] && cp "$OUT/$f" .; done
           [ -d "$OUT/data" ] && cp -r "$OUT/data" .   # the page's side files (lake bottom, SWAN, FUNWAVE, history)
           ls -la
           git init -q -b snapshot
