@@ -89,3 +89,14 @@ north branch up to belmont avenue; south until tom ping park".
   lock's season and notices; the page's riverConditions: canyon wind k(θ), reach fetch chop, the current per reach from
   the gage velocity, CSO red / 48 h, reversal red, lock-season caution; current ribbons; Water/Air rows; Upsets CSO and
   lock-day events). No Chicago canyon measurements exist: k is the literature's; revisit with the AIS wakes.
+- 2026-11-02: phase 4. Both pages republished with the river (LakeView v238, the Outlook v56: its view is the harbour,
+  it carries the same world so the readouts agree). Archived.
+
+## Execution record
+- PRs: #10 (phase 1 + geometry), #11 (phase 3), #12 (river views: no pull toward the lake, readouts from the river water).
+- Data: bathy run → river.json 1.65 MB (bed 2 m in two boxes, 63 bridges, 7 polys, the lock, 6,744 county buildings);
+  the world grid 1161 × 1548 with 12,074 river cells (src 6). Snapshot → river_now.json each run (gages, CSO, lock).
+- Tests: tests/test_river.py (12), the suite green apart from the 4 pre-existing test_service failures.
+- Not done here: the phone-size performance check. The sandbox has no GPU (software GL draws the world at ~1 frame/s,
+  so the boot never finishes in time); the page keeps its adaptive pixel ratio and the 2560 px low-memory mask, but
+  the real measure is the user's phone. Boat wakes wait for the AIS feed (hook: wake chop by reach and hour).
