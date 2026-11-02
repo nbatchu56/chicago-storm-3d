@@ -329,7 +329,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
 /* the compact strip (the default): Air, Water and Atmosphere fold to their headers (a click opens one in full), Forces keeps
    the compass and the paddling light, the map follows; "details" in the Forces header shows the whole strip */
 body.compact { --cardh: 156px; } body.compact #cards { align-items: flex-end; }
-body.compact #cards .cat:not(.open) { height: auto; max-height: 31px; overflow: hidden; min-width: 0; width: 150px !important; flex: none !important; }
+body.compact #cards .cat:not(.open) { height: 31px; max-height: 31px; overflow: hidden; min-width: 0; width: 164px !important; max-width: 164px; padding: 8px 10px; flex: 0 0 164px !important; }   /* the three folded cards: one size */
 body.compact #minimap { height: auto; align-self: stretch; } body.compact #minimap canvas { height: auto; flex: 1 1 0; min-height: 0; }
 body.compact #cards .cat.open { height: 256px; } body.compact #cat-sky .cathead { cursor: pointer; }
 body.compact #vsbox { height: auto; min-width: 236px; } body.compact #vsbox .vs .rel, body.compact #vsbox .vs .hdg { display: none; }
