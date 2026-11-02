@@ -42,3 +42,12 @@ Asked 2026-10-30: "add layer: visualize the wind & gusts dynamically / add optio
   added after a single marginal right-exit result (×1.08, 90% lo 1.004) appeared. STJ: strong EN 28.3° N, LN 34.0° N.
 - 2026-10-31: user asked mid-build for a green/yellow/red paddling status in the compass box with the criteria shown;
   proposed and built. User set: go needs wind < 7 mph; water < 50 °F caution, < 40 °F stay off.
+- 2026-11-02: archived.
+
+## Execution record
+- Shipped 2026-10-31 (feat/wind-jet → main 581b387): app/hrrr.py, app/jet.py, tools/na_outline.py, the HRRR and jet
+  steps in snapshot.yml, the jet study in enso.yml; tests/test_hrrr.py, tests/test_jet.py.
+- The paddling light grew after the merge: moved under the compass with the criteria panel (closes with ✕ / Escape),
+  water-temperature rows, the Forces card, and the river's rows (see the Chicago River plan).
+- Standing result: the jet study found no gust increase in any quadrant, so the jet hooks stay wired but inactive
+  until a monthly study says otherwise.
