@@ -286,6 +286,12 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 #bar { position: absolute; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 84px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 6px; pointer-events: none; z-index: 3; }
 #bar > * { pointer-events: auto; }
 #toggle { padding: 6px 10px; font-size: 12px; z-index: 4; }
+/* immersive: one click hides everything but the scene and the timeline (I, or the same button, or Esc brings it back) */
+#imm { position: absolute; top: calc(var(--gut) + env(safe-area-inset-top, 0px)); right: calc(var(--gut) + 78px + env(safe-area-inset-right, 0px)); z-index: 4; padding: 5px 7px; font-size: 12px; background: var(--panel); display: inline-flex; align-items: center; gap: 5px; }
+#imm svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+body.immersive #hud, body.immersive #bar, body.immersive #legend, body.immersive #nav, body.immersive #toggle, body.immersive #controls, body.immersive #hint, body.immersive #help, body.immersive #labels, body.immersive #refreshbox, body.immersive #nowbtn { display: none !important; }
+body.immersive #imm { right: calc(var(--gut) + env(safe-area-inset-right, 0px)); opacity: .55; } body.immersive #imm:hover { opacity: 1; }
+body.immersive #attr { bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); }
 /* the name and the moment: text on the scene, no box */
 #hud { position: absolute; top: calc(var(--gut) + env(safe-area-inset-top, 0px)); left: calc(var(--gut) + env(safe-area-inset-left, 0px)); max-width: min(480px, calc(100vw - 2 * var(--gut) - 110px)); display: grid; gap: 5px; width: max-content; pointer-events: none; z-index: 3;
   background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; padding: 0; text-shadow: 0 0 2px #000, 0 1px 3px #000, 0 0 10px rgba(0, 0, 0, .9); }
@@ -374,6 +380,7 @@ body.compact #vsbox .vs { grid-template-columns: 92px 1fr; } body.compact #vsbox
     <div class="line src" id="srcline" hidden><span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span><span id="source">Loading…</span></div>
   </div>
   <button id="toggle" aria-expanded="false" aria-controls="controls">Settings</button>
+  <button id="imm" type="button" aria-pressed="false" title="Immersive: only the scene and the timeline (I)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>Immersive</span></button>
   <div id="bar" aria-label="Conditions">
     <div id="kstrip" hidden></div>
     <div id="cards">
@@ -3459,8 +3466,12 @@ window.addEventListener("keydown", (e) => {
   if (a) { NAV.keys.add(a); NAV.shift = e.shiftKey; e.preventDefault(); hideHint(); return; }
   if (e.code === "KeyH") { gotoPreset(0); } else if (e.code === "KeyT") { toggleTop(); } else if (e.code === "KeyP") { setMove(NAV.move === "fly" ? "paddle" : "fly"); }
   else if (e.code === "Space" && e.target === document.body || e.code === "Space" && e.target === canvas) { setPlaying(!S.playing); e.preventDefault(); }
-  else if (e.key === "?" || e.code === "Slash") { toggleHelp(); } else if (e.code === "Escape") { $("#help").hidden = true; }
+  else if (e.key === "?" || e.code === "Slash") { toggleHelp(); } else if (e.code === "KeyI") { setImmersive(!document.body.classList.contains("immersive")); }
+  else if (e.code === "Escape") { $("#help").hidden = true; if (document.body.classList.contains("immersive")) setImmersive(false); }
 });
+// immersive: the scene and the timeline, nothing else; the button folds to its icon in the corner
+function setImmersive(on) { document.body.classList.toggle("immersive", on); const b = $("#imm"); b.setAttribute("aria-pressed", String(on)); b.querySelector("span").textContent = on ? "Exit" : "Immersive"; b.title = on ? "Back to the full view (I or Esc)" : "Immersive: only the scene and the timeline (I)"; hideHint(); }
+$("#imm").onclick = () => setImmersive(!document.body.classList.contains("immersive"));
 window.addEventListener("keyup", (e) => { const a = KEYMAP[e.code]; if (a) NAV.keys.delete(a); NAV.shift = e.shiftKey; });
 window.addEventListener("blur", () => NAV.keys.clear());
 // the navigation pad folds away to one button (mouse, touch and keys still steer); folded by default, remembered per browser
