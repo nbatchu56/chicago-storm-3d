@@ -486,6 +486,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
       <label class="check"><input type="checkbox" id="bolts" checked> Lightning flashes</label>
       <label class="check" title="Moored buoys that ride the modelled waves, each beside a fixed pile painted in 1 ft bands from the still-water line (red). Zoom in near the water to see them."><input type="checkbox" id="buoys"> Buoys and wave gauges on the water</label>
       <label class="check" title="The rowing course on the Lincoln Park South Lagoon: 1000 m from the south face of the Fullerton Avenue bridge, a mark every 100 m"><input type="checkbox" id="course" checked> Lagoon 1000 m course</label>
+      <label class="check" title="The Chicago River's current, drawn as drifting ribbons on the water near the view (sped up 60 times: the real current is a few cm/s); amber in a storm reversal"><input type="checkbox" id="rflow" checked> River current</label>
     </section>
     <section id="sec-sat">
       <h2>Satellite</h2>
@@ -552,6 +553,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
 <script id="wind-data" type="application/json"></script>
 <script id="jet-data" type="application/json"></script>
 <script id="river-data" type="application/json"></script>
+<script id="rivernow-data" type="application/json"></script>
 <script id="earth-data" type="application/json"></script>
 <script id="wn3-data" type="application/json"></script>
 <script id="meta-data" type="application/json"></script>
@@ -3116,6 +3118,111 @@ function radarState(tMs) {   // which frames to show, blend and motion shift
   const mot = src.meta.motion_km_per_min || [0, 0], dtm = (F[j].t - F[i].t) / 60000;
   return { A: F[i], B: F[j], f, shiftA: [mot[0] * f * dtm, mot[1] * f * dtm], shiftB: [-mot[0] * (1 - f) * dtm, -mot[1] * (1 - f) * dtm], grid: src.grid, label: src.meta.source, lead: F[f < 0.5 ? i : j].kind === "fc" ? F[f < 0.5 ? i : j].lead : 0 };
 }
+// ---------------------------------------------------------------- the river's physics (rivernow-data: app.river --now)
+// West of the lock there are no lake waves. What moves the water: the wind as the street canyon lets it through (along the
+// reach it keeps ~70% of the open wind, across it 30%; Oke 1988, Nakamura & Oke 1988), raising chop over the reach's own
+// fetch; the current, from the Columbus Dr gage's measured velocity (USGS 05536123, 72254: + is away from the lake, the
+// normal direction; a sustained strong negative is a storm reversal, the lock opened to the lake); the sewer overflows
+// (MWRD's possible-CSO events by reach: the reach is off limits while one is open and for 48 h after); and the lock's
+// season (closed to paddlers Nov 15 - Apr 15). Boat wakes wait for the AIS feed.
+const RN = { d: null, cur: null };
+const RIVER_K = { along: 0.7, across: 0.3 };        // the canyon's share of the open wind along / across the reach
+const CURRENT_CAUTION = 0.5 / MPH;                  // m/s: 0.5 mph, only storm reversals get there
+const CSO_AFTER_MS = 48 * 3600e3;
+function setRiverNow(d) { RN.d = d || null; }
+// the main stem's velocity (m/s, + away from the lake) at a time: the hourly series where it covers it, else the latest reading
+function riverVelocity(tMs) {
+  const g = RN.d && RN.d.gages && RN.d.gages["05536123"]; if (!g || !g.velocity_fps) return null;
+  const T = g.t.map((t) => Date.parse(t)), V = g.velocity_fps; let k = -1, bd = Infinity;
+  for (let i = 0; i < T.length; i++) { if (V[i] == null) continue; const d = Math.abs(T[i] - tMs); if (d < bd) { bd = d; k = i; } }
+  if (k < 0) return null; const v = bd < 90 * 60e3 ? V[k] : (g.now && g.now.velocity_fps != null ? g.now.velocity_fps : V[k]);
+  return v * 0.3048;
+}
+// the river's stage (m IGLD85) at a time, from the gage's hourly series
+function riverLevelAt(tMs) { const g = RN.d && RN.d.gages && RN.d.gages["05536123"]; if (!g || !g.level_m) return RIVER.level;
+  const T = g.t.map((t) => Date.parse(t)); let k = -1, bd = Infinity; for (let i = 0; i < T.length; i++) { if (g.level_m[i] == null) continue; const d = Math.abs(T[i] - tMs); if (d < bd) { bd = d; k = i; } }
+  return k < 0 ? RIVER.level : g.level_m[k]; }
+// the current on a reach: speed (m/s) and the direction it runs toward (deg), from the main stem's velocity. The branches
+// flow to Wolf Point whatever the lock does; the main stem and the South Branch follow the gage's sign (a reversal sends
+// the main stem to the lake and pulls the South Branch back toward Wolf Point)
+function riverCurrent(R, tMs) {
+  const v = riverVelocity(tMs); if (v == null || !R) return null; const id = R.reach.id, dir = R.dir;
+  let sgn = 1, spd = Math.abs(v);
+  if (id === "lock" || id === "main") sgn = v >= 0 ? 1 : -1;
+  else if (id === "south") { sgn = v >= 0 ? 1 : -1; spd *= 1.2; }           // carries the main stem's and the North Branch's flow
+  else { sgn = -1; spd *= 0.9; }                                              // the North Branch reaches: drawn from Wolf Point northward, the flow runs the other way
+  const ux = dir[0] * sgn, uy = dir[1] * sgn;
+  return { spd, ux, uy, toDeg: (Math.atan2(ux, uy) * 180 / Math.PI + 360) % 360, reversal: v < -0.3 * 0.3048, v };
+}
+// the sewer-overflow state of a reach at a time: an event open then, or ended within 48 h before
+function riverCso(reach, tMs) {
+  const ev = (RN.d && RN.d.cso && RN.d.cso.events) || []; if (!reach) return { state: "none" };
+  let worst = null;
+  for (const e of ev) { if (!e.reach || !reach.cso || e.reach.toLowerCase() !== reach.cso.toLowerCase()) continue;
+    const t0 = Date.parse(e.first_seen), t1 = e.ended ? Date.parse(e.ended) : null;
+    if (tMs < t0 - 3600e3) continue;
+    if (e.reversal) continue;
+    if (!t1 || tMs <= t1) { worst = { state: "open", since: t0, e }; break; }
+    if (tMs - t1 < CSO_AFTER_MS) worst = worst || { state: "recent", ended: t1, until: t1 + CSO_AFTER_MS, e }; }
+  return worst || { state: "none", checked: RN.d && RN.d.cso ? RN.d.cso.checked : null };
+}
+function lockOpenAt(tMs) { const L = RN.d && RN.d.lock; if (!L || !L.season) return null; const d = new Date(tMs), y = d.getUTCFullYear(), md = `${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  return md >= L.season.open && md < L.season.close; }
+// the fetch along the river: water of the river's class (and the lake's, past the lock) up-wind of the point
+function riverFetchM(xk, yk, fromDeg) { const b = fromDeg * Math.PI / 180, dx = Math.sin(b) / 1000, dy = Math.cos(b) / 1000; let d = 0;
+  while (d < 4000) { const c = maskAt(xk + dx * (d + 3), yk + dy * (d + 3)); if (c !== RIVER_CLS && c !== 1 && c !== 2) break; d += 3; } return d; }
+// the readout for river water: the canyon wind, chop over the reach's fetch, the current, overflows, the lock
+function riverConditions(c, tMs, xk, yk) {
+  const R = riverReachAt(xk, yk), reach = R ? R.reach : null;
+  let k = 0.55, ang = null;
+  if (R) { const axis = (Math.atan2(R.dir[0], R.dir[1]) * 180 / Math.PI + 360) % 360; ang = Math.abs(angd(c.dir, axis)); ang = Math.min(ang, 180 - ang);
+    const t = Math.cos(ang * Math.PI / 180) ** 2; k = RIVER_K.across + (RIVER_K.along - RIVER_K.across) * t; }
+  const open = c.wind; c.wind = open * k; if (c.gust != null) c.gust = Math.max(c.wind, c.gust * (k + 0.15));   // the corners keep the gusts up
+  const fetch = riverFetchM(xk, yk, c.dir), ch = cem(c.wind, Math.max(fetch, 30), 1.5);
+  c.systems = ch.hm0 > 0.01 ? [{ hs: Math.max(ch.hm0, 0.015 + 0.004 * c.wind), tp: Math.max(0.8, ch.tp), dir: c.dir, spread: 50 }] : [];
+  c.off = null; c.swan = null; c.harbor = null; c.dRef = 100;
+  const cur = riverCurrent(R, tMs), level = riverLevelAt(tMs);
+  c.river = { reach, k, ang, fetchM: fetch, openWind: open, current: cur, level, stage_ft: level != null ? (level - CCD_IGLD) / 0.3048 : null,
+    cso: riverCso(reach, tMs), lockOpen: lockOpenAt(tMs), reversal: !!(cur && cur.reversal) };
+  c.src = c.src.filter((s) => !/SWAN|FUNWAVE|sheltered/.test(s));
+  c.src.push(`Chicago River${reach ? ` · ${reach.name}` : ""}: canyon wind ×${k.toFixed(2)}${cur ? `, current ${(cur.spd * MPH).toFixed(2)} mph → ${compass(cur.toDeg)}` : ""}`);
+}
+const CCD_IGLD = 176.40;
+// ---------------------------------------------------------------- the current, drawn: slow ribbons drifting with the flow on
+// the river's water near the view (sped up ×60: the real current is a few cm/s), pale when normal, amber in a reversal
+const RF = { on: true, mesh: null, n: 420, L: 9, P: null, R: 0, cx: 1e9, cy: 1e9 };
+function riverFlowStep(dt) {
+  if (!RIVER.ok || !RF.on) { if (RF.mesh) RF.mesh.visible = false; return; }
+  const v = viewState(), D = v.dist, cx = controls.target.x, cy = -controls.target.z;
+  const near = riverReachAt(cx, cy) || (D < 2.5 && RIVER.polys.some((p) => p.rings[0].some((q, i) => i % 40 === 0 && Math.hypot(q[0] / 1000 - cx, q[1] / 1000 - cy) < 1.2)));
+  if (!near || D > 6) { if (RF.mesh) RF.mesh.visible = false; return; }
+  if (!RF.mesh) { const n = RF.n, L = RF.L, g = new THREE.BufferGeometry(), pos = new Float32Array(n * L * 2 * 3), col = new Float32Array(n * L * 2 * 4), idx = new Uint32Array(n * (L - 1) * 6);
+    let k = 0; for (let p = 0; p < n; p++) for (let s = 0; s < L - 1; s++) { const a = (p * L + s) * 2; idx.set([a, a + 1, a + 2, a + 1, a + 3, a + 2], k); k += 6; }
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage)); g.setAttribute("color", new THREE.BufferAttribute(col, 4).setUsage(THREE.DynamicDrawUsage)); g.setIndex(new THREE.BufferAttribute(idx, 1));
+    RF.mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false })); RF.mesh.frustumCulled = false; RF.mesh.renderOrder = 4; scene.add(RF.mesh);
+    RF.P = { x: new Float32Array(n * L), y: new Float32Array(n * L), age: new Float32Array(n).fill(1e9), life: new Float32Array(n), sp: new Float32Array(n), rev: new Uint8Array(n), acc: new Float32Array(n) }; }
+  RF.mesh.visible = true; const P = RF.P, n = RF.n, L = RF.L, R = clamp(D * 1.1, 0.5, 5), K = 60 / 1000, tMs = S.t;
+  if (Math.abs(R - RF.R) > 0.3 * RF.R || Math.hypot(cx - RF.cx, cy - RF.cy) > R * 0.7) { RF.R = R; RF.cx = cx; RF.cy = cy; P.age.fill(1e9); }
+  // spawn on river water only (rejection sampling around the view)
+  const spawn = (p, fresh) => { for (let tries = 0; tries < 12; tries++) { const x = cx + (Math.random() * 2 - 1) * R, y = cy + (Math.random() * 2 - 1) * R;
+      if (maskAt(x, y) !== RIVER_CLS) continue; for (let s = 0; s < L; s++) { P.x[p * L + s] = x; P.y[p * L + s] = y; } P.age[p] = fresh ? Math.random() * 3 : 0; P.life[p] = 3 + Math.random() * 3; return; }
+    P.age[p] = 1e9; P.life[p] = 0; };
+  for (let p = 0; p < n; p++) { const o = p * L; let x = P.x[o], y = P.y[o];
+    if (P.age[p] > P.life[p] || Math.abs(x - cx) > R || Math.abs(y - cy) > R || maskAt(x, y) !== RIVER_CLS) { spawn(p, P.age[p] > 1e8); x = P.x[o]; y = P.y[o]; if (P.life[p] === 0) continue; }
+    const Rr = riverReachAt(x, y), cur = riverCurrent(Rr, tMs); if (!cur) { P.age[p] = 1e9; continue; }
+    const spd = Math.max(cur.spd, 0.015), wob = Math.sin(x * 900 + y * 700 + U.uTime.value * 0.3) * 0.2;
+    P.sp[p] = cur.spd; P.rev[p] = cur.reversal ? 1 : 0;
+    P.acc[p] += dt; if (P.acc[p] >= 0.1) { P.acc[p] = 0; for (let k2 = L - 1; k2 > 1; k2--) { P.x[o + k2] = P.x[o + k2 - 1]; P.y[o + k2] = P.y[o + k2 - 1]; } P.x[o + 1] = x; P.y[o + 1] = y; }
+    P.x[o] = x + (cur.ux - cur.uy * wob) * spd * K * dt; P.y[o] = y + (cur.uy + cur.ux * wob) * spd * K * dt; P.age[p] += dt; }
+  const pos = RF.mesh.geometry.attributes.position.array, col = RF.mesh.geometry.attributes.color.array, hgt = 0.0006, wid = clamp(D * 0.0012, 0.0006, 0.004);
+  for (let p = 0; p < n; p++) { const o = p * L, a0 = P.life[p] ? clamp(P.age[p] / 0.5, 0, 1) * clamp((P.life[p] - P.age[p]) / 0.8, 0, 1) : 0, rev = P.rev[p], c = rev ? [1.0, 0.7, 0.3] : [0.75, 0.9, 1.0];
+    const br = 0.35 + 0.65 * clamp(P.sp[p] / 0.15, 0, 1);
+    for (let k2 = 0; k2 < L; k2++) { const q = o + k2, k3 = Math.min(k2, L - 2), dx = P.x[o + k3] - P.x[o + k3 + 1], dy = P.y[o + k3] - P.y[o + k3 + 1], dl = Math.hypot(dx, dy) || 1e-6, taper = 1 - k2 / (L - 1);
+      const hw = wid * (0.3 + 0.7 * taper), nx = -dy / dl * hw, ny = dx / dl * hw, vi = q * 2;
+      pos[vi * 3] = P.x[q] + nx; pos[vi * 3 + 1] = hgt; pos[vi * 3 + 2] = -(P.y[q] + ny); pos[vi * 3 + 3] = P.x[q] - nx; pos[vi * 3 + 4] = hgt; pos[vi * 3 + 5] = -(P.y[q] - ny);
+      for (let e = 0; e < 2; e++) { const ci = (vi + e) * 4; col[ci] = c[0]; col[ci + 1] = c[1]; col[ci + 2] = c[2]; col[ci + 3] = a0 * taper * 0.6 * br; } } }
+  RF.mesh.geometry.attributes.position.needsUpdate = true; RF.mesh.geometry.attributes.color.needsUpdate = true;
+}
 function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN texture/uniforms (launch ratings)
   const c = { wind: 0, dir: 0, gust: null, airC: null, sky: 0, pop: 0, systems: [], dRef: 1000, waterC: null, src: [] };
   let shore = nearestShore(xk, yk);
@@ -3194,6 +3301,8 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
   // harbour or lagoon water the library leaves at zero (an enclosed basin): no lake waves get in, only the chop
   // the wind raises over the basin itself
   else if (c.off && swanDomainAt(xk, yk) && maskAt(xk, yk) === 2) { c.systems = c.systems.filter((q) => q.spread >= 50); c.src.push("sheltered basin"); }
+  // the Chicago River: west of the lock the lake's waves stop; the canyon's wind, the reach's fetch, the current, the overflows
+  if (RIVER.ok && maskAt(xk, yk) === RIVER_CLS) riverConditions(c, tMs, xk, yk);
   const dHere = depthAtKm(xk, yk); if (dHere != null) c.depth = dHere;
   const fwx = funwaveCrossKm(xk, yk); if (fwx != null) c.fwCross = fwx;
   const fwh = funwaveHsKm(xk, yk); if (fwh != null) { c.fwHs = fwh; c.systems = c.systems.length ? c.systems : [{ hs: fwh, tp: FW.cur.tp, dir: FW.cur.dir, spread: 20 }]; }
@@ -3781,6 +3890,13 @@ function upsetEvents(rows) {
     ev.push({ kind: "jet", level: p30 >= 1.5 || gf >= 1.1 ? "yellow" : "green", ...s, title: top.quad === "core" ? `Jet streak overhead, ${s.hours} h` : `Under the jet's ${top.quad.replace("-", " ")}, ${s.hours} h`,
       detail: `250 hPa ${mph(top.streak ? top.streak.spd : top.spd)} mph${p30 ? ` · 30 mph gusts ${p30.toFixed(1)}× as often` : ""}${gf ? ` · gusts ×${gf.toFixed(2)}` : ""} (2016-2025 crib and buoys)`,
       why: "Under this part of a jet streak the air aloft spreads apart and pulls air up from below: surface winds mix down in bursts and storms organise more easily.", src: `GFS 250 hPa ${JET.d.cycle.slice(11, 13)}Z` }); }
+  // the river: sewer overflows (MWRD) and the lock's closing or opening day
+  for (const e of (RN.d && RN.d.cso && RN.d.cso.events) || []) { if (e.reversal) continue; const t0 = Date.parse(e.first_seen), t1 = (e.ended ? Date.parse(e.ended) : now) + CSO_AFTER_MS;
+    ev.push({ kind: "cso", level: "red", t0, t1, hours: Math.round((t1 - t0) / HOUR), title: `Sewer overflow · ${e.reach || "the river"}`, detail: `${e.location || ""}${e.open ? " · still open" : ` · ended ${fmtDH.format(Date.parse(e.ended))}`}`,
+      why: "Combined sewers overflowed into the river: stay off this reach until 48 h after it ends.", src: "MWRD" }); }
+  { const Lk = RN.d && RN.d.lock; if (Lk && Lk.next) { const y = new Date(now).getFullYear();
+      for (const [key, lab] of [["closes", "Chicago Harbor Lock closes for the winter"], ["opens", "Chicago Harbor Lock opens for the season"]]) { const t0 = Date.parse(`${Lk.next[key]}T12:00:00-06:00`);
+        if (t0 > now - 24 * HOUR && t0 < now + 30 * 86400e3) ev.push({ kind: "lock", level: "green", t0, t1: t0 + 12 * HOUR, hours: 12, title: lab, detail: `${Lk.next[key]} · closed to paddlers Nov 15 - Apr 15`, why: key === "closes" ? "No way between the river and the lake until spring." : "Paddlers may lock through again on the green light.", src: "USACE" }); } } }
   // headlines: NWS alerts and the SPC outlook
   const wx = (DATA.lake && DATA.lake.wx) || {};
   for (const a of wx.alerts || []) { const t0 = Date.parse(a.onset) || now, t1 = Date.parse(a.ends) || t0 + 6 * HOUR, warn = /warning/i.test(a.event || ""), stmt = /statement|outlook/i.test(a.event || "");
@@ -3852,6 +3968,7 @@ $("#showtrack").onchange = (e) => { S.showTrack = e.target.checked; if (S.ov ===
 $("#buoys").checked = BUOY.on; $("#buoys").onchange = (e) => { BUOY.on = e.target.checked; try { localStorage.setItem("lakelocal-buoys", BUOY.on ? "1" : "0"); } catch (err) {} };
 $("#course").checked = COURSE.on; $("#course").onchange = (e) => setCourse(e.target.checked);
 $("#windbtn").onclick = () => setWindOn(!WL.on);
+$("#rflow").onchange = (e) => { RF.on = e.target.checked; };
 $("#toggle").onclick = () => { const c = $("#controls"); c.dataset.open = c.hidden ? "1" : "0"; applyPanel(); };
 function applyPanel() { const narrow = matchMedia("(max-width: 760px)").matches, c = $("#controls"), open = c.dataset.open ? c.dataset.open === "1" : false; c.hidden = !open; $("#toggle").setAttribute("aria-expanded", String(open)); $("#toggle").textContent = open ? "Hide settings" : "Settings"; }
 matchMedia("(max-width: 760px)").addEventListener("change", applyPanel); applyPanel();
@@ -4022,7 +4139,7 @@ function tick() {
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   navStep(dt);
-  windStep(dt);
+  windStep(dt); riverFlowStep(dt);
   if (JET.on && JET.d && MM.base && now - (JET.last || 0) > 30) drawJetMap();
   // board: on the track at this time (history or replay), else under the camera target
   if (S.rideOwn && S.playing && DATA.track) { const t0 = new Date(DATA.track.start).getTime(), L = DATA.track.pts[DATA.track.pts.length - 1][0] * 1000;
@@ -4181,6 +4298,12 @@ function paddleStatus(C, rr) {
   const W = (S.mode === "live" && DATA.lake && DATA.lake.wx) || {};
   for (const a of W.alerts || []) { const t0 = Date.parse(a.onset) || 0, t1 = Date.parse(a.ends) || Infinity; if (S.t < t0 || S.t > t1) continue;
     const ev = a.event || ""; if (/warning|small craft|gale|beach hazard|storm/i.test(ev)) add(2, ev); else if (/advisory|watch/i.test(ev)) add(1, ev); }
+  if (C.river) { const r = C.river;
+    if (r.cso.state === "open") add(2, `sewer overflow on this reach now (MWRD)`); else if (r.cso.state === "recent") add(2, `sewer overflow ended ${Math.round((S.t - r.cso.ended) / 3600e3)} h ago: off limits 48 h`);
+    if (r.reversal) add(2, r.reach && r.reach.id === "lock" ? "storm reversal: the lock is open to the lake, the river runs out" : "storm reversal: the river runs to the lake");
+    if (r.current && r.current.spd >= CURRENT_CAUTION) add(1, `current ${(r.current.spd * MPH).toFixed(1)} mph → ${compass(r.current.toDeg)}`);
+    if (r.reach && r.reach.id === "lock" && r.lockOpen === false) add(1, "the lock is closed for the season (Nov 15 - Apr 15): no way to the lake");
+    if (C.pop >= 70 && r.cso.state === "none") add(1, `${C.pop}% chance of rain: overflow risk after heavy rain`); }
   if (C.jet && C.jet.p30 && C.jet.p30 >= 1.3) add(1, `jet streak overhead: strong gusts ${C.jet.p30.toFixed(1)}× as likely`);
   why.sort((a, b) => b[0] - a[0]); return { lv, why, chop: r };
 }
@@ -4328,6 +4451,12 @@ function updateHud(rr, tp) {
   if (C.fwCross != null) waves.push(["Crossing seas", `${Math.round(C.fwCross * 100)}%${C.fwCross >= 0.5 ? " · confused" : ""}`]);
   { const LE = DATA.learn && DATA.learn.correction && DATA.learn.correction.era5, M = LE && LE["45198"] && LE["45198"].monthly_hs_m && LE["45198"].monthly_hs_m[String(new Date(S.t).getMonth() + 1)];
     if (live && M) waves.push(["Usual", `${ft(M.p50)} ft · 1 in 10 ≥${ft(M.p90)}`]); }
+  if (C.river) { const r = C.river, cur = r.current;
+    if (cur) water.push(["Current", `${(cur.spd * MPH).toFixed(2)} mph → ${compass(cur.toDeg)}${cur.reversal ? " · reversal" : ""}`]);
+    if (r.stage_ft != null) water.push(["River stage", `${r.stage_ft.toFixed(2)} ft CCD`]);
+    water.push(["Overflows", r.cso.state === "open" ? "sewer overflow now" : r.cso.state === "recent" ? `ended ${Math.round((S.t - r.cso.ended) / 3600e3)} h ago` : `none open${r.cso.checked ? ` · checked ${fmtHM.format(new Date(r.cso.checked))}` : ""}`]);
+    if (r.reach && (r.reach.id === "lock" || r.reach.id === "main")) water.push(["Lock", r.lockOpen == null ? "—" : r.lockOpen ? "open for the season" : "closed Nov 15 - Apr 15"]);
+    wind.push(["Canyon", `×${r.k.toFixed(2)}${r.ang != null ? ` · wind ${Math.round(r.ang)}° off the reach` : ""} · fetch ${Math.round(r.fetchM)} m`]); }
   if (C.waterC != null) { const d = live && NM.lake && NM.lake.mean_c != null ? (C.waterC - NM.lake.mean_c) * 1.8 : null;
     water.push(["Temp", `${Math.round(cToF(C.waterC))}°${d != null && Math.abs(d) >= 3 ? ` · ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° usual` : ""}`]); }
   if (C.depth != null) water.push(["Depth", C.depth > 0 ? `${(C.depth * FT).toFixed(C.depth * FT < 10 ? 1 : 0)} ft` : "dry"]);
@@ -4672,7 +4801,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     { const o = document.createElement("option"); o.id = "hist-wait"; o.disabled = true; o.textContent = "Loading historical periods…"; $("#hist-pick").appendChild(o); }
     const about = () => { $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}${BATHY.survey ? `; Diversey Harbor and the lagoon from the ${(BATHY.survey.date || "2023").slice(0, 4)} USGS / Cook County survey` : ""}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases${d.wind ? ` + ${d.wind.cases.length} wind` : ""}`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""} GPU: ${GPU.name || "unknown"}, ${GPU.tex} textures, ${GPU.fvec} uniform vectors.${GPU.errs.length ? ` Shader problem: ${GPU.errs.join(" | ")}` : ""}`; };
     await setBathy(DATA.bathy); await yieldUI();
-    try { DATA.river = parseJSON("river-data") || await split("river-data"); await setRiver(DATA.river); } catch (e) { console.warn("river", e); }
+    try { DATA.river = parseJSON("river-data") || await split("river-data"); await setRiver(DATA.river); setRiverNow(parseJSON("rivernow-data")); } catch (e) { console.warn("river", e); }
     if (DATA.lake) { await buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
     mmFit(); buildMinimap(); await yieldUI();
     await setEarth(DATA.earth); await yieldUI();
@@ -4705,6 +4834,6 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     } catch (e) { console.warn("background load", e); }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { RIVER, riverDepthAt, riverReachAt, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
+window.__world = { RIVER, RN, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
 })();
 </script>

@@ -85,3 +85,7 @@ north branch up to belmont avenue; south until tom ping park".
   Findings: the bare-earth lidar strips elevated decks (nominal closed clearances stand in for 42 of 63 bridges);
   Overpass is unreachable from the sandbox except through a slow mirror (the Actions runners reach it); main stem bed
   median 6.2 m, North Branch 3.5 m.
+- 2026-11-02: phase 3 built (app.river --now each snapshot: the gages' week, MWRD events with first/last sighting, the
+  lock's season and notices; the page's riverConditions: canyon wind k(θ), reach fetch chop, the current per reach from
+  the gage velocity, CSO red / 48 h, reversal red, lock-season caution; current ribbons; Water/Air rows; Upsets CSO and
+  lock-day events). No Chicago canyon measurements exist: k is the literature's; revisit with the AIS wakes.

@@ -114,8 +114,25 @@ sides of Goose Island, the North Avenue turning basin) to Belmont Avenue and dow
 - Go to: the lock, the Riverwalk, Wolf Point, Goose Island, the North Branch at Belmont, Ping Tom Park. Launches:
   the Riverwalk (Urban Kayaks), the North Ave basin (Kayak Chicago), the Ping Tom boathouse.
 
-Still to come (plan `plans/pending/chicago-river.md`): the current from the gages, wind in the canyon, sewer overflows
-(MWRD) and the lock's season in the paddling light, boat traffic from an AIS feed.
+**What moves the river's water** (`app/river.py --now`, each snapshot; `riverConditions` in the page), on river water
+in place of the lake's wave model:
+
+- **The canyon's wind**: the open wind keeps 70% of its speed along the reach and 30% across it (Oke's skimming regime;
+  Nakamura & Oke 1988), interpolated by the angle between the wind and the reach, gusts a little less damped; chop is
+  raised by that wind over the reach's own up-wind fetch (CEM growth, 1.5 h).
+- **The current**: the Columbus Dr gage's measured velocity (USGS 05536123, parameter 72254; positive is away from the
+  lake, the normal direction, usually under 0.1 mph), the past week hourly for the timeline, the latest reading for the
+  hours ahead. Per reach: the main stem follows the gage's sign; the South Branch carries the main stem's and the North
+  Branch's flow (×1.2); the North Branch reaches always run to Wolf Point (×0.9). A sustained velocity past −0.3 ft/s
+  toward the lake is a storm reversal (the lock opened): red on the main stem. Drawn as ribbons drifting on the water
+  near the view, sped up 60×, amber in a reversal (Settings → River current).
+- **Sewer overflows**: MWRD's public "possible CSO events" layer by reach (Chicago R, SB Chicago R, NBCR Lower /
+  Upper), polled every snapshot; the snapshot keeps each event's first and last sighting, so the reach stays red while
+  an event is open and for 48 h after it ends (MWRD's own advice). A 70% rain chance adds an overflow-risk caution.
+- **The lock**: closed to paddlers Nov 15 – Apr 15 (USACE notice 13968-1); a caution at the lock reach in the off
+  season, the closing and opening days in Upsets, USACE's Chicago Harbor notices kept with the record.
+- The paddling light, the Water card (current, stage in CCD feet, overflows, the lock) and the Air card (the canyon
+  factor and fetch) carry these. Boat traffic waits for an AIS feed.
 
 ## Wind, the jet stream and the paddling light
 

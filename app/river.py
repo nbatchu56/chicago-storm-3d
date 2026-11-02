@@ -720,13 +720,125 @@ def build(out_path, cache, get=http, skip_buildings=False):
     return out
 
 
+# ---------------------------------------------------------------------------- now: the gages, overflows and the lock (each snapshot)
+CSO_EVENTS = "https://utility.arcgis.com/usrsvcs/servers/addf95280b254c1e8fe64dc8e35dfedc/rest/services/CSO/CSO_PossibleEvents/MapServer/0/query?where=1%3D1&outFields=*&f=json"
+NTNI = "https://ndc.ops.usace.army.mil/ords/ntni/json_data/notices_by_district/LRC"
+LOCK_SEASON = {"open": "04-15", "close": "11-15"}      # the Chicago Harbor Lock is closed to recreational traffic Nov 15 - Apr 15 (USACE notice 13968-1)
+CSO_AFTER_H = 48                                       # hours after an overflow ends that the reach stays red
+GAGES = {"05536123": "main", "05536118": "north", "05536121": "lock"}
+REVERSAL_FPS = -0.3                                    # a sustained velocity toward the lake past this is a reversal, not lock sloshing
+
+
+def gage_series(get=http, days=7):
+    """Hourly stage (CCD ft) at the three gages and velocity (ft/s) at Columbus Dr for the past days: {site: {t: [...], ...}}."""
+    u = f"https://waterservices.usgs.gov/nwis/iv/?format=json&sites={','.join(GAGES)}&parameterCd=00065,72254&period=P{days}D&siteStatus=all"
+    d = json.loads(get(u, timeout=90))
+    out = {}
+    for ts in d["value"]["timeSeries"]:
+        site = ts["sourceInfo"]["siteCode"][0]["value"]; code = ts["variable"]["variableCode"][0]["value"]
+        vals = [(v["dateTime"], float(v["value"])) for v in ts["values"][0]["value"] if v.get("value") not in (None, "", "-999999")]
+        if not vals:
+            continue
+        # one value an hour (the last reading in each hour)
+        hourly = {}
+        for t, v in vals:
+            hourly[t[:13]] = (t, v)
+        rows = sorted(hourly.values())
+        rec = out.setdefault(site, {"name": GAGES[site], "t": [r[0] for r in rows]})
+        key = "stage_ft" if code == "00065" else "velocity_fps"
+        if rec["t"] != [r[0] for r in rows]:          # the two parameters on different hours: align on the stage's hours
+            byt = dict(rows); rec[key] = [byt.get(t) for t in rec["t"]]
+        else:
+            rec[key] = [r[1] for r in rows]
+        rec["now"] = rec.get("now", {}); rec["now"][key] = rows[-1][1]; rec["now"]["t"] = rows[-1][0]
+    for site, rec in out.items():
+        if "stage_ft" in rec:
+            rec["level_m"] = [round(CCD_IGLD + v * 0.3048, 3) if v is not None else None for v in rec["stage_ft"]]
+    return out
+
+
+def cso_events(prev, now=None, get=http):
+    """MWRD's open 'possible CSO events' by reach, carried with first-seen / last-seen times so the page can hold a reach
+    red for CSO_AFTER_H hours after an overflow ends. prev: the previous snapshot's record (events list), or None."""
+    now = now or dt.datetime.now(UTC)
+    try:
+        d = json.loads(get(CSO_EVENTS, timeout=60)); feats = d.get("features", []); err = None
+    except Exception as e:  # noqa: BLE001
+        feats, err = [], str(e)[:200]
+    open_now = {}
+    for f in feats:
+        a = f.get("attributes") or {}
+        key = f"{a.get('WATERWAY_REACH', '?')}|{a.get('LOCATION', '')}"
+        open_now[key] = {"reach": a.get("WATERWAY_REACH"), "location": a.get("LOCATION"), "owner": a.get("OWNER"), "city": a.get("OUTFALL_CITY"),
+                         "reversal": bool(re.search(r"lake|crcw|reversal", f"{a.get('LOCATION', '')} {a.get('WATERWAY_REACH', '')}", re.I))}
+    events = {e["key"]: e for e in (prev or []) if e.get("key")}
+    ts = now.isoformat(timespec="seconds")
+    for key, e in open_now.items():
+        if key in events and events[key].get("open"):
+            events[key]["last_seen"] = ts
+        else:
+            events[key] = {**e, "key": key, "first_seen": ts, "last_seen": ts, "open": True}
+    for key, e in events.items():
+        if key not in open_now and e.get("open"):
+            e["open"] = False; e["ended"] = ts
+    keep = [e for e in events.values() if e.get("open") or (e.get("ended") and (now - dt.datetime.fromisoformat(e["ended"])).total_seconds() < 14 * 86400)]
+    return {"events": keep, "checked": ts, "error": err, "source": "MWRD Possible CSO Events (ArcGIS)"}
+
+
+def lock_notices(get=http, now=None):
+    """USACE Chicago District notices naming the Chicago Harbor / River, and the lock's season."""
+    now = now or dt.datetime.now(UTC)
+    out = {"season": LOCK_SEASON, "notices": []}
+    y = now.year
+    op = dt.datetime.fromisoformat(f"{y}-{LOCK_SEASON['open']}T12:00:00+00:00"); cl = dt.datetime.fromisoformat(f"{y}-{LOCK_SEASON['close']}T12:00:00+00:00")
+    out["open_now"] = op <= now < cl
+    out["next"] = {"opens": f"{y + 1 if now >= op else y}-{LOCK_SEASON['open']}", "closes": f"{y}-{LOCK_SEASON['close']}" if now < cl else f"{y + 1}-{LOCK_SEASON['close']}"}
+    try:
+        d = json.loads(get(NTNI, timeout=60))
+        for it in d.get("items", []):
+            if re.search(r"chicago (harbor|river)", it.get("waterways", ""), re.I):
+                out["notices"].append({k: it.get(k) for k in ("noticeno", "issuedate", "begindate", "enddate", "waterways", "noticelink")})
+    except Exception as e:  # noqa: BLE001
+        out["error"] = str(e)[:200]
+    return out
+
+
+def build_now(out_path, prev_path=None, get=http):
+    prev = None
+    if prev_path and os.path.exists(prev_path):
+        try:
+            prev = json.load(open(prev_path)).get("cso", {}).get("events")
+        except Exception:  # noqa: BLE001
+            prev = None
+    out = {"version": 1, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds")}
+    try:
+        out["gages"] = gage_series(get)
+    except Exception as e:  # noqa: BLE001
+        out["gages_error"] = str(e)[:200]
+    out["cso"] = cso_events(prev, get=get)
+    out["lock"] = lock_notices(get)
+    g = (out.get("gages") or {}).get("05536123") or {}
+    vel = [v for v in (g.get("velocity_fps") or [])[-6:] if v is not None]
+    out["reversal"] = bool(vel) and len(vel) >= 3 and max(vel) < REVERSAL_FPS
+    with open(out_path, "w") as fh:
+        json.dump(out, fh, separators=(",", ":"))
+    return out
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
     ap.add_argument("--cache", default=os.environ.get("RIVER_CACHE", "river_cache"))
     ap.add_argument("--no-buildings", action="store_true")
+    ap.add_argument("--now", action="store_true", help="the live record (gages, overflows, the lock) instead of the geometry")
+    ap.add_argument("--prev", help="with --now: the previous snapshot's river_now.json (carries the overflow history)")
     a = ap.parse_args()
+    if a.now:
+        d = build_now(a.out, a.prev)
+        g = (d.get("gages") or {}).get("05536123", {}).get("now")
+        print(json.dumps({"gage": g, "cso_open": sum(1 for e in d["cso"]["events"] if e.get("open")), "lock_open": d["lock"]["open_now"], "reversal": d["reversal"]}))
+        return
     d = build(a.out, a.cache, skip_buildings=a.no_buildings)
     print(json.dumps({k: (len(v) if isinstance(v, list) else v) for k, v in d.items() if k in ("polys", "quays", "bridges", "buildings", "level", "took_s")}, default=str))
     print({k: v["depth"] for k, v in d["bed"].items()}, os.path.getsize(a.out) // 1024, "KB")
