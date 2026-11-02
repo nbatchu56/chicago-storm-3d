@@ -487,6 +487,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
       <label class="check" title="Moored buoys that ride the modelled waves, each beside a fixed pile painted in 1 ft bands from the still-water line (red). Zoom in near the water to see them."><input type="checkbox" id="buoys"> Buoys and wave gauges on the water</label>
       <label class="check" title="The rowing course on the Lincoln Park South Lagoon: 1000 m from the south face of the Fullerton Avenue bridge, a mark every 100 m"><input type="checkbox" id="course" checked> Lagoon 1000 m course</label>
       <label class="check" title="The Chicago River's current, drawn as drifting ribbons on the water near the view (sped up 60 times: the real current is a few cm/s); amber in a storm reversal"><input type="checkbox" id="rflow" checked> River current</label>
+      <label class="check" title="Over the river the buildings sink to low blocks and a view panned there tilts down, so the river's walls, bridges and water read clear from above, as from a drone"><input type="checkbox" id="rdrone" checked> Drone view over the river</label>
     </section>
     <section id="sec-sat">
       <h2>Satellite</h2>
@@ -792,7 +793,7 @@ const U = {
   // chop overlay: wave energy everywhere; inside a bound FUNWAVE tile also its crossing/rebound index (tex R = Hs m, G = crossing 0..1)
   uSatOn: { value: 0 }, uSatMin: { value: new THREE.Vector2() }, uSatSize: { value: new THREE.Vector2(1, 1) }, uSatKind: { value: 0 },   // kind 1: an aerial photo (drawn over land too)
   uSpotsOn: { value: 0 }, uSpotHas: { value: 0 }, uSpotTex: { value: blank2D }, uSpotMin: { value: new THREE.Vector2() }, uSpotSize: { value: new THREE.Vector2(1, 1) },
-  uChopOn: { value: 0 }, uFlowOn: { value: 0 }, uFlowDir: { value: new THREE.Vector2(0, 1) }, uFlowTp: { value: 3 }, uChopTex: { value: blank2D }, uChopMin: { value: new THREE.Vector2() }, uChopSize: { value: new THREE.Vector2(1, 1) }, uChopCore: { value: new THREE.Vector4(1e6, 1e6, -1e6, -1e6) }, uChopHas: { value: 0 },
+  uDrone: { value: 0 }, uChopOn: { value: 0 }, uFlowOn: { value: 0 }, uFlowDir: { value: new THREE.Vector2(0, 1) }, uFlowTp: { value: 3 }, uChopTex: { value: blank2D }, uChopMin: { value: new THREE.Vector2() }, uChopSize: { value: new THREE.Vector2(1, 1) }, uChopCore: { value: new THREE.Vector4(1e6, 1e6, -1e6, -1e6) }, uChopHas: { value: 0 },
   uFw: { value: null }, uFwHs: { value: blank2D }, uFwMin: { value: new THREE.Vector2() }, uFwSize: { value: new THREE.Vector2(1, 1) }, uFwOn: { value: 0 }, uFwT: { value: 0 },
   uTempOn: { value: 0 }, uTRamp: { value: tRamp }, uLocalC: { value: new THREE.Vector2() }, uWaterC: { value: 15 }, uIceExp: { value: 0 }, uFdd: { value: 0 }, uIceMax: { value: 0 }, uSnowCover: { value: 0 },
 };
@@ -1518,8 +1519,8 @@ async function buildMap(LF) {
   if (geos.length && THREE.BufferGeometryUtils) {
     const merged = THREE.BufferGeometryUtils.mergeBufferGeometries(geos.map((g) => g.index ? g.toNonIndexed() : g));
     const mat = new THREE.ShaderMaterial({ uniforms: U, extensions: { derivatives: true },
-      vertexShader: `${LOGV[0]} attribute float bid, bh; varying vec3 vW; varying vec3 vN; varying float vB, vH;
-        void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal); vB = bid; vH = bh; gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
+      vertexShader: `${LOGV[0]} attribute float bid, bh; uniform float uDrone; varying vec3 vW; varying vec3 vN; varying float vB, vH;
+        void main(){ vec4 w = modelMatrix * vec4(position,1.0); w.y = mix(w.y, min(w.y * 0.2, 0.012), uDrone); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal); vB = bid; vH = bh; gl_Position = projectionMatrix * viewMatrix * w; ${LOGV[1]} }`,
       fragmentShader: `${LOGF[0]} uniform vec3 uSunDir, uSunCol, uAmbTop, uAmbBot, uCamPos, uFlashPos, uHor, uZen; uniform float uCity, uFlash, uOvercast, uSnowCover; varying vec3 vW; varying vec3 vN; varying float vB, vH;
         float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
         void main(){ ${LOGF[1]} vec3 N = normalize(vN); float tone = 0.55 + 0.45 * hash(vec3(vB)), style = hash(vec3(vB, 2.0, 5.0));
@@ -1562,8 +1563,8 @@ async function buildMap(LF) {
       for (let i = 0; i < n; i++) { pos.set(tops.slice(i * 4, i * 4 + 3), i * 3); ph[i] = tops[i * 4 + 3]; }
       tg.setAttribute("position", new THREE.BufferAttribute(pos, 3)); tg.setAttribute("ph", new THREE.BufferAttribute(ph, 1));
       const beacons = new THREE.Points(tg, new THREE.ShaderMaterial({ uniforms: U, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-        vertexShader: `${LOGV[0]} attribute float ph; uniform float uTime; varying float vA;
-          void main(){ vec4 mv = viewMatrix * modelMatrix * vec4(position, 1.0); vA = smoothstep(0.2, 0.9, sin(uTime * 1.6 + ph)); gl_PointSize = clamp(9.0 / -mv.z, 2.0, 7.0); gl_Position = projectionMatrix * mv; ${LOGV[1]} }`,
+        vertexShader: `${LOGV[0]} attribute float ph; uniform float uTime, uDrone; varying float vA;
+          void main(){ vec4 mv = viewMatrix * modelMatrix * vec4(position, 1.0); vA = smoothstep(0.2, 0.9, sin(uTime * 1.6 + ph)) * (1.0 - uDrone); gl_PointSize = clamp(9.0 / -mv.z, 2.0, 7.0); gl_Position = projectionMatrix * mv; ${LOGV[1]} }`,
         fragmentShader: `${LOGF[0]} uniform float uCity; varying float vA; void main(){ ${LOGF[1]} float r = length(gl_PointCoord - 0.5) * 2.0; gl_FragColor = vec4(vec3(3.0, 0.25, 0.15) * vA * smoothstep(1.0, 0.0, r) * clamp(uCity * 10.0, 0.0, 1.0), 1.0); }` }));
       beacons.frustumCulled = false; beacons.renderOrder = 2; scene.add(beacons); }
   }
@@ -3377,6 +3378,7 @@ function camFor(tx, ty, dist, hdg, pitch) { const h = hdg * Math.PI / 180, p = p
 function viewState() { const t = controls.target, c = camera.position, dx = t.x - c.x, dn = -(t.z - c.z), dy = c.y - t.y, horiz = Math.hypot(dx, dn);
   return { hdg: (Math.atan2(dx, dn) * 180 / Math.PI + 360) % 360, pitch: Math.atan2(dy, horiz) * 180 / Math.PI, dist: Math.hypot(horiz, dy), tx: t.x, ty: -t.z }; }
 function flyTo(tx, ty, dist, hdg, pitch, instant) {
+  DRONE.placed = true;   // a chosen view (Go to, double-click) keeps its pitch over the river
   if (NAV.move === "paddle") setMove("fly");
   const v = camFor(tx, ty, dist, hdg, pitch);
   if (instant || RM) { camera.position.copy(v.p); controls.target.copy(v.t); controls.update(); camTween = null; return; }
@@ -3501,6 +3503,20 @@ controls.addEventListener("start", () => { VLOCK.user = true; VLOCK.good = null;
 controls.addEventListener("end", () => { VLOCK.user = false; });
 // the nearest water of any kind (lake, harbor, river) within rKm of a point on land
 function nearestAnyWater(xk, yk, rKm) { for (let r = 0.03; r <= rKm; r += 0.03) for (let a = 0; a < 24; a++) { const x = xk + Math.cos(a * Math.PI / 12) * r, y = yk + Math.sin(a * Math.PI / 12) * r; if (maskAt(x, y) !== 0) return [x, y]; } return null; }
+// drone view over the river: with the view over the river the buildings sink to low blocks (the river's walls, bridges
+// and water read clear from above, as from a drone) and a view that arrived by panning tilts down to a drone's pitch;
+// a view placed by Go to or a double-click keeps its own pitch. Off in Settings.
+const DRONE = { on: true, k: 0, placed: false };
+function droneStep(dt) {
+  const t = controls.target, over = DRONE.on && RIVER.ok && NAV.move === "fly" && S.view !== "ride" && S.view !== "rider" && !!riverReachAt(t.x, -t.z);
+  DRONE.k = clamp(DRONE.k + clamp((over ? 1 : 0) - DRONE.k, -dt * 1.5, dt * 1.5), 0, 1); U.uDrone.value = DRONE.k;
+  if (VLOCK.user || NAV.keys.size) DRONE.placed = false;
+  if (!over || DRONE.placed || VLOCK.user || camTween || NAV.keys.size) return;
+  const c = camera.position, off = c.clone().sub(t), horiz = Math.hypot(off.x, off.z), p0 = Math.atan2(off.y, horiz), p1 = 42 * Math.PI / 180;
+  if (p0 >= p1 || horiz < 1e-6) return;
+  const p = p0 + Math.min(p1 - p0, 0.6 * dt), L = off.length();   // the camera rises around the target, keeping its distance and heading
+  c.set(t.x + off.x / horiz * Math.cos(p) * L, t.y + Math.sin(p) * L, t.z + off.z / horiz * Math.cos(p) * L);
+}
 function lockToWater() {
   if (NAV.move !== "fly" || S.view === "ride" || camTween || !MAP.ok) return;
   const t = controls.target, c = camera.position, tx = t.x, ty = -t.z;
@@ -3983,6 +3999,7 @@ $("#buoys").checked = BUOY.on; $("#buoys").onchange = (e) => { BUOY.on = e.targe
 $("#course").checked = COURSE.on; $("#course").onchange = (e) => setCourse(e.target.checked);
 $("#windbtn").onclick = () => setWindOn(!WL.on);
 $("#rflow").onchange = (e) => { RF.on = e.target.checked; };
+$("#rdrone").onchange = (e) => { DRONE.on = e.target.checked; };
 $("#toggle").onclick = () => { const c = $("#controls"); c.dataset.open = c.hidden ? "1" : "0"; applyPanel(); };
 function applyPanel() { const narrow = matchMedia("(max-width: 760px)").matches, c = $("#controls"), open = c.dataset.open ? c.dataset.open === "1" : false; c.hidden = !open; $("#toggle").setAttribute("aria-expanded", String(open)); $("#toggle").textContent = open ? "Hide settings" : "Settings"; }
 matchMedia("(max-width: 760px)").addEventListener("change", applyPanel); applyPanel();
@@ -4176,7 +4193,7 @@ function tick() {
   if (paddle) {    // first person on the board: eye ~1.7 m above the moving water
     const h0 = WAVES.ready ? heightAtM((bx - WAVES.origin[0]) * 1000, -(by - WAVES.origin[1]) * 1000) / 1000 : 0, yr = NAV.pad.yaw * Math.PI / 180, pr = NAV.pad.pitch * Math.PI / 180;
     camera.position.set(bx, h0 + 0.0017, -by); camera.lookAt(bx + Math.sin(yr) * Math.cos(pr), h0 + 0.0017 + Math.sin(pr), -(by + Math.cos(yr) * Math.cos(pr)));
-  } else { controls.update(); clampView(); }
+  } else { controls.update(); droneStep(dt); clampView(); }
   // conditions (a few times a second)
   if (now - lastCond > (S.kiosk ? 120 : 250)) { lastCond = now; const keep = S.kiosk && KS.ready ? ksSnap() : null;
     const cx = paddle ? bx : camera.position.y < 0.6 ? camera.position.x : tgt.x, cy = paddle ? by : camera.position.y < 0.6 ? -camera.position.z : -tgt.z;
@@ -4848,6 +4865,6 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     } catch (e) { console.warn("background load", e); }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { RIVER, RN, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
+window.__world = { RIVER, RN, DRONE, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
 })();
 </script>
