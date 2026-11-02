@@ -278,7 +278,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
   .launches { gap: 4px 6px; } .launches .cr { padding: 1px 4px; font-size: 10.5px; } .launches .strip { gap: 1px; }   /* fit the 12-hour squares on a phone */
   #toggle { display: block; position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); top: calc(var(--gut) + env(safe-area-inset-top, 0px)); background: var(--panel); }
   #controls { top: auto; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); width: auto; bottom: calc(var(--gut) + 92px + env(safe-area-inset-bottom, 0px)); max-height: 58%; }
-  #timeline { grid-template-columns: auto 1fr; } .speed { display: none; }
+  #timeline { grid-template-columns: auto 1fr auto; } .speed { display: none; }
   #legend { left: calc(var(--gut) + env(safe-area-inset-left, 0px)) !important; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 128px + env(safe-area-inset-bottom, 0px)) !important; width: auto; max-width: 420px; padding: 6px 9px; gap: 3px; cursor: pointer; }
 }
 /* ---- the information toolbar: a header strip and a row of cards (radar map, Air vs water compass, Air, Water, Atmosphere) above the timeline */
@@ -342,6 +342,11 @@ body.compact #minimap { height: auto; } body.compact #minimap canvas { height: a
 body.compact #cards .cat.open { height: 256px; } body.compact #cat-sky .cathead { cursor: pointer; }
 body.compact #vsbox { height: auto; min-width: 236px; } body.compact #vsbox .vs .rel, body.compact #vsbox .vs .hdg { display: none; }
 body.compact #vsbox .vs { grid-template-columns: 92px 1fr; } body.compact #vsbox .vs svg { width: 92px; height: 92px; }
+/* weather export: two times, a 10-25 s clip */
+#xpbtn, #xp button { font: 600 12px var(--font-ui); color: var(--fg); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; cursor: pointer; } #xpbtn:hover, #xp button:hover { background: rgba(255,255,255,.12); } #xp button:disabled { opacity: .5; cursor: default; }
+#xp { position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); width: min(300px, calc(100vw - 32px)); box-sizing: border-box; padding: 12px; z-index: 5; display: grid; gap: 8px; background: var(--panel-solid); } #xp[hidden] { display: none; } .xph { display: flex; justify-content: space-between; align-items: center; } #xp .xph button { border: 0; background: none; font-size: 16px; padding: 0 4px; }
+#xp label { display: grid; grid-template-columns: 44px 1fr; align-items: center; font-size: 12px; color: var(--muted); } #xp input, #xp select { font: 12px var(--font-data); color: var(--fg); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 4px; padding: 4px; min-width: 0; color-scheme: dark; }
+#xp .note { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.35; } .xpbar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.1); overflow: hidden; } .xpbar i { display: block; height: 100%; width: 0; background: #f0b44c; } .xpbtns { display: flex; gap: 8px; } body.kiosk #xpbtn, body.kiosk #xp { display: none; }
 #striptoggle { all: unset; cursor: pointer; font: 10px var(--font-data); letter-spacing: 0; text-transform: none; color: var(--muted); padding: 2px 4px; border-radius: 3px; } #striptoggle:hover { color: var(--fg); background: rgba(255,255,255,.06); }
 .vs { grid-template-columns: 108px 1fr; gap: 4px 8px; padding: 2px 0 0; } .vs svg { width: 108px; height: 108px; cursor: grab; touch-action: none; user-select: none; } .vs.drag svg { cursor: grabbing; }
 .vs .row span { white-space: nowrap; line-height: 1.3; } .vs .row { grid-template-columns: 1fr; gap: 0; align-items: start; } .vs .row + .row { margin-top: 4px; } .vs .hdg { grid-column: 1 / -1; font: 10px var(--font-data); color: var(--muted); }
@@ -555,6 +560,17 @@ body.compact #vsbox .vs { grid-template-columns: 92px 1fr; } body.compact #vsbox
     <button id="play" aria-label="Play"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="play-icon" d="M3 1.5v13l11-6.5z"/></svg></button>
     <div class="track"><input type="range" id="scrub" min="0" max="100000" step="1" value="100000" aria-label="Time"><div class="segs" id="segs" aria-hidden="true"></div><div class="ticks" id="ticks"></div></div>
     <div class="speed"><label for="spd">Speed</label><select id="spd" title="How much of the timeline passes each real second, the same everywhere on it"><option value="60">1 min / s</option><option value="600" selected>10 min / s</option><option value="3600">1 h / s</option><option value="21600">6 h / s</option></select></div>
+    <button id="xpbtn" type="button" title="Export the conditions between two times as a video" aria-expanded="false">Export</button>
+  </div>
+  <div id="xp" class="panel" hidden>
+    <div class="xph"><b>Weather export</b><button id="xpclose" type="button" aria-label="Close">&times;</button></div>
+    <label>From <input id="xpfrom" type="datetime-local"></label>
+    <label>To <input id="xpto" type="datetime-local"></label>
+    <label>Clip <select id="xpclip"><option value="0" selected>Auto</option><option value="10">10 s</option><option value="15">15 s</option><option value="20">20 s</option><option value="25">25 s</option></select></label>
+    <p id="xpinfo" class="note"></p>
+    <div class="xpbar" id="xpbar" hidden><i></i></div>
+    <div class="xpbtns"><button id="xpgo" type="button">Export video</button><button id="xpsave" type="button" hidden>Save video</button></div>
+    <p class="note">From your current view. Keep this tab in front while it renders.</p>
   </div>
   <div id="msg" class="panel" hidden></div>
 </div>
@@ -4207,9 +4223,66 @@ function updateShelter() {
         void main(){ gl_FragColor = vec4(vec3(shelterAt(uMapMin + vUv * uMapSize)), 1.0); }` })));
     U.uShelter.value = SHEL.rt.texture; }
   SHEL.dir = d.clone(); const prev = renderer.getRenderTarget(); renderer.setRenderTarget(SHEL.rt); renderer.render(SHEL.scene, SHEL.cam); renderer.setRenderTarget(prev); }
+// ---------------------------------------------------------------- weather export: the conditions between two times as a 720p MP4.
+// The clock is held and stepped a frame at a time, so the clip is exactly its length whatever the machine's frame rate.
+let EXPORT = null;
+const XP_W = 1280, XP_H = 720, XP_SETTLE = 24;   // frames rendered before the first one kept, for the textures of the first hour to arrive
+const xpAuto = (hours) => hours <= 6 ? 10 : hours <= 24 ? 15 : hours <= 72 ? 20 : 25;   // a longer span gets a longer clip
+const xpWall = (ms) => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: TZ, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(ms)).map((x) => [x.type, x.value])); return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`; };
+const xpParse = (v) => { if (!v) return NaN; const g = Date.parse(v + "Z"), off = (t) => Date.parse(xpWall(t) + "Z") - t; return g - off(g - off(g)); };   // the inputs read in lakefront time
+function xpSpan() { const a = xpParse($("#xpfrom").value), b = xpParse($("#xpto").value), [r0, r1] = range(); return { a, b, r0, r1, ok: b > a && a >= r0 - 60e3 && b <= r1 + 60e3 }; }
+function xpInfo() { if (EXPORT) return; const { a, b, r0, r1, ok } = xpSpan(), go = $("#xpgo"); go.disabled = !ok;
+  if (!ok) { $("#xpinfo").textContent = b > a ? `The timeline runs ${fmtFull.format(new Date(r0))} to ${fmtFull.format(new Date(r1))}.` : "To must be after From."; return; }
+  const h = (b - a) / 3600e3, sec = +$("#xpclip").value || xpAuto(h); $("#xpinfo").textContent = `${h < 48 ? `${+h.toFixed(1)} h` : `${+(h / 24).toFixed(1)} days`} of weather in a ${sec} s clip`; }
+function xpOpen(on) { const p = $("#xp"); p.hidden = !on; $("#xpbtn").setAttribute("aria-expanded", String(on)); if (!on || EXPORT) return;
+  const [r0, r1] = range(), a = clamp(S.t, r0, r1), b = Math.min(a + 24 * 3600e3, r1); $("#xpfrom").value = xpWall(a); $("#xpto").value = xpWall(b); xpInfo(); }
+function xpFrame() { const E = EXPORT; if (E.settle > 0) { E.settle--; return; } if (E.enc.encodeQueueSize > 6) return;   // the encoder is behind: the clock waits
+  const c = E.ctx, sw = canvas.width, sh = canvas.height, k = Math.max(XP_W / sw, XP_H / sh), dw = XP_W / k, dh = XP_H / k;   // the view, cropped to 16:9
+  c.drawImage(canvas, (sw - dw) / 2, (sh - dh) / 2, dw, dh, 0, 0, XP_W, XP_H);
+  const g = c.createLinearGradient(0, XP_H - 150, 0, XP_H); g.addColorStop(0, "rgba(9,15,21,0)"); g.addColorStop(1, "rgba(9,15,21,.88)"); c.fillStyle = g; c.fillRect(0, XP_H - 150, XP_W, 150);
+  const rows = [...document.querySelectorAll("#vsbox .vs .row")].map((r) => { const sp = [...r.querySelectorAll("span")].map((x) => [...x.childNodes].map((c) => c.textContent.trim()).filter(Boolean).join(" · ")).filter(Boolean); return `${r.querySelector("b")?.textContent || ""} ${sp.join(" · ")}`.trim(); }).filter(Boolean), light = document.querySelector("#vsbox [data-lv] b")?.textContent; if (light) rows.push(`Paddling ${light}`);
+  c.fillStyle = "#eef3f7"; c.textBaseline = "alphabetic"; c.font = "600 30px system-ui, sans-serif"; c.fillText(fmtFull.format(new Date(S.t)), 32, XP_H - 64);
+  c.font = "500 20px system-ui, sans-serif"; c.fillStyle = "rgba(238,243,247,.86)"; c.fillText(rows.join("     "), 32, XP_H - 32, XP_W - 64);
+  c.textAlign = "right"; c.font = "600 18px system-ui, sans-serif"; c.fillStyle = S.t > E.real ? "#f0b44c" : "#90c841"; c.fillText(S.t > E.real ? "FORECAST" : "OBSERVED", XP_W - 32, XP_H - 66); c.textAlign = "left";
+  c.fillStyle = "rgba(255,255,255,.25)"; c.fillRect(0, XP_H - 5, XP_W, 5); c.fillStyle = "#f0b44c"; c.fillRect(0, XP_H - 5, XP_W * (E.i + 1) / E.n, 5);
+  const dur = 1e6 / E.fps, f = new VideoFrame(E.cv, { timestamp: Math.round(E.i * dur), duration: Math.round(dur) }); E.enc.encode(f, { keyFrame: E.i % (E.fps * 2) === 0 }); f.close();
+  E.i++; $("#xpbar i").style.width = `${100 * E.i / E.n}%`; if (E.i >= E.n) xpFinish(); else if (E.i % 15 === 0) $("#xpinfo").textContent = `Rendering ${Math.round(100 * E.i / E.n)}%`; }
+function xpEnd() { const E = EXPORT; EXPORT = null; S.t = E.keep.t; S.follow = E.keep.follow; setPlaying(E.keep.playing); $("#xpbar").hidden = true; const g = $("#xpgo"); g.textContent = "Export video"; g.disabled = false; return E; }
+async function xpFinish() { const E = xpEnd(); $("#xpinfo").textContent = "Finishing the video..."; try { await E.enc.flush(); E.enc.close(); } catch (e) { $("#xpinfo").textContent = "The video could not be finished."; return; }
+  const blob = mp4Mux(E.out, E.avcC, XP_W, XP_H, E.fps); XP_LAST = { blob, name: `lakeview-${xpWall(E.t0).replace(/[-:]/g, "").replace("T", "-")}-to-${xpWall(E.t1).replace(/[-:]/g, "").replace("T", "-")}.mp4` };
+  window.__xpLast = XP_LAST; $("#xpsave").hidden = false; $("#xpinfo").textContent = `${E.sec} s clip ready, ${(blob.size / 1048576).toFixed(1)} MB`; xpSave(); }
+let XP_LAST = null;
+async function xpSave() { if (!XP_LAST) return; const { blob, name } = XP_LAST; let dl = null; try { dl = window.claude ? await window.claude.use("downloads") : null; } catch (e) {}
+  if (dl) { try { await dl.save({ filename: name, data: blob }); } catch (e) { if (e && e.code !== "declined") $("#xpinfo").textContent = "The save did not go through. Try Save video again."; } return; }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60e3); }
+async function xpStart() { if (EXPORT) { xpEnd().enc.close(); $("#xpinfo").textContent = "Cancelled."; return; }
+  const { a, b, ok } = xpSpan(); if (!ok) return; const say = (m) => { $("#xpinfo").textContent = m; };
+  const fps = window.__xpFps || 30, config = { codec: "avc1.42001F", width: XP_W, height: XP_H, bitrate: 6e6, framerate: fps, avc: { format: "avc" } };
+  let sup = false; try { sup = window.VideoEncoder && (await VideoEncoder.isConfigSupported(config)).supported; } catch (e) {}
+  if (!sup) { say("This browser cannot encode H.264 video. Try a current Chrome, Edge or Safari."); return; }
+  const sec = +$("#xpclip").value || xpAuto((b - a) / 3600e3), cv = document.createElement("canvas"); cv.width = XP_W; cv.height = XP_H;
+  const E = { t0: a, t1: b, sec, fps, n: sec * fps, i: 0, settle: XP_SETTLE, cv, ctx: cv.getContext("2d"), out: [], avcC: null, real: Date.now(), keep: { t: S.t, follow: S.follow, playing: S.playing } };
+  E.enc = new VideoEncoder({ output: (chunk, meta) => { const d = new Uint8Array(chunk.byteLength); chunk.copyTo(d); E.out.push({ d, key: chunk.type === "key" }); if (meta && meta.decoderConfig && meta.decoderConfig.description) { const x = meta.decoderConfig.description; E.avcC = ArrayBuffer.isView(x) ? new Uint8Array(x.buffer, x.byteOffset, x.byteLength).slice() : new Uint8Array(x).slice(); } },
+    error: () => { if (EXPORT === E) { xpEnd(); say("The video encoder stopped. Try again."); } } });
+  E.enc.configure(config); S.follow = false; setPlaying(false); XP_LAST = null; $("#xpsave").hidden = true; EXPORT = E; $("#xpbar").hidden = false; $("#xpbar i").style.width = "0"; $("#xpgo").textContent = "Cancel"; say("Rendering 0%"); }
+// a minimal MP4: one H.264 track at a constant frame rate, moov ahead of mdat
+function mp4Mux(samples, avcC, w, h, fps) { const TS = 90000, delta = Math.round(TS / fps), n = samples.length, cat = (...a) => { const l = a.reduce((x, y) => x + y.length, 0), o = new Uint8Array(l); let i = 0; for (const p of a) { o.set(p, i); i += p.length; } return o; };
+  const u32 = (...v) => { const o = new Uint8Array(v.length * 4), d = new DataView(o.buffer); v.forEach((x, i) => d.setUint32(i * 4, x)); return o; }, u16 = (...v) => { const o = new Uint8Array(v.length * 2), d = new DataView(o.buffer); v.forEach((x, i) => d.setUint16(i * 2, x)); return o; };
+  const str = (s) => Uint8Array.from(s, (c) => c.charCodeAt(0)), box = (t, ...p) => { const b = cat(...p); return cat(u32(b.length + 8), str(t), b); }, full = (t, v, ...p) => box(t, u32(v), ...p);
+  const unity = u32(0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000), dur = n * delta, sizes = samples.map((s) => s.d.length), keys = samples.flatMap((s, i) => s.key ? [i + 1] : []);
+  const ftyp = box("ftyp", str("isom"), u32(0x200), str("isomiso2avc1mp41"));
+  const avc1 = box("avc1", new Uint8Array(6), u16(1), new Uint8Array(16), u16(w, h), u32(0x480000, 0x480000, 0), u16(1), new Uint8Array(32), u16(24, 0xffff), box("avcC", avcC));
+  const moov = (co) => { const stbl = box("stbl", full("stsd", 0, u32(1), avc1), full("stts", 0, u32(1, n, delta)), full("stss", 0, u32(keys.length, ...keys)), full("stsc", 0, u32(1, 1, n, 1)), full("stsz", 0, u32(0, n, ...sizes)), full("stco", 0, u32(1, co)));
+    const minf = box("minf", full("vmhd", 1, u16(0, 0, 0, 0)), box("dinf", full("dref", 0, u32(1), full("url ", 1))), stbl);
+    const mdia = box("mdia", full("mdhd", 0, u32(0, 0, TS, dur), u16(0x55c4, 0)), full("hdlr", 0, u32(0), str("vide"), new Uint8Array(12), str("LakeView\0")), minf);
+    return box("moov", full("mvhd", 0, u32(0, 0, TS, dur, 0x10000), u16(0x100, 0), new Uint8Array(8), unity, new Uint8Array(24), u32(2)), box("trak", full("tkhd", 3, u32(0, 0, 1, 0, dur, 0, 0), u16(0, 0, 0, 0), unity, u32(w * 65536, h * 65536)), mdia)); };
+  const co = ftyp.length + moov(0).length + 8, mdatLen = sizes.reduce((x, y) => x + y, 0) + 8;
+  return new Blob([ftyp, moov(co), u32(mdatLen), str("mdat"), ...samples.map((s) => s.d)], { type: "video/mp4" }); }
+$("#xpbtn").onclick = () => xpOpen($("#xp").hidden); $("#xpclose").onclick = () => xpOpen(false); $("#xpgo").onclick = xpStart; $("#xpsave").onclick = xpSave;
+["#xpfrom", "#xpto", "#xpclip"].forEach((q) => $(q).oninput = xpInfo);
 function tick() {
   requestAnimationFrame(tick); updateShelter();
-  const dt = Math.min(clock.getDelta(), 0.1), now = performance.now();
+  const dt = EXPORT ? (clock.getDelta(), 1 / EXPORT.fps) : Math.min(clock.getDelta(), 0.1), now = performance.now();
   if (!RM) U.uTime.value += dt;
   followFunwave();
   if (FW.cur) { const n = FW.cur.eta.frames, L = n * FW.cur.eta.dt; U.uFwT.value = ((U.uTime.value % L) / L) * (n - 1) / n + 0.5 / n; }
@@ -4223,6 +4296,7 @@ function tick() {
     let el = now - K.started;
     if (el >= K.plan.total) { K.t0 = Date.now(); K.t1 = kioskEnd(K.t0); K.plan = kioskPlan(K); K.started = now; el = 0; buildTicks(); }   // the loop starts over at the present
     K.el = el; S.t = kioskTime(K, el); kioskPerf(dt, el, K.plan.total); }
+  if (EXPORT) S.t = EXPORT.t0 + (EXPORT.t1 - EXPORT.t0) * Math.min(EXPORT.i / Math.max(EXPORT.n - 1, 1), 1);   // the export holds the clock: a frame at a time, however long each takes
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   navStep(dt);
@@ -4342,8 +4416,9 @@ function tick() {
   renderBloom();
   renderer.setRenderTarget(null); renderer.render(compScene, quadCam);
   updateLabels();
-  if (now - lastHud > (S.kiosk ? 300 : 150)) { lastHud = now; updateHud(rr, tp); updateCompass(); drawMinimap(); }
+  if (EXPORT || now - lastHud > (S.kiosk ? 300 : 150)) { lastHud = now; updateHud(rr, tp); updateCompass(); drawMinimap(); }
   if (WL.on && now - (WL.legT || 0) > 1000) { WL.legT = now; renderLegend(); }
+  if (EXPORT) xpFrame();   // in the same task as the render: the drawing buffer is gone after it
 }
 const WXI = (() => { const cl = (y = 0) => `<path d="M7 ${18 - y}h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 ${11 - y}a3.5 3.5 0 0 0 1 7z"/>`, sv = (b) => `<svg viewBox="0 0 24 24" aria-hidden="true">${b}</svg>`;
   return { sun: sv(`<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>`),
