@@ -6,8 +6,8 @@ north branch up to belmont avenue; south until tom ping park".
 ## Decisions (user, gate 1)
 - One world, extended: LakeView's area grows west to the North Branch at Belmont and south to Ping Tom Park.
 - Detail: 2 m river bottom (USGS 2022/2023 surveys), bridges as 3-D decks, the Riverwalk and walls at 1 m.
-- Physics: current from the USGS gages, sewer overflows (CSO) in the paddling light, boat wakes and traffic by
-  hour, wind in the canyon.
+- Physics: current from the USGS gages, sewer overflows (CSO) in the paddling light, wind in the canyon.
+  Boat traffic deferred (2026-11-02): the user will supply an AIS feed; the plan keeps a hook for it.
 - Extent: both sides of Goose Island (North Branch + North Branch Canal), the North Ave turning basin, Ogden Slip,
   the South Branch past Ping Tom's lagoon.
 
@@ -78,3 +78,4 @@ north branch up to belmont avenue; south until tom ping park".
 
 ## Decision log
 - 2026-11-02: plan written; gate-1 answers above.
+- 2026-11-02: approved ("Go ahead build"); boat traffic dropped from phase 3 pending the user's AIS feed.
