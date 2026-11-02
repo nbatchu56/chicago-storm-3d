@@ -9,6 +9,12 @@ const SCENES=[
   a:[41.930,-87.600,3.5,200,40], b:[41.930,-87.600,3.5,216,42], cap:"Wave energy flow — SWAN and FUNWAVE over the lake bottom"},
  {name:'wind', dur:3.0, ui:'none', ov:'natural', t:'2026-11-02T21:00:00Z', wind:true,
   a:[41.9230,-87.6150,2.4,300,36], b:[41.9230,-87.6150,2.2,308,38], cap:"Wind and gusts from NOAA HRRR, streaking over the water"},
+ {name:'storm', dur:3.5, ui:'none', ov:'radar', hist:'severe-2026-07-27', tOff:9,
+  a:[41.9050,-87.5900,3.4,256,22], b:[41.9050,-87.5900,3.2,268,25], cap:"Past storms replayed from the NEXRAD archive — the Jul 27 2026 severe storms"},
+ {name:'surf', dur:3.0, ui:'none', ov:'natural', hist:'gale-2026-10-16', tOff:20,
+  a:[41.9418,-87.6335,0.32,250,16], b:[41.9420,-87.6333,0.29,243,15], cap:"The Oct 16 2026 north gale — breakers, spray and rebound at the walls"},
+ {name:'upsets', dur:3.0, ui:'panelui', ov:'radar', hist:'severe-2026-07-27', tOff:12, panel:'upsets',
+  a:[41.9050,-87.5900,3.2,268,25], b:[41.9050,-87.5900,3.1,272,26], cap:"Weather upsets, rated for paddling"},
  {name:'river', dur:3.0, ui:'none', ov:'natural', t:'2026-11-02T19:30:00Z', drone:true,
   a:[41.8890,-87.6010,0.9,270,42], b:[41.8884,-87.6160,0.9,270,42], cap:"The Chicago River — the current, the lock, the overflows"},
  {name:'wildmile', dur:3.0, ui:'none', ov:'natural', t:'2026-11-02T20:00:00Z', drone:true,
@@ -32,8 +38,8 @@ await p.addStyleTag({content:`
  #cap.top{bottom:auto;top:16px;left:auto;right:16px;transform:none}
  body.film #timeline,body.film #imm,body.film #hint,body.film #nav,body.film #toggle,body.film #legend,body.film #bar,body.film #hud,body.film #labels,body.film #attr,body.film #controls{display:none!important}
  body.film.title #hud{display:grid!important} body.film.title #hud > :not(h1){display:none!important} body.film.title #hud h1{transform:scale(1.2);transform-origin:top left;margin:8px 0 0 8px}
- body.film.full #bar,body.film.full #hud,body.film.full #labels,body.film.full #attr{display:revert!important}
- body.ovl{background:transparent!important} body.ovl canvas#gl,body.ovl #kfade{visibility:hidden!important}`});
+ body.film.full #bar,body.film.full #hud,body.film.full #labels,body.film.full #attr{display:revert!important} body.film.panelui #hud,body.film.panelui #controls,body.film.panelui #attr{display:revert!important}
+ body.ovl{background:transparent!important} body.ovl #app{width:100vw!important;height:100vh!important;left:0!important;top:0!important} body.ovl canvas#gl,body.ovl #kfade{visibility:hidden!important}`});
 // the loop in my hands: rAF callbacks queue up and run when I say; the clock moves 1/FPS s per frame
 await p.evaluate((FPS)=>{const W=__world;W.S.follow=false;W.S.playing=false;document.body.classList.add('film');const h=document.querySelector('#hint');if(h)h.hidden=true;
   window.__q=[];window.requestAnimationFrame=(f)=>{window.__q.push(f);return window.__q.length;};window.cancelAnimationFrame=()=>{};
@@ -42,8 +48,14 @@ await p.evaluate((FPS)=>{const W=__world;W.S.follow=false;W.S.playing=false;docu
 await p.waitForTimeout(500); await p.evaluate(()=>window.__step(3));
 for(const sc of SCENES){ if(only.length&&!only.includes(sc.name)) continue;
   const dir=`frames/${sc.name}`; fs.rmSync(dir,{recursive:true,force:true}); fs.mkdirSync(dir,{recursive:true});
-  await p.evaluate((sc)=>{const W=__world;document.body.classList.remove('title','full','ovl');if(sc.ui!=='none')document.body.classList.add(sc.ui);
-    document.querySelector(`[data-ov="${sc.ov}"]`).click();W.S.t=Date.parse(sc.t);W.DRONE.on=!!sc.drone;W.setWindOn(!!sc.wind);
+  if(sc.hist){ await p.waitForFunction(()=>__world.SRC.hist.length>5,undefined,{timeout:240000});
+    await p.evaluate((sc)=>{const W=__world,i=W.SRC.hist.findIndex(h=>h.raw.label.includes(sc.hist));const sel=document.querySelector('#hist-pick');sel.value=String(i);sel.dispatchEvent(new Event('change'));},sc);
+    await p.waitForFunction(()=>{const H=__world.SRC.hist[__world.S.histIdx];return H&&!H.src&&!H.loading;},undefined,{timeout:240000});
+    await p.evaluate((sc)=>{const W=__world,H=W.SRC.hist[W.S.histIdx];W.S.t=Date.parse(H.raw.window.start)+sc.tOff*60e3;W.S.playing=false;W.S.follow=false;},sc); }
+  else await p.evaluate(()=>{const W=__world;if(W.S.mode!=='live')W.setMode('live');W.S.follow=false;W.S.playing=false;});
+  await p.evaluate((sc)=>{const W=__world;document.body.classList.remove('title','full','panelui','ovl','panel');
+    const tg=document.querySelector('#toggle');if(sc.panel){document.body.classList.add('panel');if(tg.getAttribute('aria-expanded')!=='true')tg.click();document.querySelector(`[data-xtab="${sc.panel}"]`).click();const pc=document.querySelector('#controls');pc.hidden=false;const sec=document.querySelector('#exp-'+sc.panel);if(sec){sec.hidden=false;pc.scrollTop=sec.offsetTop-pc.offsetTop-8;}}else if(tg.getAttribute('aria-expanded')==='true')tg.click();if(sc.ui!=='none')document.body.classList.add(sc.ui);
+    document.querySelector(`[data-ov="${sc.ov}"]`).click();if(sc.t)W.S.t=Date.parse(sc.t);W.DRONE.on=!!sc.drone;W.setWindOn(!!sc.wind);
     let c=document.querySelector('#cap');if(!c){c=document.createElement('div');c.id='cap';document.querySelector('#app').appendChild(c);}c.textContent=sc.cap;c.className=sc.capTop?'top':'';
     const [la,lo,d,h,pp]=sc.a,[x,y]=W.ll(la,lo);W.flyTo(x,y,d,h,pp,true);W.DRONE.placed=true;},sc);
   await p.evaluate((n)=>window.__step(n),sc.drone?30:24);
@@ -54,7 +66,8 @@ for(const sc of SCENES){ if(only.length&&!only.includes(sc.name)) continue;
     fs.writeFileSync(`${dir}/f${String(i).padStart(4,'0')}.jpg`,Buffer.from(d.split(',')[1],'base64'));}
   console.log(sc.name,n,'frames',((Date.now()-t0)/1000/n).toFixed(1)+'s per frame');
   // the overlay: the UI and the caption over a transparent page, at the scene's last camera
-  await p.evaluate(()=>document.body.classList.add('ovl'));
+  await p.evaluate((sc)=>{document.body.classList.add('ovl');if(sc.panel){const pc=document.querySelector('#controls'),sec=document.querySelector('#exp-'+sc.panel);if(sec)pc.scrollTop+=sec.getBoundingClientRect().top-pc.getBoundingClientRect().top-10;}},sc);
+  if(process.env.TEST) console.log('DIAG',await p.evaluate(()=>['#bar','#controls','#cap','#hud','#app'].map(q=>{const e=document.querySelector(q);if(!e)return q+':none';const r=e.getBoundingClientRect(),cs=getComputedStyle(e);return q+':'+cs.display+'/'+cs.visibility+'/'+cs.opacity+'/'+Math.round(r.width)+'x'+Math.round(r.height)+'@'+Math.round(r.x)+','+Math.round(r.y)}).join(' ')+' body='+document.body.className));
   await p.screenshot({path:`${dir}/overlay.png`,omitBackground:true,timeout:240000});
   await p.evaluate(()=>document.body.classList.remove('ovl'));
   console.log(sc.name,'overlay done');}
