@@ -90,6 +90,7 @@ LAUNCHES = [
     ["Urban Kayaks · Riverwalk", 41.8880, -87.6197, "main"],
     ["Kayak Chicago · North Ave turning basin", 41.9105, -87.6560, "goose_w"],
     ["Ping Tom boathouse", 41.8575, -87.6345, "south"],
+    ["Wild Mile public dock", 41.9023, -87.6488, "goose_e"],    # Urban Rivers' floating park, the boardwalk at the end of W Eastman St
 ]
 
 
