@@ -3171,6 +3171,10 @@ function lockOpenAt(tMs) { const L = RN.d && RN.d.lock; if (!L || !L.season) ret
 // the fetch along the river: water of the river's class (and the lake's, past the lock) up-wind of the point
 function riverFetchM(xk, yk, fromDeg) { const b = fromDeg * Math.PI / 180, dx = Math.sin(b) / 1000, dy = Math.cos(b) / 1000; let d = 0;
   while (d < 4000) { const c = maskAt(xk + dx * (d + 3), yk + dy * (d + 3)); if (c !== RIVER_CLS && c !== 1 && c !== 2) break; d += 3; } return d; }
+// river water within rM metres of a point on land (the banks, the Riverwalk, a bridge): the nearest cell of the river's class
+function nearestRiverWater(xk, yk, rM) { if (!RIVER.ok || !riverReachAt(xk, yk)) return null;
+  for (let r = 6; r <= rM; r += 6) for (let a = 0; a < 16; a++) { const x = xk + Math.cos(a * Math.PI / 8) * r / 1000, y = yk + Math.sin(a * Math.PI / 8) * r / 1000; if (maskAt(x, y) === RIVER_CLS) return [x, y]; }
+  return null; }
 // the readout for river water: the canyon wind, chop over the reach's fetch, the current, overflows, the lock
 function riverConditions(c, tMs, xk, yk) {
   const R = riverReachAt(xk, yk), reach = R ? R.reach : null;
@@ -3227,7 +3231,7 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
   const c = { wind: 0, dir: 0, gust: null, airC: null, sky: 0, pop: 0, systems: [], dRef: 1000, waterC: null, src: [] };
   let shore = nearestShore(xk, yk);
   if (!inLakeCoarse(xk, yk) && maskAt(xk, yk) === 0) {   // over land: harbour water within ~40 m (a launch ramp, a dock) reports itself, else the lake just offshore
-    const hw = nearestHarborWater(xk, yk, 40); if (hw) { xk = hw[0]; yk = hw[1]; } else { xk += shore.nx * (shore.d + 1.2); yk += shore.ny * (shore.d + 1.2); } shore = nearestShore(xk, yk); }
+    const hw = nearestHarborWater(xk, yk, 40) || nearestRiverWater(xk, yk, 300); if (hw) { xk = hw[0]; yk = hw[1]; } else { xk += shore.nx * (shore.d + 1.2); yk += shore.ny * (shore.d + 1.2); } shore = nearestShore(xk, yk); }
   const fetchAt = (dir) => rayFetchKm(xk, yk, dir) * 1000;
   const withChop = (sys, U10, dir) => { const ch = cem(U10, 300, 1); if (ch.hm0 > 0.01) sys.push({ hs: Math.max(ch.hm0, 0.02 + 0.006 * U10), tp: Math.max(0.9, ch.tp), dir, spread: 50 }); return sys; };
   if (S.mode === "import") {
@@ -3501,7 +3505,8 @@ function lockToWater() {
   const nearWater = (x, y, r) => { if (maskAt(x, y) !== 0) return true; for (const k of [0.25, 0.5, 1]) for (let a = 0; a < 8; a++) if (maskAt(x + Math.cos(a * 0.785) * r * k, y + Math.sin(a * 0.785) * r * k) !== 0) return true; return false; };
   const sh = VLOCK.shore, onWater = nearWater(tx, ty, 0.08);
   let mx = 0, my = 0;
-  if (!onWater && sh.d > 0.08) { mx = sh.nx * (sh.d - 0.08); my = sh.ny * (sh.d - 0.08); }            // pulled back to the water (n points to the coast)
+  if (RIVER.ok && (maskAt(tx, ty) === RIVER_CLS || riverReachAt(tx, ty))) { /* the river is the water here: no pull toward the lake */ }
+  else if (!onWater && sh.d > 0.08) { mx = sh.nx * (sh.d - 0.08); my = sh.ny * (sh.d - 0.08); }            // pulled back to the water (n points to the coast)
   else if (maskAt(tx, ty) !== 0 && sh.d > 2.5) { mx = sh.nx * (sh.d - 2.5); my = sh.ny * (sh.d - 2.5); }            // and in toward the lakefront
   if (mx || my) { t.x += mx; t.z -= my; c.x += mx; c.z -= my; VLOCK.checked = null; }
   if (!VLOCK.user) return;
