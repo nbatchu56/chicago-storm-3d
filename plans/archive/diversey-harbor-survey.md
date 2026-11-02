@@ -214,10 +214,10 @@ Files: `README.md`, `plans/`
 | 2 rigid walls | done (probe: 99.2% inside / 99.4% outside, from 19% / 88%) |
 | 3 aerial imagery | done (0.55 m JPEG, 2.0 MB; Aerial 2024 button) |
 | 4 harbor SWAN | done (run 41115898447: 132 offshore + 96 wind cases) |
-| 5 FUNWAVE to the sill | pending |
-| 6 harbor waves on the page | pending |
+| 5 FUNWAVE to the sill | done (e7bc576: the diversey tile runs south to the Fullerton sill on the 2 m bottom) |
+| 6 harbor waves on the page | done (015a433: lake sea through the mouth + the wind's own chop from the harbor library) |
 | 7 1000 m course | done (21 waypoints from the survey polygon; ribbon, 100 m ticks, 250 m labels) |
-| 8 ship | pending |
+| 8 ship | done (PR merged 2026-10-30, main ecefe20; both artifacts republished) |
 
 ---
 
@@ -245,3 +245,12 @@ symbol in the tracker/legend and on Upsets cards and the conditions; same PR.
 - E4 badges: Upsets cards and the Atmosphere card when an active El Niño's winter pattern shows (mild spell, low ice,
   southern-stream rain); the symbol everywhere.
 - Verification: parser/composite tests; probe screenshot of the tab and the layer; the workflows on the branch.
+
+## Execution record (archived 2026-11-02)
+- Shipped 2026-10-30 in one PR (feat/diversey-harbor-survey → main ecefe20), with the El Niño tracker addendum.
+- Follow-ups after the merge: the inlet under Lake Shore Drive keeps only the channel as water (ecefe20); the lagoon's
+  1000 m course became a straight line from the Fullerton bridge (2026-10-31, at the user's ask).
+- Data on the branches: bathy (survey source 4, channels source 5), swan (harbor-0 and harbor-wind-0 libraries),
+  funwave (diversey tile to the sill); the aerial photo as the snapshot's side JPEG.
+- The Chicago River plan (archived) later moved the harbour's survey classes to mask bytes class × 51 and the map box
+  to Belmont / Ping Tom; the harbour's own model and course are unchanged.
