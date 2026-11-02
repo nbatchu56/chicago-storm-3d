@@ -79,3 +79,9 @@ north branch up to belmont avenue; south until tom ping park".
 ## Decision log
 - 2026-11-02: plan written; gate-1 answers above.
 - 2026-11-02: approved ("Go ahead build"); boat traffic dropped from phase 3 pending the user's AIS feed.
+- 2026-11-02: phase 1 + the geometry of phase 2 built in one PR: app/river.py (bed, polys, quays, bridges, lock, county
+  buildings, reaches, launches), bathy.yml runs it, bathymetry burns the bed into the world (src 6), MAP_BBOX / LB
+  extended, the page draws class-4 river water hard-edged with walls, decks, the lock and the county buildings.
+  Findings: the bare-earth lidar strips elevated decks (nominal closed clearances stand in for 42 of 63 bridges);
+  Overpass is unreachable from the sandbox except through a slow mirror (the Actions runners reach it); main stem bed
+  median 6.2 m, North Branch 3.5 m.

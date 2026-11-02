@@ -265,7 +265,7 @@ def write_side(out, rel, obj):
     return len(txt) // 1000
 
 
-SPLIT = ("bathy-data", "swan-data", "funwave-data", "history-data", "chopspots-data", "enso-data", "wind-data", "jet-data")   # funwave: one file per run
+SPLIT = ("bathy-data", "swan-data", "funwave-data", "history-data", "chopspots-data", "enso-data", "wind-data", "jet-data", "river-data")   # funwave: one file per run
 
 
 def merge_earth(lakefront, earth):
@@ -283,7 +283,7 @@ def merge_earth(lakefront, earth):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
-    for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track", "levels", "earth", "wn3", "ortho", "enso", "wind", "jet"):
+    for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track", "levels", "earth", "wn3", "ortho", "enso", "wind", "jet", "river"):
         ap.add_argument("--" + k)
     ap.add_argument("--learn", help="correction.json from the learn branch (experimental learned wave correction)")
     ap.add_argument("--scorecard", help="scorecard.json from the learn branch (forecast vs buoy by lead time)")
@@ -315,6 +315,7 @@ def main():
         "enso-data": load(a.enso),     # app.enso: the El Niño tracker (indices, the Pacific map, the Lake Michigan composites)
         "wind-data": load(a.wind),     # app.hrrr: HRRR 10 m wind and gusts for the wind layer
         "jet-data": load(a.jet),       # app.jet: GFS 250 hPa for the jet stream map, Chicago's quadrant, the gust study
+        "river-data": load(a.river),   # app.river: the Chicago River's bed, walls, bridges, lock, buildings, reaches
     }
     generated = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     pages = [(a.out, a.start)] + [(x.split("=", 1)[0], x.split("=", 1)[1]) for x in a.also]

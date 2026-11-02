@@ -551,6 +551,7 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
 <script id="enso-data" type="application/json"></script>
 <script id="wind-data" type="application/json"></script>
 <script id="jet-data" type="application/json"></script>
+<script id="river-data" type="application/json"></script>
 <script id="earth-data" type="application/json"></script>
 <script id="wn3-data" type="application/json"></script>
 <script id="meta-data" type="application/json"></script>
@@ -620,7 +621,7 @@ const PIER_LIGHTS = [["North Ave Beach pier light", 41.91477, -87.62099], ["Mont
 const LAGOON_COURSE = [[41.925638, -87.632224], [41.916925, -87.628989]];
 const COURSE_LEN = 1000, COURSE_TICK = 100, COURSE_LABEL = 250;
 // the local world: the Lake Michigan Water Trail from Monroe Harbor to Montrose, out past the Harrison-Dever crib
-const LB = (() => { const [x0, y0] = ll(41.870, -87.650), [x1, y1] = ll(41.970, -87.562); return { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; })();
+const LB = (() => { const [x0, y0] = ll(41.850, -87.700), [x1, y1] = ll(41.970, -87.562); return { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; })();
 // camera presets: target (lat, lon), distance km, view heading (deg, compass), pitch (deg below horizontal)
 const GOTO = [
   ["Lakefront view", 41.9203, -87.6195, 1.58, 284, 34],      // the opening view: North Ave Beach to Belmont Harbor
@@ -633,6 +634,13 @@ const GOTO = [
   ["Diversey Harbor mouth", 41.9322, -87.6318, 0.26, 245, 15],
   ["Inside the harbor", 41.9290, -87.6342, 0.20, 190, 22],
   ["Lincoln Park lagoon", 41.9212, -87.6306, 0.55, 345, 32],      // up the 1000 m course toward the Fullerton bridge
+  // the Chicago River
+  ["Chicago Harbor Lock", 41.8890, -87.6075, 0.42, 250, 22],
+  ["Riverwalk · Michigan Ave", 41.8880, -87.6245, 0.36, 265, 18],
+  ["Wolf Point", 41.8873, -87.6360, 0.5, 60, 26],
+  ["Goose Island", 41.9045, -87.6515, 1.2, 0, 38],
+  ["North Branch · Belmont", 41.9360, -87.6850, 0.6, 20, 28],
+  ["Ping Tom Park", 41.8565, -87.6355, 0.5, 15, 24],
   // launch quick views: from behind each container, looking out over the launch to the water
   ["Chicago SUP · Diversey launch", 41.92654, -87.63285, 0.12, 51, 30],      // the ramp is ~25 m NE of the container
   ["Chicago SUP · North Ave launch", 41.91337, -87.62279, 0.2, 28, 26],      // the beach in front of the shop, ~70 m to the water
@@ -1018,7 +1026,7 @@ float shelterAt(vec2 pk) {
     float s = 1.0;
     for (int i = 1; i <= 7; i++) { float d = 0.004 + float(i * i) * 0.0026; vec2 uv = (pk - wd * d - uMapMin) / uMapSize;
       if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) break;
-      if (texture2D(uMapMask, uv).r < 0.17) { s = 0.12 + 0.45 * smoothstep(0.02, 0.13, d); break; } }
+      if (texture2D(uMapMask, uv).r < 0.1) { s = 0.12 + 0.45 * smoothstep(0.02, 0.13, d); break; } }
     tot += s; }
   return tot * 0.5; }
 `;
@@ -1051,7 +1059,7 @@ void main(){
   vec2 fw = fwidth(p); float foot = max(fw.x, fw.y);
   bool inMap = uHasMap > 0.5 && p.x > uMapMin.x && p.y > uMapMin.y && p.x < uMapMin.x + uMapSize.x && p.y < uMapMin.y + uMapSize.y;
   vec2 muv = (p - uMapMin) / uMapSize;
-  float cls = inMap ? floor(texture2D(uMapMask, muv).r * 3.0 + 0.5) : (inLake(p) ? 1.0 : 0.0);
+  float cls = inMap ? floor(texture2D(uMapMask, muv).r * 5.0 + 0.5) : (inLake(p) ? 1.0 : 0.0);
   // rounded shoreline: the smoothed water fraction decides water vs land within a pixel or two of the edge
   vec4 looks4 = inMap ? texture2D(uMapLooks, muv) : vec4(cls > 0.5 ? 1.0 : 0.0, 0.0, 1.0, 0.0); vec3 looks = looks4.rgb; float wetF = looks.r, edgeN = (vnoise(p * 300.0) * 0.12 - 0.06) * (1.0 - looks4.a);
   if (inMap) { if (wetF + edgeN > 0.5 && cls < 0.5) cls = 1.0; else if (wetF + edgeN <= 0.5 && cls > 0.5) cls = 0.0; }
@@ -1167,8 +1175,51 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600, 160, 160).rota
 
 // ---------------------------------------------------------------- lakefront map (OSM): colour texture + water mask, buildings
 const MAP = { ok: false };
+// ---------------------------------------------------------------- the Chicago River (river-data: app.river)
+// the lake → the Chicago Harbor Lock → the main stem → Wolf Point, the North Branch (both sides of Goose Island) to
+// Belmont, the South Branch to Ping Tom Park: the surveyed bed (USGS 2022/2023, 2 m), the walls (OSM quays and the
+// Riverwalk, their height from the 3DEP lidar), the bridges (decks closed), the lock, Cook County's building heights.
+// The river's water is mask class 4: drawn hard-edged like the surveyed harbour, no lake waves (the lock stops them).
+const RIVER = { d: null, bed: [], polys: [], level: null, ok: false };
+const RIVER_CLS = 4;
+async function setRiver(d) {
+  if (!d || !d.polys) return; RIVER.d = d; RIVER.polys = d.polys; RIVER.level = d.level && d.level.used_m != null ? d.level.used_m : LWD + 0.4;
+  RIVER.bed = [];
+  for (const [name, g] of Object.entries(d.bed || {})) { const n = g.nx * g.ny, zb = await gunzipB64(g.z_cm), inside = await gunzipB64(g.inside);
+    const z = new Int16Array(zb.buffer, zb.byteOffset, n);
+    RIVER.bed.push({ name, x0: g.x0 / 1000, y0: g.y0 / 1000, dx: g.dx / 1000, nx: g.nx, ny: g.ny, z, inside, x1: (g.x0 + (g.nx - 1) * g.dx) / 1000, y1: (g.y0 + (g.ny - 1) * g.dx) / 1000 }); }
+  RIVER.ok = true;
+}
+// the river's depth at a point (m), or null off the surveyed bed: bilinear over the surveyed cells only
+function riverDepthAt(xk, yk) {
+  if (!RIVER.ok) return null;
+  for (const g of RIVER.bed) { if (xk < g.x0 || yk < g.y0 || xk > g.x1 || yk > g.y1) continue;
+    const fx = (xk - g.x0) / g.dx, fy = (yk - g.y0) / g.dx, i = Math.min(Math.floor(fx), g.nx - 2), j = Math.min(Math.floor(fy), g.ny - 2), tx = fx - i, ty = fy - j;
+    const k = j * g.nx + i; if (!g.inside[k]) return null;
+    const v = (kk) => g.inside[kk] ? g.z[kk] / 100 + LWD : null, a = v(k), b = v(k + 1) ?? a, c = v(k + g.nx) ?? a, dd = v(k + g.nx + 1) ?? a;
+    return RIVER.level - ((a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + dd * tx) * ty); }
+  return null;
+}
+// the paddling reach at a point (nearest centreline within 250 m), with the distance along it
+function riverReachAt(xk, yk) {
+  if (!RIVER.ok) return null; let best = null;
+  for (const r of RIVER.d.reaches || []) { const P = r.line.map(([la, lo]) => ll(la, lo)); let s = 0;
+    for (let i = 1; i < P.length; i++) { const [ax, ay] = P[i - 1], [bx, by] = P[i], dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1e-9;
+      const t = clamp(((xk - ax) * dx + (yk - ay) * dy) / L2, 0, 1), d = Math.hypot(xk - (ax + dx * t), yk - (ay + dy * t));
+      if (d < 0.25 && (!best || d < best.d)) best = { d, reach: r, s: s + Math.sqrt(L2) * t, dir: [dx / Math.sqrt(L2), dy / Math.sqrt(L2)] };
+      s += Math.sqrt(L2); } }
+  return best;
+}
+// buildings: inside the river box Cook County's lidar footprints replace OSM's (OSM has heights for 0.4% of them)
+function riverMergeBuildings(feats) {
+  if (!RIVER.ok || !RIVER.d.buildings) return feats;
+  const [Sb, Wb, Nb, Eb] = RIVER.d.bbox, [x0, y0] = ll(Sb, Wb), [x1, y1] = ll(Nb, Eb), inBox = (pts) => { const cx = pts.reduce((a, q) => a + q[0], 0) / pts.length / 1000, cy = pts.reduce((a, q) => a + q[1], 0) / pts.length / 1000; return cx > x0 && cx < x1 && cy > y0 && cy < y1; };
+  const kept = feats.filter((f) => !(f.kind === "building" && f.closed && inBox(f.pts)));
+  for (const b of RIVER.d.buildings) kept.push({ kind: "building", pts: b.pts, closed: true, h: b.h, county: true });
+  return kept;
+}
 async function buildMap(LF) {
-  const feats = LF.osm || []; if (!feats.length) return;
+  const feats = riverMergeBuildings(LF.osm || []); if (!feats.length) return;
   const [Sb, Wb, Nb, Eb] = LF.map_bbox, [x0, y0] = ll(Sb, Wb), [x1, y1] = ll(Nb, Eb), m2k = (pt) => [pt[0] / 1000, pt[1] / 1000];
   // ~2.4 m pixels (3.4 m on low-memory devices) over the whole map; SC scales drawn widths kept from the 3.4 m version
   const lowMem = (navigator.deviceMemory || 8) <= 4 || matchMedia("(max-width: 760px)").matches;
@@ -1203,10 +1254,13 @@ async function buildMap(LF) {
   // pond for the ponds); within ~30 m outside, no later heuristic (lidar, dock carving, waterways, specks) may add water, and
   // the edge itself is drawn hard (svHard: no blur, no shoreline noise). The open lake's flood (the mouth) keeps its class.
   const svIn = new Uint8Array(WPX * HPX), svCls = new Uint8Array(WPX * HPX); let svHard = null, svGuard = null;
-  if (BATHY.survey && BATHY.survey.polys && BATHY.survey.polys.length) {
+  // the same for the Chicago River (class 4): OSM's water polygons are its walls (the USGS bed survey stops at them)
+  const hard = ((BATHY.survey && BATHY.survey.polys) || []).map((poly) => ({ rings: poly.rings, cls: /pond/i.test(poly.name || "") ? 3 : 2 }))
+    .concat((RIVER.ok ? RIVER.polys : []).map((poly) => ({ rings: poly.rings, cls: RIVER_CLS })));
+  if (hard.length) {
     const sc0 = document.createElement("canvas"); sc0.width = WPX; sc0.height = HPX; const sx0 = sc0.getContext("2d", { willReadFrequently: true });
-    for (const poly of BATHY.survey.polys) {
-      const cls = /pond/i.test(poly.name || "") ? 3 : 2;
+    for (const poly of hard) {
+      const cls = poly.cls;
       sx0.clearRect(0, 0, WPX, HPX); sx0.fillStyle = "#fff"; sx0.beginPath();
       for (const ring of poly.rings) ring.forEach((pt, i) => { const [px, py] = P(...m2k(pt)); i ? sx0.lineTo(px, py) : sx0.moveTo(px, py); });
       sx0.closePath(); sx0.fill("evenodd");
@@ -1401,8 +1455,8 @@ async function buildMap(LF) {
     MAP.specks = filled; }
   if (svGuard) { let undone = 0; for (let i = 0; i < mask.length; i++) { if (svIn[i]) { if (mask[i] !== 1) mask[i] = svCls[i]; } else if (svGuard[i] && mask[i] !== svBase[i] && mask[i] !== 1) { mask[i] = svBase[i]; undone++; } } MAP.surveyGuarded = undone; }
   await yieldUI();
-  // one byte per pixel (class * 85); DataTexture rows run south->north, canvas rows north->south
-  const flipped = new Uint8Array(WPX * HPX); for (let y = 0; y < HPX; y++) { const src = (HPX - 1 - y) * WPX, dst = y * WPX; for (let x = 0; x < WPX; x++) flipped[dst + x] = mask[src + x] * 85; }
+  // one byte per pixel (class * 51: 0 land, 1 lake, 2 harbour, 3 pond, 4 river); DataTexture rows run south->north, canvas rows north->south
+  const flipped = new Uint8Array(WPX * HPX); for (let y = 0; y < HPX; y++) { const src = (HPX - 1 - y) * WPX, dst = y * WPX; for (let x = 0; x < WPX; x++) flipped[dst + x] = mask[src + x] * 51; }
   const maskTex = new THREE.DataTexture(flipped, WPX, HPX, THREE.RedFormat); maskTex.unpackAlignment = 1; maskTex.minFilter = maskTex.magFilter = THREE.NearestFilter; maskTex.needsUpdate = true;
   // looks only (the mask above stays the source of truth for waves and lookups):
   //  R = water fraction, slightly blurred and read with linear filtering: the shader takes its 0.5 contour as a rounded shoreline
@@ -1548,6 +1602,20 @@ function buildDocksAndBridges(docks, roads, steel, maskM) { const walls3d = MAP.
       const pa = ng.attributes.position.array, na = ng.attributes.normal.array; for (let i = 0; i < pa.length; i += 3) { pos.push(pa[i], pa[i + 1], pa[i + 2]); nrm.push(na[i], na[i + 1], na[i + 2]); tint.push(10); } continue; }
     for (let i = 1; i < f.pts.length; i++) box(f.pts[i - 1][0], f.pts[i - 1][1], f.pts[i][0], f.pts[i][1], f.w, f.top, -0.8, 10); }
   MAP.walls3d = walls3d.length;
+  // the Chicago River: quay walls (the lidar's bank height above the water, 0.4-6 m), the bridges' decks drawn closed with
+  // steel trusses along the edges and concrete abutments, the lock's chamber walls and gates
+  if (RIVER.ok) { const R = RIVER.d; let nq = 0, nb = 0;
+    for (const q of R.quays || []) { const top = clamp(q.above == null ? 1.2 : q.above, 0.4, 6), w = q.kind === "riverwalk" ? 1.0 : 1.4;
+      for (let i = 1; i < q.pts.length; i++) box(q.pts[i - 1][0], q.pts[i - 1][1], q.pts[i][0], q.pts[i][1], w, top, -1.0, 10); nq++; }
+    for (const b of R.bridges || []) { const clr = clamp(b.clearance == null ? 5.5 : b.clearance, 3, 12), [ax, ay] = b.a, [bx, by] = b.b, L = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / L, uy = (by - ay) / L, ext = 6;
+      const a2 = [ax - ux * ext, ay - uy * ext], b2 = [bx + ux * ext, by + uy * ext], w = clamp(b.width, 4, 60), steel = b.kind === "rail" || b.movable;
+      box(a2[0], a2[1], b2[0], b2[1], w, clr + 1.2, clr, steel && b.kind === "rail" ? 3 : 1);                                   // the deck
+      if (steel) { const nx = -uy * (w / 2 - 0.4), ny = ux * (w / 2 - 0.4); for (const sg of [1, -1]) box(a2[0] + nx * sg, a2[1] + ny * sg, b2[0] + nx * sg, b2[1] + ny * sg, 0.7, clr + 3.2, clr + 1.2, 3); }   // trusses / railings
+      box(ax - ux * ext, ay - uy * ext, ax - ux * 1.5, ay - uy * 1.5, w, clr + 1.2, -1.5, 2); box(bx + ux * 1.5, by + uy * 1.5, bx + ux * ext, by + uy * ext, w, clr + 1.2, -1.5, 2);   // abutments
+      nb++; }
+    const Lk = R.lock || {}; if (Lk.chamber && Lk.chamber.length > 3) { const P = Lk.chamber; for (let i = 1; i < P.length; i++) box(P[i - 1][0], P[i - 1][1], P[i][0], P[i][1], 3.0, 2.2, -1.5, 10); }
+    for (const g of Lk.gates || []) if (Array.isArray(g[0])) for (let i = 1; i < g.length; i++) box(g[i - 1][0], g[i - 1][1], g[i][0], g[i][1], 1.2, 1.8, -1.0, 3);
+    MAP.river = { quays: nq, bridges: nb }; }
   // navigation light towers at the pier heads (red, steady): a concrete footing, a red steel tower, a lantern on top
   const cyl = (cx, cy, r, yBot, yTop, c, n = 18) => { const K = (a, h) => [(cx + Math.cos(a) * r) / 1000, h / 1000, -(cy + Math.sin(a) * r) / 1000];
     for (let i = 0; i < n; i++) { const a0 = i / n * 2 * Math.PI, a1 = (i + 1) / n * 2 * Math.PI, am = (a0 + a1) / 2, nS = [Math.cos(am), 0, -Math.sin(am)];
@@ -1958,6 +2026,7 @@ function surveyAt(xk, yk) {
   if (i < 0 || j < 0 || i >= G.nx || j >= G.ny) return null; const k = j * G.nx + i; return { dep: BATHY.dep[k], src: BATHY.src[k], k };
 }
 function depthAtKm(xk, yk) {   // metres of water (negative on land), or null outside the grid
+  if (RIVER.ok) { const rd = riverDepthAt(xk, yk); if (rd != null) return rd; }
   if (!BATHY.ok) return null; if (BATHY.det) { const s = surveyAt(xk, yk); if (s && s.fine) return s.dep; } const g = BATHY.g, fx = (xk - BATHY.x0) / BATHY.w * (g.nx - 1), fy = (yk - BATHY.y0) / BATHY.h * (g.ny - 1);
   if (fx < 0 || fy < 0 || fx > g.nx - 1 || fy > g.ny - 1) return null; const i = Math.min(Math.floor(fx), g.nx - 2), j = Math.min(Math.floor(fy), g.ny - 2), tx = fx - i, ty = fy - j, D = BATHY.dep, v = (jj, ii) => D[jj * g.nx + ii];
   return (v(j, i) * (1 - tx) + v(j, i + 1) * tx) * (1 - ty) + (v(j + 1, i) * (1 - tx) + v(j + 1, i + 1) * tx) * ty; }
@@ -2308,7 +2377,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       vec2 loc = position.xz; vec2 p = loc + uPatchRel;
       vec4 wk = modelMatrix * vec4(position, 1.0); vec2 pk = vec2(wk.x, -wk.z);
       float cls = 1.0; if (uHasMap > 0.5 && pk.x > uMapMin.x && pk.y > uMapMin.y && pk.x < uMapMin.x + uMapSize.x && pk.y < uMapMin.y + uMapSize.y)
-        cls = floor(texture(uMapMask, (pk - uMapMin) / uMapSize).r * 3.0 + 0.5);
+        cls = floor(texture(uMapMask, (pk - uMapMin) / uMapSize).r * 5.0 + 0.5);
       float shelter = cls < 0.5 ? 0.0 : cls > 1.5 ? 0.18 : texture(uShelter, (pk - uMapMin) / uMapSize).r; vShel = shelter;
       // real depth (lidar/NCEI) where surveyed; SWAN's height ratio where modelled (it already holds shoaling,
       // refraction, breaking, diffraction and reflection), the 1-D profile tables elsewhere
@@ -2349,7 +2418,7 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       ${LOGF[1]}
       vec2 pk = vec2(vW.x, -vW.z); float wetF = 1.0;
       if (uHasMap > 0.5 && pk.x > uMapMin.x && pk.y > uMapMin.y && pk.x < uMapMin.x + uMapSize.x && pk.y < uMapMin.y + uMapSize.y) {
-        vec2 muv = (pk - uMapMin) / uMapSize; float cls = floor(texture2D(uMapMask, muv).r * 3.0 + 0.5); if (cls > 2.5) discard;
+        vec2 muv = (pk - uMapMin) / uMapSize; float cls = floor(texture2D(uMapMask, muv).r * 5.0 + 0.5); if (cls > 2.5) discard;
         vec4 lk = texture2D(uMapLooks, muv); wetF = lk.r + (noise(pk * 300.0) * 0.12 - 0.06) * (1.0 - lk.a); if (wetF <= 0.5 && vFlood < 0.5) discard; }
       if (iceAt(pk, 0.2, noise(pk * 1.7)) > 0.3) discard;
       vec2 p = vP; vec3 V = normalize(uCamPos - vW); float foot = max(length(fwidth(p)), 1e-3);
@@ -3104,7 +3173,8 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
 // raised by the crossing index where a FUNWAVE condition is shown. Bands in J/m2 of that chop energy.
 // the first 1.5-2 m of water from each launch pin (PLACES): Diversey off the ramp (harbour), North Ave ~130 m out from
 // the shop, Montrose across the beach on the lake side (~325 m from the Kayak Chicago container)
-const LAUNCHES = [["Montrose", 41.96741, -87.63436], ["North Ave", 41.91426, -87.62252], ["Diversey", 41.92649, -87.63272]];
+const LAUNCHES = [["Montrose", 41.96741, -87.63436], ["North Ave", 41.91426, -87.62252], ["Diversey", 41.92649, -87.63272],
+  ["Riverwalk", 41.8880, -87.6197], ["North Ave basin", 41.9105, -87.6560], ["Ping Tom", 41.8575, -87.6345]];
 const CHOP_BANDS = [[25, "Calm", "#5fc9a8"], [70, "Light chop", "#a6d96a"], [160, "Choppy", "#f7d940"], [350, "Rough", "#f39c45"], [Infinity, "Very rough", "#eb4d26"]];
 function chopRating(c) {
   const hs = c.fwHs != null ? c.fwHs : Math.sqrt(c.systems.reduce((a, q) => a + q.hs * q.hs, 0)), tp = c.systems[0] ? c.systems[0].tp : 3;
@@ -4566,6 +4636,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     { const o = document.createElement("option"); o.id = "hist-wait"; o.disabled = true; o.textContent = "Loading historical periods…"; $("#hist-pick").appendChild(o); }
     const about = () => { $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}${BATHY.survey ? `; Diversey Harbor and the lagoon from the ${(BATHY.survey.date || "2023").slice(0, 4)} USGS / Cook County survey` : ""}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases${d.wind ? ` + ${d.wind.cases.length} wind` : ""}`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""} GPU: ${GPU.name || "unknown"}, ${GPU.tex} textures, ${GPU.fvec} uniform vectors.${GPU.errs.length ? ` Shader problem: ${GPU.errs.join(" | ")}` : ""}`; };
     await setBathy(DATA.bathy); await yieldUI();
+    try { DATA.river = parseJSON("river-data") || await split("river-data"); await setRiver(DATA.river); } catch (e) { console.warn("river", e); }
     if (DATA.lake) { await buildMap(DATA.lake); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
     mmFit(); buildMinimap(); await yieldUI();
     await setEarth(DATA.earth); await yieldUI();
@@ -4598,6 +4669,6 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     } catch (e) { console.warn("background load", e); }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
+window.__world = { RIVER, riverDepthAt, riverReachAt, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
 })();
 </script>
