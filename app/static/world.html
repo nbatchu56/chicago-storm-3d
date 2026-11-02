@@ -3492,21 +3492,30 @@ function navStep(dt) {
   const z = (K.has("out") ? 1 : 0) - (K.has("in") ? 1 : 0);
   if (z) { const off = c.clone().sub(t), L = clamp(off.length() * Math.exp(z * 1.3 * dt), controls.minDistance, controls.maxDistance); c.copy(t).add(off.setLength(L)); }
 }
-// the view stays on the water: the point you look at stays on the water (or within ~80 m of it) and within ~2.5 km of
-// shore, and below ~50 deg you can't swing the camera in over the city (where buildings block the view); from higher up
-// anything goes. Views placed by the Go-to presets are kept as they are.
+// the view stays on the water: the point you look at may cross land while you move it (the lake to the river over the city),
+// and when it comes to rest it glides to the nearest water, the lake, a harbor or the river (or within ~80 m of it). It stays
+// within ~2.5 km of shore on the lake, and below ~50 deg you can't swing the camera in over the city (where buildings block
+// the view); from higher up anything goes. Views placed by the Go-to presets are kept as they are.
 const VLOCK = { good: null, checked: null, shore: null };
-controls.addEventListener("start", () => { VLOCK.user = true; VLOCK.good = null; });
+controls.addEventListener("start", () => { VLOCK.user = true; VLOCK.good = null; VLOCK.dest = null; });
 controls.addEventListener("end", () => { VLOCK.user = false; });
+// the nearest water of any kind (lake, harbor, river) within rKm of a point on land
+function nearestAnyWater(xk, yk, rKm) { for (let r = 0.03; r <= rKm; r += 0.03) for (let a = 0; a < 24; a++) { const x = xk + Math.cos(a * Math.PI / 12) * r, y = yk + Math.sin(a * Math.PI / 12) * r; if (maskAt(x, y) !== 0) return [x, y]; } return null; }
 function lockToWater() {
   if (NAV.move !== "fly" || S.view === "ride" || camTween || !MAP.ok) return;
   const t = controls.target, c = camera.position, tx = t.x, ty = -t.z;
   if (!VLOCK.checked || Math.hypot(tx - VLOCK.checked[0], ty - VLOCK.checked[1]) > 0.004) { VLOCK.shore = nearestShore(tx, ty); VLOCK.checked = [tx, ty]; }
   const nearWater = (x, y, r) => { if (maskAt(x, y) !== 0) return true; for (const k of [0.25, 0.5, 1]) for (let a = 0; a < 8; a++) if (maskAt(x + Math.cos(a * 0.785) * r * k, y + Math.sin(a * 0.785) * r * k) !== 0) return true; return false; };
   const sh = VLOCK.shore, onWater = nearWater(tx, ty, 0.08);
+  // moving = a drag, a held key or the pan's coasting after release: nothing pulls until the view has come to rest
+  const step = VLOCK.last ? Math.hypot(tx - VLOCK.last[0], ty - VLOCK.last[1]) : 0, moving = VLOCK.user || NAV.keys.size > 0 || (!VLOCK.dest && step > c.distanceTo(t) * 0.0004);
+  VLOCK.last = [tx, ty];
   let mx = 0, my = 0;
+  if (onWater || (RIVER.ok && riverReachAt(tx, ty))) VLOCK.dest = null;   // on the water, or in the river's reach
   if (RIVER.ok && (maskAt(tx, ty) === RIVER_CLS || riverReachAt(tx, ty))) { /* the river is the water here: no pull toward the lake */ }
-  else if (!onWater && sh.d > 0.08) { mx = sh.nx * (sh.d - 0.08); my = sh.ny * (sh.d - 0.08); }            // pulled back to the water (n points to the coast)
+  else if (!onWater && sh.d > 0.08) { if (moving) VLOCK.dest = null;
+    else { VLOCK.dest = VLOCK.dest || nearestAnyWater(tx, ty, Math.min(sh.d, 4)) || [tx + sh.nx * sh.d, ty + sh.ny * sh.d];     // n points to the coast
+      mx = (VLOCK.dest[0] - tx) * 0.12; my = (VLOCK.dest[1] - ty) * 0.12; } }
   else if (maskAt(tx, ty) !== 0 && sh.d > 2.5) { mx = sh.nx * (sh.d - 2.5); my = sh.ny * (sh.d - 2.5); }            // and in toward the lakefront
   if (mx || my) { t.x += mx; t.z -= my; c.x += mx; c.z -= my; VLOCK.checked = null; }
   if (!VLOCK.user) return;
