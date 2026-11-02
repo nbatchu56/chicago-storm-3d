@@ -1,0 +1,31 @@
+2026-11-02 02:50:17,205 INFO river: water level 175.79 m IGLD85 ({'site': '05536123', 'stage_ft': -2.01, 'level_m': 175.787, 't': '2026-11-01T20:26:00.000-06:00', 'velocity_fps': -0.06})
+2026-11-02 02:50:50,961 INFO river: overpass water: 6 elements
+2026-11-02 02:51:27,131 INFO river: overpass lock: 5 elements
+2026-11-02 02:51:56,940 INFO river: overpass quays: 471 elements
+2026-11-02 02:52:36,877 INFO river: overpass bridges: 3579 elements
+2026-11-02 02:52:37,012 INFO river: 7 water polygons
+2026-11-02 02:52:55,449 INFO dem tile -9,11: HTTP Error 502: Bad Gateway
+2026-11-02 02:52:58,464 INFO dem tile -9,11: HTTP Error 502: Bad Gateway
+2026-11-02 02:53:01,483 INFO dem tile -9,11: HTTP Error 502: Bad Gateway
+2026-11-02 02:54:11,075 INFO dem tile -3,1: HTTP Error 502: Bad Gateway
+2026-11-02 02:54:14,091 INFO dem tile -3,1: HTTP Error 502: Bad Gateway
+2026-11-02 02:54:17,111 INFO dem tile -3,1: HTTP Error 502: Bad Gateway
+2026-11-02 02:54:40,386 INFO dem tile 0,2: HTTP Error 502: Bad Gateway
+2026-11-02 02:54:43,474 INFO dem tile 0,2: HTTP Error 502: Bad Gateway
+2026-11-02 02:54:46,487 INFO dem tile 0,2: HTTP Error 502: Bad Gateway
+2026-11-02 02:54:50,179 INFO dem tile -3,-1: HTTP Error 502: Bad Gateway
+2026-11-02 02:54:53,192 INFO dem tile -3,-1: HTTP Error 502: Bad Gateway
+2026-11-02 02:54:56,208 INFO dem tile -3,-1: HTTP Error 502: Bad Gateway
+2026-11-02 02:58:22,280 INFO dem tile -2,-4: HTTP Error 502: Bad Gateway
+2026-11-02 02:58:25,300 INFO dem tile -2,-4: HTTP Error 502: Bad Gateway
+2026-11-02 02:58:28,314 INFO dem tile -2,-4: HTTP Error 502: Bad Gateway
+2026-11-02 02:59:07,692 INFO river: 226 quays, 62 bridges, lock ok
+2026-11-02 02:59:07,692 INFO river: downloading ChicagoSSCanal_bathymetry_2022-08.laz
+2026-11-02 02:59:11,347 INFO river: downloading NChicagoRivChannel_bathymetry_2023-07.laz
+2026-11-02 02:59:15,512 INFO river: ChicagoSSCanal_bathymetry_2022-08.laz: 2439807 points in the box
+2026-11-02 02:59:16,065 INFO river: NChicagoRivChannel_bathymetry_2023-07.laz: 1246844 points in the box
+2026-11-02 02:59:17,807 INFO river bed main: 2156x2655 at 2 m, 151786 cells, depth median 6.2 max 9.5 m
+2026-11-02 02:59:19,384 INFO river bed north: 2653x2765 at 2 m, 113896 cells, depth median 3.5 max 7.0 m
+2026-11-02 03:00:46,407 INFO river: 6744 buildings
+{"level": {"site": "05536123", "stage_ft": -2.01, "level_m": 175.787, "t": "2026-11-01T20:26:00.000-06:00", "velocity_fps": -0.06, "used_m": 175.787}, "polys": 7, "quays": 226, "bridges": 62, "buildings": 6744, "took_s": 630}
+{'main': {'median_m': 6.24, 'max_m': 9.55}, 'north': {'median_m': 3.47, 'max_m': 6.99}} 1611 KB
