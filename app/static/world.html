@@ -283,7 +283,7 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cur
 }
 /* ---- the information toolbar: a header strip and a row of cards (radar map, Air vs water compass, Air, Water, Atmosphere) above the timeline */
 :root { --barh: 212px; --cardh: 256px; }   /* every card the same height; the radar map fills its card */
-#bar { position: absolute; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 84px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 6px; pointer-events: none; z-index: 3; }
+#bar { position: absolute; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + var(--tlh, 84px) + env(safe-area-inset-bottom, 0px)); display: grid; gap: 6px; pointer-events: none; z-index: 3; }
 #bar > * { pointer-events: auto; }
 #toggle { padding: 6px 10px; font-size: 12px; z-index: 4; }
 /* immersive: one click hides everything but the scene and the timeline (I, or the same button, or Esc brings it back) */
@@ -343,6 +343,7 @@ body.compact #cards .cat.open { height: 256px; } body.compact #cat-sky .cathead 
 body.compact #vsbox { height: auto; min-width: 236px; } body.compact #vsbox .vs .rel, body.compact #vsbox .vs .hdg { display: none; }
 body.compact #vsbox .vs { grid-template-columns: 92px 1fr; } body.compact #vsbox .vs svg { width: 92px; height: 92px; }
 /* weather export: two times, a 10-25 s clip */
+#timeline { grid-template-columns: auto 1fr auto auto; }   /* play, track, speed, export: all one row */
 #xpbtn, #xp button { font: 600 12px var(--font-ui); color: var(--fg); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; cursor: pointer; } #xpbtn:hover, #xp button:hover { background: rgba(255,255,255,.12); } #xp button:disabled { opacity: .5; cursor: default; }
 #xp { position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + 80px + env(safe-area-inset-bottom, 0px)); width: min(300px, calc(100vw - 32px)); box-sizing: border-box; padding: 12px; z-index: 5; display: grid; gap: 8px; background: var(--panel-solid); } #xp[hidden] { display: none; } .xph { display: flex; justify-content: space-between; align-items: center; } #xp .xph button { border: 0; background: none; font-size: 16px; padding: 0 4px; }
 #xp label { display: grid; grid-template-columns: 44px 1fr; align-items: center; font-size: 12px; color: var(--muted); } #xp input, #xp select { font: 12px var(--font-data); color: var(--fg); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 4px; padding: 4px; min-width: 0; color-scheme: dark; }
@@ -356,9 +357,9 @@ body.compact #vsbox .vs { grid-template-columns: 92px 1fr; } body.compact #vsbox
 #app.flying #bar { opacity: .3; }
 #controls { max-height: calc(100% - 2 * var(--gut) - 46px - 96px - var(--barh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important; }
 @media (max-width: 760px) {
-  #bar { bottom: calc(var(--gut) + 78px + env(safe-area-inset-bottom, 0px)); }
   #hud { padding: 5px 10px !important; gap: 4px 8px; } #hud .src { display: none; } #hud h1 { font-size: 15px; }
   :root { --cardh: 222px; } #cards .cat, #vsbox { flex: none !important; width: 210px; } #minimap { flex: none !important; width: 160px; }
+  body.compact:has(.cat.open) #vsbox { display: none; } body.compact #cards .cat.open { grid-column: 1; }   /* the phone has two columns: an opened card takes Forces' place */
   body.compact:not(.kiosk) #cards { grid-template-columns: minmax(236px, 1fr) minmax(0, 1fr); } body.compact #vsbox { grid-column: 1; width: auto; } body.compact #cards .cat { grid-column: 2; width: auto; } body.compact #cards .cat:not(.open) { padding: 0 8px; } body.compact #cards .cat:not(.open) .cathead::after { display: none; } body.compact #cards .cat:not(.open) .cathead { letter-spacing: .06em; font-size: 10.5px; }
   .ticks.abs span.fct:not(.r), .ticks.abs span.wn3:not(.r) { display: none; }   /* the phone's timeline keeps only the ends and the latest scan */
   .card.open .more { position: static; width: auto !important; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: 4px 0 0; margin-top: 4px; max-height: 30vh; }
@@ -4278,6 +4279,7 @@ function mp4Mux(samples, avcC, w, h, fps) { const TS = 90000, delta = Math.round
     return box("moov", full("mvhd", 0, u32(0, 0, TS, dur, 0x10000), u16(0x100, 0), new Uint8Array(8), unity, new Uint8Array(24), u32(2)), box("trak", full("tkhd", 3, u32(0, 0, 1, 0, dur, 0, 0), u16(0, 0, 0, 0), unity, u32(w * 65536, h * 65536)), mdia)); };
   const co = ftyp.length + moov(0).length + 8, mdatLen = sizes.reduce((x, y) => x + y, 0) + 8;
   return new Blob([ftyp, moov(co), u32(mdatLen), str("mdat"), ...samples.map((s) => s.d)], { type: "video/mp4" }); }
+{ const tl = $("#timeline"), fit = () => document.documentElement.style.setProperty("--tlh", `${Math.ceil(tl.getBoundingClientRect().height) + 12}px`); fit(); if (window.ResizeObserver) new ResizeObserver(fit).observe(tl); }   // the strip sits on the timeline, however tall its ticks wrap
 $("#xpbtn").onclick = () => xpOpen($("#xp").hidden); $("#xpclose").onclick = () => xpOpen(false); $("#xpgo").onclick = xpStart; $("#xpsave").onclick = xpSave;
 ["#xpfrom", "#xpto", "#xpclip"].forEach((q) => $(q).oninput = xpInfo);
 function tick() {
