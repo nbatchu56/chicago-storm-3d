@@ -328,9 +328,17 @@ button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter
 #vsbox { flex: 1.1 1 0 !important; width: auto; min-width: 256px; max-width: 340px; } #vsbox .cathead { cursor: default; }
 /* the compact strip (the default): Air, Water and Atmosphere fold to their headers (a click opens one in full), Forces keeps
    the compass and the paddling light, the map follows; "details" in the Forces header shows the whole strip */
-body.compact { --cardh: 156px; } body.compact #cards { align-items: flex-end; }
-body.compact #cards .cat:not(.open) { height: 31px; max-height: 31px; overflow: hidden; min-width: 0; width: 164px !important; max-width: 164px; padding: 8px 10px; flex: 0 0 164px !important; }   /* the three folded cards: one size */
-body.compact #minimap { height: auto; align-self: stretch; } body.compact #minimap canvas { height: auto; flex: 1 1 0; min-height: 0; }
+body.compact { --cardh: 156px; }
+/* one grid, three equal columns of one height: the map, Forces, and the three folded cards stacked in equal thirds;
+   an opened card takes a full column of its own to the right, so the others keep their size */
+body.compact:not(.kiosk) #cards { display: grid; grid-template-columns: repeat(3, minmax(236px, 340px)); grid-auto-columns: minmax(280px, 340px); grid-template-rows: repeat(3, minmax(0, 1fr)); justify-content: start; align-items: stretch; }
+body.compact #minimap { grid-column: 1; grid-row: 1 / -1; max-width: none; min-width: 0; } body.compact #vsbox { grid-column: 2; grid-row: 1 / -1; max-width: none; }
+body.compact #cards .cat { grid-column: 3; min-width: 0; width: auto; max-width: none; } body.compact #cat-air { grid-row: 1; } body.compact #cat-water { grid-row: 2; } body.compact #cat-sky { grid-row: 3; }
+body.compact #cards .cat:not(.open) { height: auto; min-height: 0; overflow: hidden; padding: 0 12px; justify-content: center; } body.compact #cards .cat:not(.open) > :not(.cathead) { display: none; }
+body.compact #cards .cat:not(.open) .cathead { align-items: center; width: 100%; }
+body.compact #cat-sky .cathead::after { content: "more \25B8"; font: 10px var(--font-data); letter-spacing: 0; text-transform: none; color: var(--muted); } body.compact #cat-sky.open .cathead::after { content: "less \25BE"; }
+body.compact #cards .cat.open { grid-column: auto; grid-row: 1 / -1; }
+body.compact #minimap { height: auto; } body.compact #minimap canvas { height: auto; flex: 1 1 0; min-height: 0; }
 body.compact #cards .cat.open { height: 256px; } body.compact #cat-sky .cathead { cursor: pointer; }
 body.compact #vsbox { height: auto; min-width: 236px; } body.compact #vsbox .vs .rel, body.compact #vsbox .vs .hdg { display: none; }
 body.compact #vsbox .vs { grid-template-columns: 92px 1fr; } body.compact #vsbox .vs svg { width: 92px; height: 92px; }
@@ -346,6 +354,7 @@ body.compact #vsbox .vs { grid-template-columns: 92px 1fr; } body.compact #vsbox
   #bar { bottom: calc(var(--gut) + 78px + env(safe-area-inset-bottom, 0px)); }
   #hud { padding: 5px 10px !important; gap: 4px 8px; } #hud .src { display: none; } #hud h1 { font-size: 15px; }
   :root { --cardh: 222px; } #cards .cat, #vsbox { flex: none !important; width: 210px; } #minimap { flex: none !important; width: 160px; }
+  body.compact:not(.kiosk) #cards { grid-template-columns: minmax(236px, 1fr) minmax(0, 1fr); } body.compact #vsbox { grid-column: 1; width: auto; } body.compact #cards .cat { grid-column: 2; width: auto; } body.compact #cards .cat:not(.open) { padding: 0 8px; } body.compact #cards .cat:not(.open) .cathead::after { display: none; } body.compact #cards .cat:not(.open) .cathead { letter-spacing: .06em; font-size: 10.5px; }
   .ticks.abs span.fct:not(.r), .ticks.abs span.wn3:not(.r) { display: none; }   /* the phone's timeline keeps only the ends and the latest scan */
   .card.open .more { position: static; width: auto !important; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: 4px 0 0; margin-top: 4px; max-height: 30vh; }
   #controls { bottom: calc(var(--gut) + 92px + env(safe-area-inset-bottom, 0px)); max-height: 58% !important; z-index: 4; }
