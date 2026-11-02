@@ -21,8 +21,18 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install
-        run: pip install numpy scipy boto3 rasterio pyproj
+        run: pip install numpy scipy boto3 rasterio pyproj laspy lazrs tifffile
+      - name: The Chicago River (USGS surveys, 3DEP lidar, Cook County footprints, OSM)
+        continue-on-error: true
+        timeout-minutes: 40
+        run: |
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/river"
+          git fetch -q --depth 1 origin bathy 2>/dev/null && git show origin/bathy:river_osm.json > "$RUNNER_TEMP/river/osm.json" 2>/dev/null || rm -f "$RUNNER_TEMP/river/osm.json"
+          python -m app.river --out "$RUNNER_TEMP/out/river.json" --cache "$RUNNER_TEMP/river" 2>&1 | tee "$RUNNER_TEMP/out/river.log"
+          cp "$RUNNER_TEMP/river/osm.json" "$RUNNER_TEMP/out/river_osm.json" 2>/dev/null || true
       - name: Build lake-bottom grids
+        env:
+          RIVER_PATH: ${{ runner.temp }}/out/river.json
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           python -m app.bathymetry --out "$RUNNER_TEMP/out/bathy.json" ${{ inputs.model && '--model' || '' }} 2>&1 | tee "$RUNNER_TEMP/out/bathy.log"

@@ -89,6 +89,34 @@ The El Niño symbol (`ensoIcon()` in the page: a warm sun-disc riding a Pacific 
 tracker, the layer's legend, Upsets cards that fit the El Niño winter pattern (southerly gales, rain events, Nov-Mar)
 and an "El Niño-mild" pill on the Air card when an El Niño cold-season day runs 5 °F or more above usual.
 
+## The Chicago River
+
+The world runs from the lake through the Chicago Harbor Lock up the main stem to Wolf Point, up the North Branch (both
+sides of Goose Island, the North Avenue turning basin) to Belmont Avenue and down the South Branch to Ping Tom Park
+(`app/river.py`, built with the lake bottom on the bathy branch as `river.json`, served beside the page as `data/river.json`):
+
+- **The bed**: the USGS 2022 (lock → main stem → South Branch, and the North Branch to the North Ave basin) and 2023
+  (North Ave → Belmont) echo-sounder surveys, 0.5 m point clouds gridded at 2 m inside OSM's river polygons, with the
+  small gaps under bridges filled from their neighbours. The world's 10 m grid carries the same bed (source 6). Datums:
+  the surveys are NAVD88; Chicago City Datum 0 = 176.40 m IGLD85 and IGLD85 − NAVD88 = −0.14 m at Chicago (derived from
+  12 months of 2003 lake readings at the lock, USGS 04087440, against NOAA Calumet Harbor; σ 1.6 cm). The river's own
+  water level comes from the Columbus Dr gage (USGS 05536123, stage in CCD feet), normally about 2 ft below the lake.
+- **The walls**: OSM's river water polygons are the river's edge, drawn hard like the surveyed harbour (mask class 4,
+  "river": no lake waves, the lock stops them). Quays, embankments and the Riverwalk stand as concrete walls at the
+  USGS 3DEP 1 m lidar's bank height (bare earth, i.e. the quay top).
+- **The bridges**: every OSM bridge way that crosses the water, its sidewalks merged into the road, as a closed deck
+  with steel trusses and abutments. The deck height is the lidar's road surface at the abutments where that is
+  plausible (3.5–12 m above the water); the bare-earth lidar strips elevated decks, so most get the river's typical
+  closed clearances instead (18 ft road, 16 ft rail, 15 ft foot above LWD; DuSable 17 ft, Lake Shore Drive 25 ft).
+- **The lock**: the chamber walls and the gates from OSM.
+- **Buildings**: inside the river box, Cook County's 2022 lidar building footprints with measured heights (6,700 within
+  400 m of the water or over 30 m tall) replace OSM's, which carry heights for 0.4% of them.
+- Go to: the lock, the Riverwalk, Wolf Point, Goose Island, the North Branch at Belmont, Ping Tom Park. Launches:
+  the Riverwalk (Urban Kayaks), the North Ave basin (Kayak Chicago), the Ping Tom boathouse.
+
+Still to come (plan `plans/pending/chicago-river.md`): the current from the gages, wind in the canyon, sewer overflows
+(MWRD) and the lock's season in the paddling light, boat traffic from an AIS feed.
+
 ## Wind, the jet stream and the paddling light
 
 - **Wind & gusts layer** (View → Wind & gusts): NOAA HRRR 3 km hourly 10 m wind and surface gust (`app/hrrr.py`, NOMADS grib

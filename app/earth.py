@@ -30,7 +30,7 @@ import numpy as np
 log = logging.getLogger("earth")
 UTC = dt.timezone.utc
 TEMP_BBOX = (41.60, -87.95, 42.40, -87.10)      # S, W, N, E (as app.lakefront)
-MAP_BBOX = (41.855, -87.665, 41.990, -87.560)
+MAP_BBOX = (41.850, -87.700, 41.990, -87.560)
 TEMP_D = 0.005
 MAP_D = 0.0005
 SAT_MAX_AGE_H = 72.0              # and newer than the GLSEA analysis it would replace

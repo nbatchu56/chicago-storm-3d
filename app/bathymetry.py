@@ -465,12 +465,39 @@ def build(model=False):
     except Exception as e:  # noqa: BLE001
         probe["isgs_error"] = str(e)[:300]
     out["world"] = build_grid(lf.MAP_BBOX, 10.0, level, probe, "world")
+    rp = os.environ.get("RIVER_PATH", "")
+    if rp and os.path.exists(rp):
+        try:
+            out["world"] = burn_river(out["world"], json.load(open(rp)), probe)
+        except Exception as e:  # noqa: BLE001
+            probe["river_error"] = str(e)[:300]
     if model:
         out["models"] = {k: build_grid(b, d, level, probe, k) for k, (b, d) in MODEL_BBOXES.items()}
     if SURVEY.get("meta"):
         out["survey"] = SURVEY["meta"]
     out["probe"] = probe
     return out
+
+
+def burn_river(world, river, probe):
+    """The river's surveyed bed (app.river, 2 m) into the 10 m world grid: the block mean of the surveyed cells, src 6, over
+    whatever the lidar and the chart had there (the lidar sees the river as land or nothing)."""
+    from . import river as rv
+    z, src = unpack(world)
+    z = z.copy(); src = src.copy()
+    g = world; n = 0
+    for name, gr in (river.get("bed") or {}).items():
+        rz, inside = rv.unpack(gr)
+        jj, ii = np.nonzero(inside)
+        X = gr["x0"] + ii * gr["dx"]; Y = gr["y0"] + jj * gr["dx"]
+        I = np.floor((X - g["x0"]) / g["dx"] + 0.5).astype(int); J = np.floor((Y - g["y0"]) / g["dx"] + 0.5).astype(int)
+        ok = (I >= 0) & (J >= 0) & (I < g["nx"]) & (J < g["ny"])
+        s = np.zeros((g["ny"], g["nx"])); c = np.zeros_like(s)
+        np.add.at(s, (J[ok], I[ok]), rz[jj[ok], ii[ok]]); np.add.at(c, (J[ok], I[ok]), 1)
+        hit = c >= 3                                   # at least 3 of the 25 fine cells surveyed: the coarse cell is river
+        z[hit] = s[hit] / c[hit]; src[hit] = 6; n += int(hit.sum())
+    probe.setdefault("world", {})["river_cells"] = n
+    return pack(g, z, src)
 
 
 def unpack(gr):
