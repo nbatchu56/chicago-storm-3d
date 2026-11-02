@@ -116,3 +116,41 @@ def test_simplify_keeps_corners():
     ring = [[0, 0], [50, 0.3], [100, 0], [100, 50], [0, 50]]
     s = river.simplify(ring, 1.0)
     assert len(s) == 4 and [0, 0] in s and [100, 50] in s
+
+
+def test_cso_events_carry_history():
+    import datetime as dt
+    t0 = dt.datetime(2026, 11, 2, 12, tzinfo=dt.timezone.utc)
+    feats = {"features": [{"attributes": {"WATERWAY_REACH": "Chicago R", "LOCATION": "Outfall 12", "OWNER": "MWRD", "OUTFALL_CITY": "Chicago"}}]}
+    r1 = river.cso_events(None, now=t0, get=lambda u, timeout=0: json.dumps(feats).encode())
+    assert len(r1["events"]) == 1 and r1["events"][0]["open"] and r1["events"][0]["first_seen"] == t0.isoformat(timespec="seconds")
+    # still open an hour later: first_seen kept
+    r2 = river.cso_events(r1["events"], now=t0 + dt.timedelta(hours=1), get=lambda u, timeout=0: json.dumps(feats).encode())
+    assert r2["events"][0]["first_seen"] == r1["events"][0]["first_seen"] and r2["events"][0]["open"]
+    # gone: ended, kept for the 48 h rule
+    r3 = river.cso_events(r2["events"], now=t0 + dt.timedelta(hours=2), get=lambda u, timeout=0: json.dumps({"features": []}).encode())
+    assert not r3["events"][0]["open"] and r3["events"][0]["ended"] == (t0 + dt.timedelta(hours=2)).isoformat(timespec="seconds")
+    # dropped after two weeks
+    r4 = river.cso_events(r3["events"], now=t0 + dt.timedelta(days=16), get=lambda u, timeout=0: json.dumps({"features": []}).encode())
+    assert r4["events"] == []
+
+
+def test_lock_season():
+    import datetime as dt
+    L = river.lock_notices(get=lambda u, timeout=0: b'{"items": []}', now=dt.datetime(2026, 11, 2, tzinfo=dt.timezone.utc))
+    assert L["open_now"] and L["next"] == {"opens": "2027-04-15", "closes": "2026-11-15"}
+    L = river.lock_notices(get=lambda u, timeout=0: b'{"items": []}', now=dt.datetime(2026, 12, 2, tzinfo=dt.timezone.utc))
+    assert not L["open_now"] and L["next"]["opens"] == "2027-04-15"
+
+
+def test_gage_series_hourly_and_level():
+    def val(t, v):
+        return {"dateTime": t, "value": str(v)}
+    js = {"value": {"timeSeries": [
+        {"sourceInfo": {"siteCode": [{"value": "05536123"}]}, "variable": {"variableCode": [{"value": "00065"}]},
+         "values": [{"value": [val("2026-11-01T10:00:00.000-06:00", -2.0), val("2026-11-01T10:30:00.000-06:00", -2.1), val("2026-11-01T11:00:00.000-06:00", -2.2)]}]},
+        {"sourceInfo": {"siteCode": [{"value": "05536123"}]}, "variable": {"variableCode": [{"value": "72254"}]},
+         "values": [{"value": [val("2026-11-01T10:00:00.000-06:00", 0.05), val("2026-11-01T10:30:00.000-06:00", 0.07), val("2026-11-01T11:00:00.000-06:00", -0.4)]}]}]}}
+    g = river.gage_series(get=lambda u, timeout=0: json.dumps(js).encode())["05536123"]
+    assert len(g["t"]) == 2 and g["stage_ft"] == [-2.1, -2.2] and g["velocity_fps"] == [0.07, -0.4] and g["now"]["velocity_fps"] == -0.4
+    assert abs(g["level_m"][0] - (river.CCD_IGLD - 2.1 * 0.3048)) < 1e-3
