@@ -1999,13 +1999,13 @@ async function setSwan(sw) {
     doms.push({ name, g, cases: d.cases || [], ratio, dir, n, hsBy, wind, x0: g.x0 / 1000, y0: g.y0 / 1000, w: (g.nx - 1) * g.dx / 1000, h: (g.ny - 1) * g.dx / 1000, obstacles: (d.obstacles || []).length });
   }
   SWAN.domains = SWAN.domains.concat(doms).sort((a, b) => a.g.dx - b.g.dx);   // finest first: the 8 m trail inside the 20 m lane to the crib
-  SWAN.model = sw.model; SWAN.key = null;
+  SWAN.model = sw.model; SWAN.key = null; SWAN.job = null;
 }
 function swanDomainAt(xk, yk) { return SWAN.domains.find((d) => xk >= d.x0 && yk >= d.y0 && xk <= d.x0 + d.w && yk <= d.y0 + d.h) || null; }
 // the wind library for a U10 (m/s) from dir: linear in direction (circular, every 15 deg) and in speed between the speeds
 // run; below the lowest speed Hs falls with the wind (and Tp with its root), above the highest it grows with it
-function swanWindBlend(D, u10, dir, only) {
-  const W = D.wind, n = only != null ? 1 : D.n, k0 = only != null ? only : 0, hs = new Float32Array(n), tp = new Float32Array(n), dd = new Float32Array(n * 2);
+function swanWindBlend(D, u10, dir, only, count) {
+  const W = D.wind, n = only != null ? count || 1 : D.n, k0 = only != null ? only : 0, hs = new Float32Array(n), tp = new Float32Array(n), dd = new Float32Array(n * 2);
   if (!W || !(u10 > 0.3)) return { hs, tp, dir: dd, ok: false };
   const dn = ((dir % 360) + 360) % 360, ds = W.dirs, step = ds.length > 1 ? ds[1] - ds[0] : 360;
   const i0 = Math.floor(dn / step) % ds.length, f = dn / step - Math.floor(dn / step), wd = [[ds[i0], 1 - f], [ds[(i0 + 1) % ds.length], f]].filter(([, w]) => w > 1e-6);
@@ -2015,7 +2015,7 @@ function swanWindBlend(D, u10, dir, only) {
   let wsum = 0;
   for (const [dv, wa] of wd) for (const [uv, wb] of wu) { const ci = W.idx.get(`${dv}|${uv}`); if (ci == null) continue; const w = wa * wb; wsum += w; const off = ci * D.n;
     // the period and direction are weighted by each case's height too, so a calm case (0 cm, no period) doesn't drag them down
-    for (let i = 0; i < n; i++) { const q = off + k0 + i, h = W.hs[q] / 100; hs[i] += w * h; tp[i] += w * h * W.tp[q] / 10; const a = W.dir[q] / 256 * 2 * Math.PI; dd[2 * i] += w * h * Math.sin(a); dd[2 * i + 1] += w * h * Math.cos(a); } }
+    for (let i = 0; i < n; i++) { const q = off + k0 + i, h = W.hs[q] / 100; hs[i] += w * h; tp[i] += w * h * W.tp[q] / 10; const a = W.dir[q]; dd[2 * i] += w * h * SWAN_SIN[a]; dd[2 * i + 1] += w * h * SWAN_COS[a]; } }
   if (wsum > 0) for (let i = 0; i < n; i++) { tp[i] = hs[i] > 0 ? tp[i] / hs[i] * tScale : 0; hs[i] *= scale / wsum; }
   return { hs, tp, dir: dd, ok: wsum > 0 };
 }
@@ -2046,46 +2046,69 @@ function swanPointAt(xk, yk, off) {
   const b = swanBlend(D, off.hs, off.tp, off.dir, k); if (!b.ok || !(b.ratio[0] > 0.005)) return null;
   return { ratio: b.ratio[0], dir: (Math.atan2(b.dir[0], b.dir[1]) * 180 / Math.PI + 360) % 360, domain: D.name };
 }
-function swanBlend(D, hs, tp, dir, only) {   // only: one cell index -> 1-cell result
+// the stored directions are bytes (256 steps a turn): their sines and cosines from a table, not per cell per case
+const SWAN_SIN = Float64Array.from({ length: 256 }, (_, a) => Math.sin(a / 256 * 2 * Math.PI)), SWAN_COS = Float64Array.from({ length: 256 }, (_, a) => Math.cos(a / 256 * 2 * Math.PI));
+function swanBlend(D, hs, tp, dir, only, count) {   // only: one cell index -> 1-cell result (count: that many cells from it)
   if (!D.cases.length) return { ratio: new Float32Array(0), dir: new Float32Array(0), ok: false };
   const dirs = [...new Set(D.cases.map((c) => c.dir))].sort((a, b) => a - b), tps = [...new Set(D.cases.map((c) => c.tp))].sort((a, b) => a - b);
   const brk = (arr, v) => { if (v <= arr[0]) return [[arr[0], 1]]; if (v >= arr[arr.length - 1]) return [[arr[arr.length - 1], 1]]; let i = 0; while (arr[i + 1] < v) i++; const f = (v - arr[i]) / (arr[i + 1] - arr[i]); return [[arr[i], 1 - f], [arr[i + 1], f]]; };
   const dn = ((dir % 360) + 360) % 360;
   // directions outside the modelled sector (offshore winds' waves never reach shore): weight 0
   const wd = dn > dirs[dirs.length - 1] + 15 && dn < 345 ? [] : brk(dirs, dn >= 345 ? 0 : dn);
-  const idx = D.idx || (D.idx = new Map(D.cases.map((c, i) => [`${c.dir}|${c.tp}|${c.hs}`, i]))), n = only != null ? 1 : D.n, k0 = only != null ? only : 0;
+  const idx = D.idx || (D.idx = new Map(D.cases.map((c, i) => [`${c.dir}|${c.tp}|${c.hs}`, i]))), n = only != null ? count || 1 : D.n, k0 = only != null ? only : 0;
   const out = new Float32Array(n), dout = new Float32Array(n * 2);
   let wsum = 0;
   for (const [dv, wa] of wd) for (const [tv, wb] of brk(tps, tp)) { const hl = D.hsBy.get(`${dv}|${tv}`); if (!hl) continue; for (const [hv, wc] of brk(hl, hs)) {
     const ci = idx.get(`${dv}|${tv}|${hv}`); if (ci == null) continue; const w = wa * wb * wc; wsum += w; const off = ci * D.n;
-    for (let i = 0; i < n; i++) { out[i] += w * D.ratio[off + k0 + i] / 100; const a = D.dir[off + k0 + i] / 256 * 2 * Math.PI; dout[2 * i] += w * Math.sin(a); dout[2 * i + 1] += w * Math.cos(a); } } }
+    for (let i = 0; i < n; i++) { out[i] += w * D.ratio[off + k0 + i] / 100; const a = D.dir[off + k0 + i]; dout[2 * i] += w * SWAN_SIN[a]; dout[2 * i + 1] += w * SWAN_COS[a]; } } }
   if (wsum > 0) for (let i = 0; i < n; i++) out[i] /= wsum;
   return { ratio: out, dir: dout, ok: wsum > 0 };
 }
-function swanUpdate(xk, yk, off, wind) {   // off: {hs, tp, dir} offshore, wind: {u10, dir}; returns local {ratio, dir} at (xk, yk) or null
-  const D = swanDomainAt(xk, yk), windy = D && D.wind && wind && wind.u10 > 0.3;
-  if (!D || !off || (off.hs < 0.02 && !windy)) { U.uSwanOn.value = 0; SWAN.cur = null; return null; }
-  // the lake's sea is scaled by the offshore height; with a harbour wind library the texture also carries the wind's own
-  // chop over the basin, so the reference height stays positive even on a glassy lake
-  const hsRef = Math.max(off.hs, 0.02);
-  const key = `${D.name}|${off.hs.toFixed(2)}|${off.tp.toFixed(1)}|${Math.round(off.dir)}|${windy ? `${wind.u10.toFixed(1)}|${Math.round(wind.dir / 5) * 5}` : ""}`;
-  if (key !== SWAN.key) { const b = off.hs >= 0.02 && D.cases.length ? swanBlend(D, off.hs, off.tp, off.dir) : { ok: false }; SWAN.key = key;
-    const wb = windy ? swanWindBlend(D, wind.u10, wind.dir) : null, hm = wb && wb.ok ? swanHarborCells(D) : null;
-    if (!b.ok && !(wb && wb.ok)) { U.uSwanOn.value = 0; SWAN.cur = { D, none: true }; return null; }
+// the library texture for one offshore condition (and harbour wind), built in slices of cells: a generator that yields after
+// each slice, so the kiosk can spread it over frames (swanStep); SWAN.cur / SWAN.key change only when it is complete
+function* swanBuild(D, off, wind, windy, hsRef, key) {
+  const lakeOn = off.hs >= 0.02 && D.cases.length, CH = 8192;
+  const ratio = new Float32Array(D.n), dir = new Float32Array(D.n * 2), half = new Uint16Array(D.n * 4), hf = THREE.DataUtils.toHalfFloat, one = hf(1);
+  let hm = null;
+  for (let k0 = 0; k0 < D.n; k0 += CH) { const n = Math.min(CH, D.n - k0);
+    const b = lakeOn ? swanBlend(D, off.hs, off.tp, off.dir, k0, n) : { ok: false };
+    const wb = windy ? swanWindBlend(D, wind.u10, wind.dir, k0, n) : null;
+    if (k0 === 0) { hm = wb && wb.ok ? swanHarborCells(D) : null;
+      if (!b.ok && !(wb && wb.ok)) { U.uSwanOn.value = 0; SWAN.cur = { D, none: true }; SWAN.key = key; return; } }
     // SWAN's opaque obstacles can seal small pockets (harbour basins, groyne pockets) completely; where it says
     // exactly zero on wet water, fall back to the sheltered-water estimate instead (marked -1 = no SWAN value)
     // one RGBA texture: ratio in R, the mean "from" direction as (sin, cos) in G and B (for the energy-flow streaks). One sampler, not two:
     // the ground shader is close to the 16-texture limit of some GPUs, and a shader over it silently stops drawing the ground
     // inside the harbour the lake's sea (through the mouth) and the wind's chop add in quadrature; the direction is the bigger one's
-    const ratio = new Float32Array(D.n), dir = new Float32Array(D.n * 2);
-    for (let i = 0; i < D.n; i++) { const lake = b.ok && b.ratio[i] > 0.005 ? b.ratio[i] * off.hs : 0, w = hm && hm[i] ? wb.hs[i] : 0;
-      const tot = Math.hypot(lake, w); ratio[i] = tot > 0.001 ? tot / hsRef : 0;
-      if (w > lake) { dir[2 * i] = wb.dir[2 * i]; dir[2 * i + 1] = wb.dir[2 * i + 1]; } else if (b.ok) { dir[2 * i] = b.dir[2 * i]; dir[2 * i + 1] = b.dir[2 * i + 1]; } }
-    const hf = THREE.DataUtils.toHalfFloat, one = hf(1), half = new Uint16Array(D.n * 4);
-    for (let i = 0; i < D.n; i++) { half[i * 4] = hf(ratio[i] > 0.005 ? ratio[i] : -1); half[i * 4 + 1] = hf(dir[i * 2]); half[i * 4 + 2] = hf(dir[i * 2 + 1]); half[i * 4 + 3] = one; }
-    if (SWAN.tex) SWAN.tex.dispose(); SWAN.tex = new THREE.DataTexture(half, D.g.nx, D.g.ny, THREE.RGBAFormat, THREE.HalfFloatType); SWAN.tex.minFilter = SWAN.tex.magFilter = THREE.LinearFilter; SWAN.tex.needsUpdate = true;
-    U.uSwan.value = SWAN.tex; U.uSwanMin.value.set(D.x0, D.y0); U.uSwanSize.value.set(D.w, D.h); SWAN.cur = { D, ratio, dir, ok: true, hsRef }; }
-  if (!SWAN.cur || SWAN.cur.none) return null;
+    for (let i = 0; i < n; i++) { const g = k0 + i, lake = b.ok && b.ratio[i] > 0.005 ? b.ratio[i] * off.hs : 0, w = hm && hm[g] ? wb.hs[i] : 0;
+      const tot = Math.hypot(lake, w); ratio[g] = tot > 0.001 ? tot / hsRef : 0;
+      if (w > lake) { dir[2 * g] = wb.dir[2 * i]; dir[2 * g + 1] = wb.dir[2 * i + 1]; } else if (b.ok) { dir[2 * g] = b.dir[2 * i]; dir[2 * g + 1] = b.dir[2 * i + 1]; }
+      half[g * 4] = hf(ratio[g] > 0.005 ? ratio[g] : -1); half[g * 4 + 1] = hf(dir[g * 2]); half[g * 4 + 2] = hf(dir[g * 2 + 1]); half[g * 4 + 3] = one; }
+    yield; }
+  // the same texture is refilled when the grid is the same (no new GPU allocation each time)
+  if (SWAN.tex && SWAN.tex.image.width === D.g.nx && SWAN.tex.image.height === D.g.ny) { SWAN.tex.image.data = half; SWAN.tex.needsUpdate = true; }
+  else { if (SWAN.tex) SWAN.tex.dispose(); SWAN.tex = new THREE.DataTexture(half, D.g.nx, D.g.ny, THREE.RGBAFormat, THREE.HalfFloatType); SWAN.tex.minFilter = SWAN.tex.magFilter = THREE.LinearFilter; SWAN.tex.needsUpdate = true; }
+  U.uSwan.value = SWAN.tex; U.uSwanMin.value.set(D.x0, D.y0); U.uSwanSize.value.set(D.w, D.h); SWAN.cur = { D, ratio, dir, ok: true, hsRef }; SWAN.key = key;
+}
+// (at least minSteps slices a frame, so a slow device still finishes a rebuild within ~15 frames)
+function swanStep(budgetMs, minSteps = 3) { const t = performance.now(); let n = 0;
+  while (SWAN.job && (n++ < minSteps || performance.now() - t < budgetMs)) if (SWAN.job.it.next().done) SWAN.job = null; }
+function swanUpdate(xk, yk, off, wind) {   // off: {hs, tp, dir} offshore, wind: {u10, dir}; returns local {ratio, dir} at (xk, yk) or null
+  const D = swanDomainAt(xk, yk), windy = D && D.wind && wind && wind.u10 > 0.3;
+  if (!D || !off || (off.hs < 0.02 && !windy)) { U.uSwanOn.value = 0; SWAN.cur = null; SWAN.key = null; SWAN.job = null; return null; }
+  // the lake's sea is scaled by the offshore height; with a harbour wind library the texture also carries the wind's own
+  // chop over the basin, so the reference height stays positive even on a glassy lake
+  const hsRef = Math.max(off.hs, 0.02);
+  // (the kiosk keys coarser: each new key re-blends the whole library texture and rebuilds the wave patch)
+  const kk = S.kiosk ? 2 : 1, qq = (v, s) => (Math.round(v / s) * s).toFixed(2);
+  const key = `${D.name}|${qq(off.hs, 0.01 * kk)}|${qq(off.tp, 0.1 * kk)}|${Math.round(off.dir / (3 * kk - 2)) * (3 * kk - 2)}|${windy ? `${qq(wind.u10, 0.1 * kk)}|${Math.round(wind.dir / (5 * kk)) * 5 * kk}` : ""}`;
+  if (SWAN.job && SWAN.job.D !== D) SWAN.job = null;
+  if (key !== SWAN.key && !SWAN.job) { const job = { D, key, it: swanBuild(D, off, wind, windy, hsRef, key) };
+    // the kiosk spreads the rebuild over the next frames (swanStep, a few ms each) while the previous texture stays up: done
+    // in one go it stalled the clip for a frame or several about once a second; anywhere else it is finished here
+    if (S.kiosk) SWAN.job = job; else while (!job.it.next().done);
+  }
+  if (!SWAN.cur || SWAN.cur.none || SWAN.cur.D !== D) return null;
   U.uSwanOn.value = 1; U.uHsOff.value = SWAN.cur.hsRef;
   const C = SWAN.cur, g = D.g, i = clamp(Math.round((xk - D.x0) / D.w * (g.nx - 1)), 0, g.nx - 1), j = clamp(Math.round((yk - D.y0) / D.h * (g.ny - 1)), 0, g.ny - 1), k = j * g.nx + i;
   if (!(C.ratio[k] > 0.005)) return null;
@@ -2238,7 +2261,8 @@ const makeOcean = (L, NF, NC, kMin = 0) => {
   }
   // spectra at time t -> fields; two real fields share one complex IFFT (A + iB): coarse (h, Dx) (Dz, -); fine (Sx, Sz) (Jxx, Jzz) (Jxz, -)
   // multipliers on h(k): -i k/|k| (horizontal displacement), i k (slope), k k/|k| (Jacobian terms)
-  function synth(G, t, fine) { const n = G.n, N2 = n * n, b0r = G.bufs[0][0], b0i = G.bufs[0][1], b1r = G.bufs[1][0], b1i = G.bufs[1][1], b2r = G.bufs[2][0], b2i = G.bufs[2][1];
+  // ffts: which of the inverse FFTs to run now (1, 2, 4: the first, second, third field)
+  function synth(G, t, fine, ffts = 7) { const n = G.n, N2 = n * n, b0r = G.bufs[0][0], b0i = G.bufs[0][1], b1r = G.bufs[1][0], b1i = G.bufs[1][1], b2r = G.bufs[2][0], b2i = G.bufs[2][1];
     const h0r = G.h0r, h0i = G.h0i, W = G.w, KX = G.kx, KZ = G.kz;
     for (let q = 0; q < N2; q++) { const mi = q % n, mj = (q / n) | 0, qn = ((n - mj) % n) * n + ((n - mi) % n);
       const c = Math.cos(W[q] * t), s = Math.sin(W[q] * t);
@@ -2251,15 +2275,20 @@ const makeOcean = (L, NF, NC, kMin = 0) => {
         b0r[q] = -kx * hi - kz * hr; b0i[q] = kx * hr - kz * hi;
         const axx = kx * kx * ik, azz = kz * kz * ik, axz = kx * kz * ik;
         b1r[q] = axx * hr - azz * hi; b1i[q] = axx * hi + azz * hr; b2r[q] = axz * hr; b2i[q] = axz * hi; } }
-    ifft2(G.P, b0r, b0i); ifft2(G.P, b1r, b1i); if (fine) ifft2(G.P, b2r, b2i); }
+    if (ffts & 1) ifft2(G.P, b0r, b0i); if (ffts & 2) ifft2(G.P, b1r, b1i); if (fine && ffts & 4) ifft2(G.P, b2r, b2i); }
   function update(t, chop) {
     if (!st.on) return;
-    if (Math.abs(t - st.t) < 1 / 30) return; st.t = t;          // 30 updates a second (~5 ms each)
-    synth(C, t, false); synth(F, t, true);
+    // 30 updates a second, each spread over two frames at the same time t: the coarse grid and the fine grid's spectra and
+    // first FFT on one, the fine grid's other two FFTs and its texture on the next, so the frames cost about the same instead
+    // of every other one running long (a visible judder)
+    if (st.pend) { st.pend = false; const b = F.bufs; ifft2(F.P, b[1][0], b[1][1]); ifft2(F.P, b[2][0], b[2][1]); writeF(chop); return; }
+    if (Math.abs(t - st.t) < 1 / 30) return; st.t = t; st.pend = true;
+    synth(C, t, false); synth(F, t, true, 1);
     { const d = texC.image.data, b = C.bufs; let s2 = 0;
       for (let q = 0; q < NC * NC; q++) { const h = b[0][0][q]; heightC[q] = h; s2 += h * h;
         d[4 * q] = toHalf(-chop * b[0][1][q]); d[4 * q + 1] = toHalf(h); d[4 * q + 2] = toHalf(-chop * b[1][0][q]); d[4 * q + 3] = 0; }
-      st.rmsH = Math.sqrt(s2 / (NC * NC)); texC.needsUpdate = true; }
+      st.rmsH = Math.sqrt(s2 / (NC * NC)); texC.needsUpdate = true; } }
+  function writeF(chop) {
     { const d = texF.image.data, b = F.bufs;
       for (let q = 0; q < NF * NF; q++) { const jxx = -chop * b[1][0][q], jzz = -chop * b[1][1][q], jxz = -chop * b[2][0][q];
         d[4 * q] = toHalf(b[0][0][q]); d[4 * q + 1] = toHalf(b[0][1][q]); d[4 * q + 2] = toHalf((1 + jxx) * (1 + jzz) - jxz * jxz); d[4 * q + 3] = 0; }
@@ -2269,7 +2298,7 @@ const makeOcean = (L, NF, NC, kMin = 0) => {
     const at = (i, j) => heightC[(j % NC) * NC + (i % NC)]; return (at(i0, j0) * (1 - fu) + at(i0 + 1, j0) * fu) * (1 - fv) + (at(i0, j0 + 1) * (1 - fu) + at(i0 + 1, j0 + 1) * fu) * fv; }
   return { L, NF, NC, texC, texF, setSea, update, heightAt, st, _F: F, _C: C };
 };
-const OCEAN = makeOcean(64, 128, 32), OCEAN_FINE = makeOcean(8, 128, 16, 2 * Math.PI / 1.1);
+const OCEAN = makeOcean(64, 128, 32), OCEAN_FINE = makeOcean(8, 128, 16, 2 * Math.PI / 1.1); let OCEAN_FINE_SEA = null;
 Object.assign(U, { uOcFG: { value: OCEAN.texF }, uOcLG: { value: OCEAN.L }, uOcOnG: { value: 0 }, uOcVarG: { value: 0 }, uOcF2: { value: OCEAN_FINE.texF }, uOcL2: { value: OCEAN_FINE.L } });
 
 // ---------------------------------------------------------------- near-camera wave patch (metres inside): refraction + shoaling per wave
@@ -2488,7 +2517,10 @@ function placeSpray(cx, cy) {
   SPRAY.at = [cx, cy]; SPRAY.n = n;
 }
 
-const wavenum = (w, hh) => { const g = 9.81; let k = w * w / g / Math.sqrt(Math.tanh(w * w / g * hh)); for (let it = 0; it < 12; it++) { const th = Math.tanh(k * hh); k -= (g * k * th - w * w) / (g * th + g * k * hh * (1 - th * th)); } return k; };
+// the dispersion relation w^2 = g k tanh(k h) by Newton's method, stopped once converged (a few steps; from k0, a nearby
+// solution such as the previous depth's, usually one or two): the wave tables call it 7000 times per rebuild
+const wavenum = (w, hh, k0) => { const g = 9.81; let k = k0 > 0 ? k0 : w * w / g / Math.sqrt(Math.tanh(w * w / g * hh));
+  for (let it = 0; it < 12; it++) { const th = Math.tanh(k * hh), dk = (g * k * th - w * w) / (g * th + g * k * hh * (1 - th * th)); k -= dk; if (Math.abs(dk) < 1e-12 * k) break; } return k; };
 const cgOf = (w, k, hh) => { const kh = k * hh; return 0.5 * (w / k) * (1 + 2 * kh / Math.sinh(Math.min(2 * kh, 700))); };
 const deanP = (d) => 0.1 * Math.pow(Math.max(d, 0.5), 0.6667);
 // depth (m) at distance d (m) offshore along the current shore normal: the real surveyed profile when there is one
@@ -2521,7 +2553,7 @@ function setWaves(systems, shoreFrame, dRef, wind) {
     const kb = wavenum(wv.w, hRef), ky = kb * wv.ct, sgn = wv.cn >= 0 ? 1 : -1, cgb = cgOf(wv.w, kb, hRef), fluxB = cgb * Math.max(Math.abs(kb * wv.cn), 1e-4) / kb;
     WU.uA.value[i] = wv.a; WU.uKy.value[i] = ky; WU.uW.value[i] = wv.w; WU.uP.value[i] = wv.ph;
     const P = new Float64Array(TABW), A = new Float32Array(TABW), KX = new Float32Array(TABW);
-    for (let j = 0; j < TABW; j++) { const d = j * step, hh = dean(d), k = wavenum(wv.w, hh), kx = sgn * Math.sqrt(Math.max(k * k - ky * ky, 1e-6)); KX[j] = kx; A[j] = Math.min(3, Math.sqrt(fluxB / Math.max(cgOf(wv.w, k, hh) * Math.abs(kx) / k, 1e-6))); }
+    let kp = 0; for (let j = 0; j < TABW; j++) { const d = j * step, hh = dean(d), k = kp = wavenum(wv.w, hh, kp), kx = sgn * Math.sqrt(Math.max(k * k - ky * ky, 1e-6)); KX[j] = kx; A[j] = Math.min(3, Math.sqrt(fluxB / Math.max(cgOf(wv.w, k, hh) * Math.abs(kx) / k, 1e-6))); }
     const jb = Math.min(dRef / step, TABW - 1.001), j0 = Math.floor(jb);
     for (let j = j0 + 1; j < TABW; j++) P[j] = P[j - 1] + 0.5 * (KX[j - 1] + KX[j]) * step;
     for (let j = j0 - 1; j >= 0; j--) P[j] = P[j + 1] - 0.5 * (KX[j + 1] + KX[j]) * step;
@@ -2535,7 +2567,7 @@ function setWaves(systems, shoreFrame, dRef, wind) {
   // short-wave spectrum above the components' band (they reach ~2.3x the main peak frequency)
   const main = sys.filter((c) => c.spread < 50).sort((a, b) => b.hs - a.hs)[0];     // not the local chop (spread 50): it is a few components only
   OCEAN.setSea(wind.speed || 0, [Math.sin(wp), -Math.cos(wp)], main ? 2 * Math.PI / main.tp : 0);
-  OCEAN_FINE.setSea(wind.speed || 0, [Math.sin(wp), -Math.cos(wp)], main ? 2 * Math.PI / main.tp : 0);
+  OCEAN_FINE_SEA = [wind.speed || 0, [Math.sin(wp), -Math.cos(wp)], main ? 2 * Math.PI / main.tp : 0];   // set when the fine tile is next drawn (close to the water)
   WU.uOcOn.value = OCEAN.st.on ? 1 : 0; WU.uOcVarLo.value = OCEAN.st.varLo; WU.uOcVarHi.value = OCEAN.st.varHi;
   U.uOcOnG.value = WU.uOcOn.value; U.uOcVarG.value = OCEAN.st.varHi + OCEAN.st.varLo;
   WU.uGust.value = wind.gust && wind.speed > 0.5 ? clamp((wind.gust / wind.speed - 1.1) * 1.6, 0, 1) : 0.3;
@@ -2974,10 +3006,13 @@ const STATION_PENALTY_KM = { wspd: { CHII2: 12, OKSI2: 8, CNII2: 8, FSTI2: 8, CM
 function stationAt(stations, field, tMs, xk, yk) {
   // stations with a real record near this time (some lakefront sites report only now and then; the hourly shore stations
   // have 2-3 records in +-3 h, and needing 4 dropped Oak St, on the paddling route, a minute after each hour's report)
-  const st = (stations || []).filter((s) => s.x != null && s.history && s.history.filter((h) => h[field] != null && Math.abs(new Date(h.t) - tMs) < 3 * 3600e3).length >= 2);
+  // (each record's time is parsed once and kept beside the history: this runs for every reading, many times a second in a played loop)
+  const tt = (s) => s._tt && s._tt.length === s.history.length ? s._tt : (s._tt = s.history.map((h) => new Date(h.t).getTime()));
+  const near = (s) => { const T = tt(s); let n = 0; for (let i = 0; i < T.length && n < 2; i++) if (s.history[i][field] != null && Math.abs(T[i] - tMs) < 3 * 3600e3) n++; return n >= 2; };
+  const st = (stations || []).filter((s) => s.x != null && s.history && near(s));
   const pen = STATION_PENALTY_KM[field] || {}, dist = (s) => Math.hypot(s.x / 1000 - xk, s.y / 1000 - yk) + (pen[s.id] || 0);
   st.sort((a, b) => dist(a) - dist(b));
-  for (const s of st.slice(0, 4)) { let best = null; for (const h of s.history) { if (h[field] == null) continue; const d = Math.abs(new Date(h.t) - tMs); if (!best || d < best.d) best = { d, h }; }
+  for (const s of st.slice(0, 4)) { let best = null; const T = tt(s); s.history.forEach((h, i) => { if (h[field] == null) return; const d = Math.abs(T[i] - tMs); if (!best || d < best.d) best = { d, h }; });
     if (best && best.d < 75 * 60e3) return { st: s, h: best.h }; }
   return null;
 }
@@ -3113,6 +3148,7 @@ function chopRating(c) {
 }
 let LAUNCH_KEY = "";
 function renderLaunches() {
+  if (S.kiosk) return;   // the Outlook never shows the launch list (13 readings per launch each 10 min of the clip: the loop's worst stall)
   const el = $("#launches"); if (!supSpots().length && !SWAN.domains.length) { el.hidden = true; return; }
   const key = `${S.mode}|${Math.round(S.t / 600e3)}|${FW.case || ""}|${SWAN.domains.length}`; if (key === LAUNCH_KEY) return; LAUNCH_KEY = key;
   const ahead = S.mode === "live" ? 12 : 0, sp0 = supSpots()[0], hl = sp0 && sp0.hourly.length ? sp0.hourly[sp0.hourly.length - 1].t : null;
@@ -3978,10 +4014,10 @@ function tick() {
       WU.uShoreD2.value = Math.max(20, Math.min(1400, WAVES.dShore)); WAVES.key = key; }
     if (S.kiosk) { KS.target = ksSnap(); if (keep) ksSet(keep); KS.ready = true; }   // the kiosk eases toward these, below
   }
-  if (S.kiosk) kioskSmooth(dt);
+  if (S.kiosk) { kioskSmooth(dt); swanStep(4); }
   // place the patch under the camera, snapped so it doesn't swim
   const low = camera.position.y < 0.45; patch.visible = low && WAVES.ready;
-  if (patch.visible || board.visible || camera.position.y < 3) { OCEAN.update(U.uTime.value, 0.85); if (camera.position.y < 0.15) OCEAN_FINE.update(U.uTime.value, 0.6); }   // fine ripples only when close
+  if (patch.visible || board.visible || camera.position.y < 3) { OCEAN.update(U.uTime.value, 0.85); if (camera.position.y < 0.15) { if (OCEAN_FINE_SEA) { OCEAN_FINE.setSea(...OCEAN_FINE_SEA); OCEAN_FINE_SEA = null; } OCEAN_FINE.update(U.uTime.value, 0.6); } }   // fine ripples only when close
   if (patch.visible) { const sx = Math.round(camera.position.x * 50) / 50, sz = Math.round(camera.position.z * 50) / 50; patch.position.set(sx, 0, sz);
     WU.uPatchRel.value.set((sx - WAVES.origin[0]) * 1000, (sz + WAVES.origin[1]) * 1000); }
   spray.visible = patch.visible && WU.uHsB.value > 0.6 && MAP.ok;
