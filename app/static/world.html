@@ -318,6 +318,10 @@ body.immersive #attr { bottom: calc(var(--gut) + 80px + env(safe-area-inset-bott
 #cards .cat::before { content: ""; position: absolute; inset: 0; border-radius: 6px; pointer-events: none; }
 #cards .cat.air { background: linear-gradient(180deg, rgba(144, 200, 65, .09), var(--panel) 60%); }
 #cards .cat.sky { --cat: #f0b44c; background: linear-gradient(180deg, rgba(240, 180, 76, .09), var(--panel) 60%); } #cat-sky .readouts { gap: 3px 10px; font-size: 11.5px; } #cat-sky .cathead { cursor: default; } #cards .cat.water { background: linear-gradient(180deg, rgba(5, 160, 203, .11), var(--panel) 60%); }
+/* on the river the cards turn to the river's readings: the River card in the river's teal, the status card in slate */
+body.river #cards .cat.water { --cat: #3dbfae; background: linear-gradient(180deg, rgba(61, 191, 174, .13), var(--panel) 60%); }
+body.river #cards .cat.sky { --cat: #a9b8d6; background: linear-gradient(180deg, rgba(169, 184, 214, .10), var(--panel) 60%); min-width: 300px; max-width: 380px; flex: 1.3 1 0 !important; }
+body.river #cat-sky .readouts dd { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* one line a row; the card keeps its height */
 .cathead { all: unset; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; font: 700 11px var(--font-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--cat); }
 button.cathead::after { content: "more ▸"; font: 10px var(--font-data); letter-spacing: 0; text-transform: none; color: var(--muted); } .card.open button.cathead::after { content: "less ▾"; }
 .card .more { display: none; } #cards .cat, #vsbox { position: relative; }
@@ -659,7 +663,10 @@ const PLACES = [["North Avenue Beach", 41.9145, -87.6235, 0.02], ["Theater on th
   // container at the south end of the boat-launch lot, by the kayak/boat ramp (exact). North Ave (Chicago SUP's shop) and
   // Montrose (Kayak Chicago): read off satellite screenshots registered to the map's breakwaters (~1 m fit), so within ~2 m.
   ["Chicago SUP · Diversey Harbor", 41.926465, -87.632958, 0.01, "rental"], ["Chicago SUP · North Ave Beach", 41.91312, -87.62293, 0.01, "rental"],
-  ["Kayak Chicago · Montrose Beach", 41.96450, -87.63487, 0.01, "rental"]];
+  ["Kayak Chicago · Montrose Beach", 41.96450, -87.63487, 0.01, "rental"],
+  // Kayak Chicago's river base (1501 N Magnolia Ave): the dock on the North Avenue turning basin's southwest shore, where the
+  // basin's west wall meets the end of Magnolia (the 2022 survey polygon's shoreline, ~41.9092 N)
+  ["Kayak Chicago · North Branch", 41.90920, -87.65805, 0.01, "rental"]];
 // pier-head navigation lights (steady red towers, landmarks from the water): at the tip of the North Ave Beach hook and of
 // the Montrose hook pier (the ends of the mapped breakwaters)
 const PIER_LIGHTS = [["North Ave Beach pier light", 41.91477, -87.62099], ["Montrose Beach pier light", 41.96817, -87.63180]];
@@ -687,6 +694,7 @@ const GOTO = [
   ["Riverwalk · Michigan Ave", 41.8880, -87.6245, 0.36, 265, 18],
   ["Wolf Point", 41.8873, -87.6360, 0.5, 60, 26],
   ["Goose Island", 41.9045, -87.6515, 1.2, 0, 38],
+  ["Kayak Chicago · North Branch", 41.9097, -87.6572, 0.3, 70, 26],      // from behind the dock, east across the North Ave turning basin
   ["North Branch · Belmont", 41.9360, -87.6850, 0.6, 20, 28],
   ["Ping Tom Park", 41.8565, -87.6355, 0.5, 15, 24],
   ["Wild Mile · North Branch Canal", 41.9030, -87.6486, 0.45, 10, 30],
@@ -3237,7 +3245,8 @@ function lockOpenAt(tMs) { const L = RN.d && RN.d.lock; if (!L || !L.season) ret
 function riverFetchM(xk, yk, fromDeg) { const b = fromDeg * Math.PI / 180, dx = Math.sin(b) / 1000, dy = Math.cos(b) / 1000; let d = 0;
   while (d < 4000) { const c = maskAt(xk + dx * (d + 3), yk + dy * (d + 3)); if (c !== RIVER_CLS && c !== 1 && c !== 2) break; d += 3; } return d; }
 // river water within rM metres of a point on land (the banks, the Riverwalk, a bridge): the nearest cell of the river's class
-function nearestRiverWater(xk, yk, rM) { if (!RIVER.ok || !riverReachAt(xk, yk)) return null;
+// (no reach test on the land point itself: a low camera 300 m back from the water can sit beyond a reach's 250 m band)
+function nearestRiverWater(xk, yk, rM) { if (!RIVER.ok) return null;
   for (let r = 6; r <= rM; r += 6) for (let a = 0; a < 16; a++) { const x = xk + Math.cos(a * Math.PI / 8) * r / 1000, y = yk + Math.sin(a * Math.PI / 8) * r / 1000; if (maskAt(x, y) === RIVER_CLS) return [x, y]; }
   return null; }
 // the readout for river water: the canyon wind, chop over the reach's fetch, the current, overflows, the lock
@@ -3257,6 +3266,57 @@ function riverConditions(c, tMs, xk, yk) {
   c.src.push(`Chicago River${reach ? ` · ${reach.name}` : ""}: canyon wind ×${k.toFixed(2)}${cur ? `, current ${(cur.spd * MPH).toFixed(2)} mph → ${compass(cur.toDeg)}` : ""}`);
 }
 const CCD_IGLD = 176.40;
+// ---------------------------------------------------------------- the river's cards. On river water the three weather cards
+// turn to the river: Air → "Canyon wind" (the open wind and what the canyon lets through), Water → "River" (the current as the
+// big number, the stage in Chicago City Datum, the chop over the reach's fetch), Atmosphere → "Overflows & lock" (MWRD's
+// overflow state for the reach, the fortnight's events, rain ahead, the lock's season and USACE notices, the gages, the
+// nearest bridge's clearance above today's water). Back on the lake the cards return to their names and readings.
+const RCARD = { on: false };
+function setHead(id, txt) { const s = $(`#cat-${id} .cathead span`); if (!s) return; const n = s.lastChild;
+  if (n && n.nodeType === 3) { if (n.nodeValue !== txt) n.nodeValue = txt; } else s.appendChild(document.createTextNode(txt)); }
+// where the current carries you, by reach: the branches always to Wolf Point; the main stem away from the lake (a reversal
+// turns it to the lake); the South Branch downstream (a reversal pulls it back to Wolf Point)
+function currentDest(r) { const cur = r.current, id = r.reach && r.reach.id; if (!cur) return "";
+  if (!id || /north|goose/.test(id)) return "Wolf Point";
+  if (id === "south") return cur.v >= 0 ? "downstream, past Ping Tom" : "Wolf Point";
+  return cur.v >= 0 ? "Wolf Point, away from the lake" : "the lake"; }
+// the stage's change over the 24 h before a time (ft), from the Columbus Dr gage's hourly series
+function stageTrend(tMs) { const g = RN.d && RN.d.gages && RN.d.gages["05536123"]; if (!g || !g.level_m) return null; const T = g.t.map((t) => Date.parse(t));
+  const at = (tt) => { let k = -1, bd = 1e15; for (let i = 0; i < T.length; i++) { if (g.level_m[i] == null) continue; const d = Math.abs(T[i] - tt); if (d < bd) { bd = d; k = i; } } return k < 0 || bd > 2 * 3600e3 ? null : g.level_m[k]; };
+  const a = at(tMs), b = at(tMs - 86400e3); return a == null || b == null ? null : (a - b) / 0.3048; }
+// the bridge nearest a point on the river (within 600 m), with its distance
+function nearestBridge(xk, yk) { if (!RIVER.ok || !RIVER.d.bridges) return null; let best = null;
+  for (const b of RIVER.d.bridges) { const d = Math.hypot(xk - (b.a[0] + b.b[0]) / 2000, yk - (b.a[1] + b.b[1]) / 2000) * 1000; if (d < 600 && (!best || d < best.dist)) best = { ...b, dist: d }; }
+  return best; }
+const sgnFt = (v, n = 2) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(n)}`;
+// the hero tiles on the river: the canyon wind's tile names the open wind and the factor; the water tile shows the current
+function riverHeroes(C) { const r = C.river, cur = r.current;
+  const k = $("#hero-air .k"); if (k && k.firstChild && k.firstChild.nodeType === 3) k.firstChild.nodeValue = "Wind in the canyon";
+  const s = $("#hero-air .s"); if (s) s.innerHTML = `from <em>${compass(C.dir)}</em>${C.gust ? ` · G <em>${mph(C.gust)}</em>` : ""} · open <em>${mph(r.openWind)}</em> · ×${r.k.toFixed(2)}`;
+  $("#hero-water").innerHTML = `<div class="tile"><div class="k">Current${cur ? `<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${Math.round(cur.toDeg)}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg>` : ""}</div>
+      <div class="v">${cur ? `<span class="n">${(cur.spd * MPH).toFixed(2)}</span><span class="u">mph</span>` : `<span class="n" style="font-size:22px">—</span>`}</div>
+      <div class="s">${cur ? `toward <em>${currentDest(r)}</em>${cur.reversal ? ` · <em style="color:#ffb347">reversal</em>` : ""}` : "no gage reading"}</div></div>`; }
+// the third card on the river: the reach's status
+function riverStatusCard(C) { const r = C.river; RCARD.on = !!r;
+  setHead("air", r ? "Canyon wind" : "Air"); setHead("water", r ? "River" : "Water"); setHead("sky", r ? "Overflows & lock" : "Atmosphere"); document.body.classList.toggle("river", !!r);
+  if (!r) return;
+  // short values: the card is one fixed height and every row should stay on one line
+  const rows = [], D = RN.d || {}, ev = (D.cso && D.cso.events) || [], reach = r.reach, cso = r.cso, fmtT = (t) => fmtHM.format(new Date(t)), red = (t) => `<b style="color:#ff8a7a;font-weight:600">${t}</b>`;
+  const md = (d) => d ? new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+  rows.push(["Overflow", cso.state === "open" ? red(`open since ${fmtT(cso.since)}`) : cso.state === "recent" ? red(`ended ${fmtT(cso.ended)} · clear ${fmtT(cso.until)}`) : `none${cso.checked ? ` · checked ${fmtT(cso.checked)}` : ""}`]);
+  const mine = reach && reach.cso ? ev.filter((e) => e.reach && e.reach.toLowerCase() === reach.cso.toLowerCase()) : [];
+  rows.push(["Last 2 weeks", mine.length ? `${mine.length} event${mine.length > 1 ? "s" : ""} on this reach` : "none on this reach"]);
+  const others = ev.filter((e) => !mine.includes(e) && (!e.ended || S.t - Date.parse(e.ended) < CSO_AFTER_MS)); if (others.length) rows.push(["Elsewhere", `${others.length} open or recent · ${[...new Set(others.map((e) => e.reach))].join(", ")}`]);
+  rows.push(["Rain ahead", C.pop != null ? `${Math.round(C.pop)}% chance${C.pop >= 70 ? " · overflow risk" : ""}` : "—"]);
+  const L = D.lock || {}; rows.push(["Lock", r.lockOpen == null ? "—" : r.lockOpen ? `open · closes ${md(L.next && L.next.closes) || "Nov 15"}` : `closed · opens ${md(L.next && L.next.opens) || "Apr 15"}`]);
+  const act = (L.notices || []).filter((n) => n.begindate && Date.parse(n.begindate) <= S.t && (!n.enddate || Date.parse(n.enddate) >= S.t)); if (act.length) rows.push(["Notices", `${act.length} USACE · ${(act[0].waterways || "").split(",")[0].toLowerCase()}`]);
+  const G = D.gages || {}, gRow = (id, label) => { const g = G[id]; if (!g || !g.now || g.now.stage_ft == null) return;
+    rows.push([`<span title="${id === "05536123" ? "USGS 05536123, Chicago River at Columbus Dr: stage (CCD) and velocity (+ away from the lake)" : id === "05536118" ? "USGS 05536118, North Branch at Grand Ave: stage (CCD)" : "USGS 05536121, Chicago River at the lock: stage (CCD)"}">${label}</span>`, `${sgnFt(g.now.stage_ft)} ft${g.now.velocity_fps != null ? ` · ${sgnFt(g.now.velocity_fps)} ft/s` : ""} · ${fmtT(g.now.t)}`]); };
+  gRow("05536123", "Gage"); if (reach && /north|goose/.test(reach.id)) gRow("05536118", "N Branch"); if (reach && reach.id === "lock") gRow("05536121", "Lock gage");   // Gage: Columbus Dr (stage, velocity)
+  const b = nearestBridge(C.xk, C.yk), lvl = r.level != null ? r.level : RIVER.level;
+  if (b) rows.push([`<span title="The nearest bridge and its clearance above today's water${b.deck_from === "nominal" ? " (the river's typical closed clearance: the lidar sees no elevated deck)" : " (lidar)"}">Bridge</span>`, `${(b.name || "unnamed").replace(/^(West|East|North|South) /, (m) => m[0] + " ").replace(/ Avenue$/, " Ave").replace(/ Street$/, " St").replace(/ Boulevard$/, " Blvd").replace(/ Drive$/, " Dr")} · ${ft(b.deck - lvl)} ft${b.deck_from === "nominal" ? "*" : ""} · ${Math.round(b.dist)} m`]);
+  $("#ro-sky").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+}
 // ---------------------------------------------------------------- the current, drawn: slow ribbons drifting with the flow on
 // the river's water near the view (sped up ×60: the real current is a few cm/s), pale when normal, amber in a reversal
 const RF = { on: true, mesh: null, n: 420, L: 9, P: null, R: 0, cx: 1e9, cy: 1e9 };
@@ -3296,7 +3356,7 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
   const c = { wind: 0, dir: 0, gust: null, airC: null, sky: 0, pop: 0, systems: [], dRef: 1000, waterC: null, src: [] };
   let shore = nearestShore(xk, yk);
   if (!inLakeCoarse(xk, yk) && maskAt(xk, yk) === 0) {   // over land: harbour water within ~40 m (a launch ramp, a dock) reports itself, else the lake just offshore
-    const hw = nearestHarborWater(xk, yk, 40) || nearestRiverWater(xk, yk, 300); if (hw) { xk = hw[0]; yk = hw[1]; } else { xk += shore.nx * (shore.d + 1.2); yk += shore.ny * (shore.d + 1.2); } shore = nearestShore(xk, yk); }
+    const hw = nearestHarborWater(xk, yk, 40) || nearestRiverWater(xk, yk, 400); if (hw) { xk = hw[0]; yk = hw[1]; } else { xk += shore.nx * (shore.d + 1.2); yk += shore.ny * (shore.d + 1.2); } shore = nearestShore(xk, yk); }
   const fetchAt = (dir) => rayFetchKm(xk, yk, dir) * 1000;
   const withChop = (sys, U10, dir) => { const ch = cem(U10, 300, 1); if (ch.hm0 > 0.01) sys.push({ hs: Math.max(ch.hm0, 0.02 + 0.006 * U10), tp: Math.max(0.9, ch.tp), dir, spread: 50 }); return sys; };
   if (S.mode === "import") {
@@ -3387,7 +3447,7 @@ function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN 
 // the first 1.5-2 m of water from each launch pin (PLACES): Diversey off the ramp (harbour), North Ave ~130 m out from
 // the shop, Montrose across the beach on the lake side (~325 m from the Kayak Chicago container)
 const LAUNCHES = [["Montrose", 41.96741, -87.63436], ["North Ave", 41.91426, -87.62252], ["Diversey", 41.92649, -87.63272],
-  ["Riverwalk", 41.8880, -87.6197], ["North Ave basin", 41.9105, -87.6560], ["Ping Tom", 41.8575, -87.6345]];
+  ["Riverwalk", 41.8880, -87.6197], ["Kayak Chicago", 41.9095, -87.6574], ["Ping Tom", 41.8575, -87.6345]];   // Kayak Chicago: the water off its turning-basin dock
 const CHOP_BANDS = [[25, "Calm", "#5fc9a8"], [70, "Light chop", "#a6d96a"], [160, "Choppy", "#f7d940"], [350, "Rough", "#f39c45"], [Infinity, "Very rough", "#eb4d26"]];
 function chopRating(c) {
   const hs = c.fwHs != null ? c.fwHs : Math.sqrt(c.systems.reduce((a, q) => a + q.hs * q.hs, 0)), tp = c.systems[0] ? c.systems[0].tp : 3;
@@ -4456,7 +4516,7 @@ function paddleStatus(C, rr) {
   add(r.Ec >= PADDLE.chop[1] ? 2 : r.Ec >= PADDLE.chop[0] ? 1 : 0, `waves ${ft(r.hs)} ft, ${r.label.toLowerCase()}`);
   add(C.wind >= PADDLE.wind[1] ? 2 : C.wind >= PADDLE.wind[0] ? 1 : 0, `wind ${mph(C.wind)} mph`);
   if (C.gust != null) add(C.gust >= PADDLE.gust[1] ? 2 : C.gust >= PADDLE.gust[0] ? 1 : 0, `gusts ${mph(C.gust)} mph`);
-  if (C.dir >= 200 && C.dir <= 320) add(C.wind >= PADDLE.offshore[1] ? 2 : C.wind >= PADDLE.offshore[0] ? 1 : 0, `offshore ${compass(C.dir)} wind: blows you out`);
+  if (!C.river && C.dir >= 200 && C.dir <= 320) add(C.wind >= PADDLE.offshore[1] ? 2 : C.wind >= PADDLE.offshore[0] ? 1 : 0, `offshore ${compass(C.dir)} wind: blows you out`);
   if (C.waterC != null) add(C.waterC < PADDLE.cold[1] ? 2 : C.waterC < PADDLE.cold[0] ? 1 : 0, `water ${Math.round(cToF(C.waterC))}°F${C.waterC < PADDLE.cold[1] ? ": cold shock in minutes" : ": dress for immersion"}`);
   if (rr != null) add(rr >= PADDLE.rain[1] ? 2 : rr >= PADDLE.rain[0] ? 1 : 0, rr >= PADDLE.rain[1] ? "storm on radar: lightning risk" : `rain ${rr.toFixed(1)} mm/h`);
   if (C.pop >= PADDLE.pop) add(1, `${C.pop}% chance of showers or storms`);
@@ -4571,6 +4631,7 @@ function updateHud(rr, tp) {
   $("#hero-water").innerHTML = `<div class="tile"><div class="k">Waves${C.fwHs != null ? " · FUNWAVE" : ""}${hs > 0.01 ? `<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${(wdirW + 180) % 360}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg>` : ""}</div>
       <div class="v">${hs > 0.01 ? `<span class="n">${ft(hs)}</span><span class="u">ft</span>` : `<span class="n" style="font-size:22px">Calm</span>`}</div>
       <div class="s">${hs > 0.01 ? `from <em>${compass(wdirW)}</em> · <em>${tpk.toFixed(1)} s</em>` : "under 0.1 ft"}</div></div>`;
+  if (C.river) riverHeroes(C);
   { const key = `${Math.round(C.wind * 10)}|${Math.round(C.dir)}|${Math.round(hs * 100)}|${Math.round(wdirW)}`; if (key !== VS_KEY) { VS_KEY = key; $("#vs").innerHTML = vsCompass(C, hs, wdirW); } }
   renderPaddle(C, rr);
   const pill = (icon, html, cls = "", st = "") => `<span class="p ${cls}"${st ? ` style="${st}"` : ""}>${icon ? WXI[icon] : ""}${html}</span>`;
@@ -4586,6 +4647,10 @@ function updateHud(rr, tp) {
   const spc = W.spc, nowMs = Date.now(), tRef = S.mode === "live" ? S.t : nowMs;   // today's headlines only while the shown hour is inside them
   if (live && spc && spc.cat && (!spc.expire || new Date(spc.expire).getTime() > tRef) && (!spc.valid || new Date(spc.valid).getTime() < tRef + 24 * 3600e3))
     wl += pill("", spc.cat === "TSTM" ? "Thunder possible" : `Severe: ${spc.label.replace(/ risk$/i, "")} ${spc.level}/5`, "spc", `background:${spc.color || "#f6f67f"}`);
+  if (C.river) { const r = C.river;   // the river's pills: stage, chop, and the two red flags
+    ww = (r.stage_ft != null ? pill("", `<i>Stage</i> ${sgnFt(r.stage_ft)} ft CCD`) : "") + pill("", hs > 0.01 ? `<i>Chop</i> ${ft(hs)} ft · ${tpk.toFixed(1)} s` : "<i>Chop</i> none") + ww;
+    if (r.cso.state === "open") ww += pill("", "Sewer overflow now", "spc", "background:#f2584a;color:#fff"); else if (r.cso.state === "recent") ww += pill("", `Overflow ended ${Math.round((S.t - r.cso.ended) / 3600e3)} h ago`, "spc", "background:#f2584a;color:#fff");
+    if (r.reversal) ww += pill("", "Storm reversal", "spc", "background:#ffb347;color:#3a2400"); }
   $("#wx-air").innerHTML = wl; $("#wx-water").innerHTML = ww;
   if (S.kiosk) {   // the phone's strip: one number per category
     const arrow = (d) => `<svg class="arw" viewBox="0 0 24 24" style="transform:rotate(${(d + 180) % 360}deg)" aria-hidden="true"><path d="M12 2l6.5 18L12 16l-6.5 4z"/></svg>`;
@@ -4617,12 +4682,13 @@ function updateHud(rr, tp) {
   if (C.fwCross != null) waves.push(["Crossing seas", `${Math.round(C.fwCross * 100)}%${C.fwCross >= 0.5 ? " · confused" : ""}`]);
   { const LE = DATA.learn && DATA.learn.correction && DATA.learn.correction.era5, M = LE && LE["45198"] && LE["45198"].monthly_hs_m && LE["45198"].monthly_hs_m[String(new Date(S.t).getMonth() + 1)];
     if (live && M) waves.push(["Usual", `${ft(M.p50)} ft · 1 in 10 ≥${ft(M.p90)}`]); }
-  if (C.river) { const r = C.river, cur = r.current;
+  if (C.river) { const r = C.river, cur = r.current, tr = stageTrend(S.t);   // the River card's rows (overflows and the lock have their own card)
+    if (r.stage_ft != null) water.push(["Stage", `${sgnFt(r.stage_ft)} ft CCD${tr != null ? ` · ${sgnFt(tr)} ft / 24 h` : ""}`]);
     if (cur) water.push(["Current", `${(cur.spd * MPH).toFixed(2)} mph → ${compass(cur.toDeg)}${cur.reversal ? " · reversal" : ""}`]);
-    if (r.stage_ft != null) water.push(["River stage", `${r.stage_ft.toFixed(2)} ft CCD`]);
-    water.push(["Overflows", r.cso.state === "open" ? "sewer overflow now" : r.cso.state === "recent" ? `ended ${Math.round((S.t - r.cso.ended) / 3600e3)} h ago` : `none open${r.cso.checked ? ` · checked ${fmtHM.format(new Date(r.cso.checked))}` : ""}`]);
-    if (r.reach && (r.reach.id === "lock" || r.reach.id === "main")) water.push(["Lock", r.lockOpen == null ? "—" : r.lockOpen ? "open for the season" : "closed Nov 15 - Apr 15"]);
-    wind.push(["Canyon", `×${r.k.toFixed(2)}${r.ang != null ? ` · wind ${Math.round(r.ang)}° off the reach` : ""} · fetch ${Math.round(r.fetchM)} m`]); }
+    water.push(["Chop", hs > 0.01 ? `${ft(hs)} ft ${compass(C.dir)} · ${tpk.toFixed(1)} s` : "none"]);
+    water.push(["Fetch", `${r.fetchM >= 1000 ? `${(r.fetchM / 1000).toFixed(1)} km` : `${Math.round(r.fetchM)} m`} up the ${compass(C.dir)} wind`]);
+    wind.push(["Open water", `${mph(r.openWind)} mph ${compass(C.dir)}`]);
+    wind.push(["Canyon", `×${r.k.toFixed(2)}${r.ang != null ? ` · wind ${Math.round(r.ang)}° off the reach` : ""}`]); }
   if (C.waterC != null) { const d = live && NM.lake && NM.lake.mean_c != null ? (C.waterC - NM.lake.mean_c) * 1.8 : null;
     water.push(["Temp", `${Math.round(cToF(C.waterC))}°${d != null && Math.abs(d) >= 3 ? ` · ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° usual` : ""}`]); }
   if (C.depth != null) water.push(["Depth", C.depth > 0 ? `${(C.depth * FT).toFixed(C.depth * FT < 10 ? 1 : 0)} ft` : "dry"]);
@@ -4634,11 +4700,11 @@ function updateHud(rr, tp) {
   const RI = { Temp: "M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0zM12 9v8", Depth: "M4 4v16M4 20h16M8 20v-4M12 20v-7M16 20v-10", Energy: "M13 2L4 14h7l-1 8 9-12h-7z", Offshore: "M3 17c3 0 3-2 6-2s3 2 6 2 3-2 6-2M3 11c3 0 3-2 6-2s3 2 6 2 3-2 6-2", Clarity: "M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM12 9v3l2 2", "Usual": "M4 18V8M8 18v-5M12 18V6M16 18v-8M20 18v-3" };
   const rows = (rs) => rs.map(([k, v]) => `<dt${k === "Usual" ? ' title="ERA5 reanalysis, this time of year"' : ""}>${RI[k] ? `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${RI[k]}"/></svg> ` : ""}${k}</dt><dd>${v}</dd>`).join("");
   // the card faces: Water shows energy, temperature, depth, clarity and the usual; Air the models and the usual (stations under "more")
-  const TOPW = ["Energy", "Temp", "Depth", "Clarity", "Usual"], TOPA = ["GFS", "WeatherNext", "Usual"];
+  const TOPW = C.river ? ["Stage", "Current", "Chop", "Fetch", "Depth"] : ["Energy", "Temp", "Depth", "Clarity", "Usual"], TOPA = C.river ? ["Open water", "Canyon", "GFS"] : ["GFS", "WeatherNext", "Usual"];
   const allW = waves.concat(water), topW = allW.filter(([k]) => TOPW.includes(k)).sort((a, b) => TOPW.indexOf(a[0]) - TOPW.indexOf(b[0])), moreW = allW.filter((r) => !topW.includes(r)), topA = wind.filter(([k]) => TOPA.includes(k)), moreA = wind.filter((r) => !topA.includes(r));
   $("#ro-air-top").innerHTML = rows(topA); $("#ro-air").innerHTML = rows(moreA); $("#ro-water-top").innerHTML = rows(topW); $("#ro-water").innerHTML = rows(moreW);
   $("#readouts").innerHTML = grp("Your paddle", you); $("#readouts").hidden = !you.length;
-  renderSky(C);
+  renderSky(C); riverStatusCard(C);
   $("#source").textContent = [RS ? RS.label + lead : S.mode === "live" && SRC.live && S.t > SRC.live.frames[SRC.live.frames.length - 1].t ? "Clouds from forecast sky cover" : S.mode === "live" ? "Observed hour, no radar archived" : "No radar for this time", ...C.src].join(" · ");
 }
 

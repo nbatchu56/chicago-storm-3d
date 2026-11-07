@@ -111,8 +111,17 @@ sides of Goose Island, the North Avenue turning basin) to Belmont Avenue and dow
 - **The lock**: the chamber walls and the gates from OSM.
 - **Buildings**: inside the river box, Cook County's 2022 lidar building footprints with measured heights (6,700 within
   400 m of the water or over 30 m tall) replace OSM's, which carry heights for 0.4% of them.
-- Go to: the lock, the Riverwalk, Wolf Point, Goose Island, the North Branch at Belmont, Ping Tom Park. Launches:
-  the Riverwalk (Urban Kayaks), the North Ave basin (Kayak Chicago), the Ping Tom boathouse.
+- Go to: the lock, the Riverwalk, Wolf Point, Goose Island, Kayak Chicago (its North Branch base on the North Avenue
+  turning basin, 1501 N Magnolia), the North Branch at Belmont, Ping Tom Park. Launches: the Riverwalk (Urban Kayaks),
+  Kayak Chicago, the Ping Tom boathouse.
+- **The river's cards**: with the view on river water the three weather cards turn to the river. *Canyon wind*: the
+  wind in the canyon as the big number, the open-water wind and the canyon factor beside it. *River*: the current as the
+  big number with the way it carries you (Wolf Point, the lake, downstream), the stage in Chicago City Datum with its
+  24-hour change, the chop over the reach's fetch, the depth. *Overflows & lock*: MWRD's overflow state for the reach
+  and the fortnight's events, rain ahead (70% = overflow risk), the lock's season and USACE notices, the gages (Columbus
+  Dr stage and velocity; the North Branch gage on the branch), the nearest bridge and its clearance above today's water
+  (* = the typical closed clearance, where the lidar sees no deck). Back on the lake the cards return to Air, Water
+  and Atmosphere. The offshore-wind rule of the paddling light does not apply on the river.
 
 **What moves the river's water** (`app/river.py --now`, each snapshot; `riverConditions` in the page), on river water
 in place of the lake's wave model:
