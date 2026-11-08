@@ -523,6 +523,7 @@ body.compact #vsbox .vs { grid-template-columns: 92px 1fr; } body.compact #vsbox
       <label class="check" title="Moored buoys that ride the modelled waves, each beside a fixed pile painted in 1 ft bands from the still-water line (red). Zoom in near the water to see them."><input type="checkbox" id="buoys"> Buoys and wave gauges on the water</label>
       <label class="check" title="The rowing course on the Lincoln Park South Lagoon: 1000 m from the south face of the Fullerton Avenue bridge, a mark every 100 m"><input type="checkbox" id="course" checked> Lagoon 1000 m course</label>
       <label class="check" title="The Chicago River's current, drawn as drifting ribbons on the water near the view (sped up 60 times: the real current is a few cm/s); amber in a storm reversal"><input type="checkbox" id="rflow" checked> River current</label>
+      <label class="check" title="The boats on the river near the view (a schedule model of the tours, water taxis, private boats, tugs and patrols; the boats heard on AIS near the snapshot) and their wakes, folding back off the walls"><input type="checkbox" id="rwake" checked> Boats &amp; wakes</label>
       <label class="check" title="Over the river the buildings sink to low blocks and a view panned there tilts down, so the river's walls, bridges and water read clear from above, as from a drone"><input type="checkbox" id="rdrone" checked> Drone view over the river</label>
     </section>
     <section id="sec-sat">
@@ -602,6 +603,7 @@ body.compact #vsbox .vs { grid-template-columns: 92px 1fr; } body.compact #vsbox
 <script id="jet-data" type="application/json"></script>
 <script id="river-data" type="application/json"></script>
 <script id="rivernow-data" type="application/json"></script>
+<script id="ais-data" type="application/json"></script>
 <script id="earth-data" type="application/json"></script>
 <script id="wn3-data" type="application/json"></script>
 <script id="meta-data" type="application/json"></script>
@@ -3198,7 +3200,7 @@ function radarState(tMs) {   // which frames to show, blend and motion shift
 // fetch; the current, from the Columbus Dr gage's measured velocity (USGS 05536123, 72254: + is away from the lake, the
 // normal direction; a sustained strong negative is a storm reversal, the lock opened to the lake); the sewer overflows
 // (MWRD's possible-CSO events by reach: the reach is off limits while one is open and for 48 h after); and the lock's
-// season (closed to paddlers Nov 15 - Apr 15). Boat wakes wait for the AIS feed.
+// season (closed to paddlers Nov 15 - Apr 15). The boats' wakes: below (riverWakes).
 const RN = { d: null, cur: null };
 const RIVER_K = { along: 0.7, across: 0.3 };        // the canyon's share of the open wind along / across the reach
 const CURRENT_CAUTION = 0.5 / MPH;                  // m/s: 0.5 mph, only storm reversals get there
@@ -3262,7 +3264,7 @@ function riverConditions(c, tMs, xk, yk) {
   c.off = null; c.swan = null; c.harbor = null; c.dRef = 100;
   const cur = riverCurrent(R, tMs), level = riverLevelAt(tMs);
   c.river = { reach, k, ang, fetchM: fetch, openWind: open, current: cur, level, stage_ft: level != null ? (level - CCD_IGLD) / 0.3048 : null,
-    cso: riverCso(reach, tMs), lockOpen: lockOpenAt(tMs), reversal: !!(cur && cur.reversal) };
+    cso: riverCso(reach, tMs), lockOpen: lockOpenAt(tMs), reversal: !!(cur && cur.reversal), wakes: riverWakes(tMs, xk, yk, riverDepthAt(xk, yk)) };
   c.src = c.src.filter((s) => !/SWAN|FUNWAVE|sheltered/.test(s));
   c.src.push(`Chicago River${reach ? ` · ${reach.name}` : ""}: canyon wind ×${k.toFixed(2)}${cur ? `, current ${(cur.spd * MPH).toFixed(2)} mph → ${compass(cur.toDeg)}` : ""}`);
 }
@@ -3352,6 +3354,289 @@ function riverFlowStep(dt) {
       pos[vi * 3] = P.x[q] + nx; pos[vi * 3 + 1] = hgt; pos[vi * 3 + 2] = -(P.y[q] + ny); pos[vi * 3 + 3] = P.x[q] - nx; pos[vi * 3 + 4] = hgt; pos[vi * 3 + 5] = -(P.y[q] - ny);
       for (let e = 0; e < 2; e++) { const ci = (vi + e) * 4; col[ci] = c[0]; col[ci + 1] = c[1]; col[ci + 2] = c[2]; col[ci + 3] = a0 * taper * 0.6 * br; } } }
   RF.mesh.geometry.attributes.position.needsUpdate = true; RF.mesh.geometry.attributes.color.needsUpdate = true;
+}
+// ---------------------------------------------------------------- boat wakes on the river (ais-data: app.ais)
+// On a calm morning the river's own chop is nil and what rocks a board is the boats: the tour boats and water taxis
+// (Mar 15 - Dec 20), private boats through the lock (Apr 15 - Nov 15), the tugs with their barges, the police and fire
+// boats. Who passes, and when, comes from a schedule model; the boats heard on AIS during the snapshot replace the
+// modelled tours, taxis, tugs and patrols near that time. The wake:
+//   the height: Kriebel & Seelig (2005), g H / V² = β (F* − 0.1)² (y / L)^(−1/3), β = 1 + 8 tanh³(0.45 (L/Le − 2)),
+//     F* = F_L exp(α d / h), α = 2.35 (1 − C_B), F_L = V / √(g L) (y: the distance from the sailing line, d: the draft,
+//     h: the depth); past F_L ≈ 0.6 a hull climbs onto the plane and the wake shrinks again (an estimate)
+//   the period: the Kelvin wedge's divergent waves, T = 2π V cos 35.3° / g; they cross the channel at the group speed's
+//     cross component and bounce off the walls (steel sheet pile: Kr ≈ 0.9, ICCE), losing about 10% a bounce, and the
+//     train dies away over a few minutes (τ: an estimate, no Chicago measurement found)
+//   the walls: right at a vertical wall the reflection stacks on the incoming wave (up to 1 + Kr)
+// Rules on the water (Municipal Code 10-40-261): no wake on the main stem, the South Branch to Lake St, the North Branch
+// to Kinzie, and within 150 ft of a shore or another boat, which on a 170 ft river is the whole river. Most boats keep
+// it; some do not (the share that plows at 8-10 mph is an estimate).
+const WK = { on: true, d: null, net: null, mesh: null, boats: null, cap: 7000, trips: [], tripsKey: "", spot: null };
+const WAKE_KR = 0.9, WAKE_TAU = 150;        // reflection off sheet pile; the train's own decay (s, an estimate)
+// the boats: length, beam, draft (m), block coefficient, L/entrance length, PIANC's α, the hull's look; V: speeds (m/s) and
+// their shares (estimates: tours ~6.5 kn, a no-wake powerboat 5 mph, one in four plowing at 10 mph, a patrol at 12 kn on a call)
+const BOAT = {
+  tour:   { alpha: 0.6, name: "Tour boat", L: 27, B: 8, d: 1.5, cb: 0.55, le: 2.6, fb: 1.4, deck: 2.4, col: 0xf2f2ee, top: 0x30475e, V: [[3.3, 1]] },
+  taxi:   { alpha: 0.6, name: "Water taxi", L: 20, B: 6, d: 1.2, cb: 0.5, le: 2.6, fb: 1.2, deck: 2.0, col: 0xffd23f, top: 0x2b2b2b, V: [[3.6, 1]] },
+  power:  { alpha: 1.0, name: "Powerboat", L: 7.5, B: 2.6, d: 0.6, cb: 0.4, le: 2.4, fb: 0.9, deck: 0, col: 0xffffff, top: 0x9ab, V: [[2.2, 0.75], [4.5, 0.25]] },
+  cruiser:{ alpha: 0.8, name: "Cruiser", L: 12, B: 4, d: 1.0, cb: 0.45, le: 2.5, fb: 1.4, deck: 1.6, col: 0xf6f3ea, top: 0x5a6e80, V: [[2.5, 0.75], [4.5, 0.25]] },
+  tug:    { alpha: 1.0, name: "Tug and barge", L: 20, B: 8, d: 2.4, cb: 0.6, le: 2.2, fb: 1.2, deck: 3.0, col: 0xb8322a, top: 0x222222, V: [[1.8, 1]], barge: 60 },
+  police: { alpha: 1.0, name: "Police / fire boat", L: 13, B: 4.2, d: 1.0, cb: 0.45, le: 2.5, fb: 1.3, deck: 1.4, col: 0x1d3f8f, top: 0xeeeeee, V: [[3.0, 0.8], [6.0, 0.2]] },
+  other:  { alpha: 0.8, name: "Boat", L: 15, B: 5, d: 1.2, cb: 0.5, le: 2.5, fb: 1.2, deck: 1.6, col: 0xdddddd, top: 0x555555, V: [[3.0, 1]] },
+};
+// the wake height (m) a boat of class k makes at y metres from its line, in water h metres deep: the geometric mean of
+// Kriebel & Seelig (2005) and the PIANC / Blaauw (1984) form H = α h (y / h)^(−1/3) F_h⁴ (F_h = V / √(g h)), which
+// disagree by 2-5× for small boats in shallow water (neither was fitted to the Chicago River), capped at 7% of the hull's
+// length (the largest small-craft wakes measured on Illinois rivers, ~0.6 m, Bhowmik et al.)
+function wakeH(k, V, y, h) {
+  const b = BOAT[k] || BOAT.other, g = 9.81, L = b.L, hh = Math.max(h || 6, 1.5), FL = V / Math.sqrt(g * L), al = 2.35 * (1 - b.cb);
+  const Fs = FL * Math.exp(al * b.d / hh), yy = Math.max(y, b.B / 2 + 2);
+  const beta = 1 + 8 * Math.tanh(0.45 * (b.le - 2)) ** 3;
+  let ks = Fs > 0.1 ? beta * (Fs - 0.1) ** 2 * (yy / L) ** (-1 / 3) * V * V / g : 0;
+  const Fh = Math.min(V / Math.sqrt(g * hh), 0.8), pianc = b.alpha * hh * (yy / hh) ** (-1 / 3) * Fh ** 4;
+  let H = Math.sqrt(Math.max(ks, 1e-5) * pianc);
+  if (FL > 0.6) H *= Math.exp(-(((FL - 0.6) / 0.45) ** 2));                     // on the plane (an estimate)
+  return Math.min(H, 0.07 * L, 0.45 * hh);
+}
+const wakeT = (V) => 2 * Math.PI * V * Math.cos(35.26 * Math.PI / 180) / 9.81;
+// how fast the train dies at a point: its own decay plus a loss of (1 − Kr) at every bounce off a wall W metres away
+function wakeTau(V, W) { const T = wakeT(V), cg = 9.81 * T / (4 * Math.PI), cross = cg * Math.sin(35.26 * Math.PI / 180), bounce = cross / Math.max(W, 15);
+  return 1 / (1 / WAKE_TAU + bounce * Math.log(1 / WAKE_KR)); }
+
+// ---- the channel: the river's walls as segments (metres), the reach lines pushed to mid-channel with the width there
+function wakeNet() {
+  if (WK.net || !RIVER.ok || !MAP.ok) return WK.net; const C = 40, cells = new Map(), segs = [];
+  for (const p of RIVER.polys) for (const r of p.rings) for (let i = 1; i < r.length; i++) { const a = r[i - 1], b = r[i]; segs.push([a[0], a[1], b[0], b[1]]);
+    const x0 = Math.floor(Math.min(a[0], b[0]) / C), x1 = Math.floor(Math.max(a[0], b[0]) / C), y0 = Math.floor(Math.min(a[1], b[1]) / C), y1 = Math.floor(Math.max(a[1], b[1]) / C);
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) { const k = x * 100003 + y; if (!cells.has(k)) cells.set(k, []); cells.get(k).push(segs.length - 1); } }
+  // the first wall along a ray from (x, y) (metres), within rmax
+  const ray = (x, y, ux, uy, rmax) => { let best = rmax; const seen = new Set();
+    for (let s = 0; s <= best; s += C * 0.5) { const cx = Math.floor((x + ux * s) / C), cy = Math.floor((y + uy * s) / C);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const i of cells.get((cx + dx) * 100003 + cy + dy) || []) { if (seen.has(i)) continue; seen.add(i);
+        const [ax, ay, bx, by] = segs[i], ex = bx - ax, ey = by - ay, den = ux * ey - uy * ex; if (Math.abs(den) < 1e-9) continue;
+        const t = ((ax - x) * ey - (ay - y) * ex) / den, u = ((ax - x) * uy - (ay - y) * ux) / den; if (t > 0.01 && t < best && u >= 0 && u <= 1) best = t; } }
+    return best < rmax ? best : null; };
+  const reaches = {};
+  for (const R of RIVER.d.reaches || []) { const P = R.line.map(([la, lo]) => ll(la, lo).map((v) => v * 1000)), pts = [];
+    for (let i = 1; i < P.length; i++) { const [ax, ay] = P[i - 1], [bx, by] = P[i], L = Math.hypot(bx - ax, by - ay), n = Math.max(1, Math.round(L / 10));
+      for (let k = i === 1 ? 0 : 1; k <= n; k++) pts.push([ax + (bx - ax) * k / n, ay + (by - ay) * k / n]); }
+    const out = pts.map((q, i) => { const a = pts[Math.max(0, i - 2)], b = pts[Math.min(pts.length - 1, i + 2)], dl = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / dl, ny = (b[0] - a[0]) / dl;
+      let x = q[0], y = q[1];
+      if (maskAt(x / 1000, y / 1000) !== RIVER_CLS) { let f = null; for (let r = 5; r <= 90 && !f; r += 5) for (const sg of [1, -1]) if (!f && maskAt((x + nx * r * sg) / 1000, (y + ny * r * sg) / 1000) === RIVER_CLS) f = [x + nx * r * sg, y + ny * r * sg]; if (f) [x, y] = f; }
+      const dL = ray(x, y, nx, ny, 160), dR = ray(x, y, -nx, -ny, 160);
+      if (dL != null && dR != null && dL + dR < 220) return [x + nx * (dL - dR) / 2, y + ny * (dL - dR) / 2, dL + dR];
+      return [x, y, null]; });
+    // fill unknown widths from neighbours, then smooth the line and the width
+    let last = 50; for (const q of out) { if (q[2] == null) q[2] = last; else last = q[2]; }
+    const sm = out.map((q, i) => { let sx = 0, sy = 0, sw = 0, n = 0; for (let j = Math.max(0, i - 4); j <= Math.min(out.length - 1, i + 4); j++) { sx += out[j][0]; sy += out[j][1]; sw += out[j][2]; n++; }
+      return i === 0 || i === out.length - 1 ? [q[0], q[1], sw / n] : [sx / n, sy / n, sw / n]; });
+    reaches[R.id] = sm; }
+  WK.net = { reaches, ray }; return WK.net;
+}
+// a path: a list of [x, y, w] (metres) with cumulative distance; slices of reaches by the points nearest two lat/lons
+function wkPath(parts) { const pts = [];
+  for (const [id, a, b] of parts) { const R = WK.net.reaches[id]; if (!R) continue;
+    const near = (q) => { if (q === "start") return 0; if (q === "end") return R.length - 1; const [x, y] = ll(q[0], q[1]).map((v) => v * 1000); let k = 0, bd = Infinity;
+      R.forEach((p, i) => { const d = Math.hypot(p[0] - x, p[1] - y); if (d < bd) { bd = d; k = i; } }); return k; };
+    const i0 = near(a), i1 = near(b), st = i1 >= i0 ? 1 : -1; for (let i = i0; i !== i1 + st; i += st) pts.push(R[i]); }
+  const s = [0]; for (let i = 1; i < pts.length; i++) s.push(s[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  return { pts, s, len: s[s.length - 1] || 0 }; }
+// where a boat is s metres along a path: position, unit tangent, the channel width
+function wkAt(P, s) { const S = P.s; if (!P.pts.length) return null; s = clamp(s, 0, P.len); let lo = 0, hi = S.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (S[m] <= s) lo = m; else hi = m; }
+  const a = P.pts[lo], b = P.pts[hi], f = S[hi] > S[lo] ? (s - S[lo]) / (S[hi] - S[lo]) : 0, dl = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  return { x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, ux: (b[0] - a[0]) / dl, uy: (b[1] - a[1]) / dl, w: a[2] + (b[2] - a[2]) * f }; }
+
+// ---- the routes (the docks: Michigan Ave for the tours and Wendella's taxi; the turns: Goose Island, Roosevelt, Ping Tom)
+const WP = { dock: [41.8881, -87.6240], wolf: [41.8870, -87.6372], goose: [41.9040, -87.6545], roosevelt: [41.8670, -87.6372], pingtom: [41.8575, -87.6345],
+  lockW: [41.8884, -87.6120], cortland: [41.9160, -87.6600], kinzie: [41.8890, -87.6385], chicagoAve: [41.8960, -87.6430] };
+function wkRoutes() { if (WK.routes || !wakeNet()) return WK.routes;
+  const there = (parts) => parts, back = (parts) => parts.slice().reverse().map(([id, a, b]) => [id, b, a]);
+  const P = (parts) => wkPath(parts);
+  const main = [["main", WP.dock, "end"]], south = [["south", "start", WP.roosevelt]], north = [["north_low", "start", "end"], ["goose_w", "start", WP.goose]];
+  const lockToWolf = [["lock", "start", "end"], ["main", "start", "end"]];
+  WK.routes = {
+    // tours: the three branches from Michigan Ave, or out to the lock and back
+    tour: [{ p: P([...main, ...north, ...back(north), ...south, ...back(south), ...back(main)]), w: 0.75 },
+           { p: P([["main", WP.dock, "start"], ["lock", "end", "start"], ["lock", "start", "end"], ["main", "start", WP.dock]]), w: 0.25 }],
+    taxi: [{ p: P([...main, ["south", "start", WP.pingtom]]), w: 0.5 }, { p: P([["south", WP.pingtom, "start"], ["main", "end", WP.dock]]), w: 0.5 }],
+    // private boats: between the lake and the South Branch marinas, a run up the main stem and back, a few up the North Branch
+    power: [{ p: P([...lockToWolf, ["south", "start", "end"]]), w: 0.35 }, { p: P(back([...lockToWolf, ["south", "start", "end"]])), w: 0.35 },
+            { p: P([...lockToWolf, ...back(lockToWolf)]), w: 0.2 }, { p: P([...lockToWolf, ["north_low", "start", "end"], ["goose_w", "start", "end"], ["north_up", "start", WP.cortland]]), w: 0.1 }],
+    tug: [{ p: P([["south", "end", "start"], ["north_low", "start", "end"], ["goose_w", "start", "end"], ["north_up", "start", WP.cortland]]), w: 0.5 },
+          { p: P([["north_up", WP.cortland, "start"], ["goose_w", "end", "start"], ["north_low", "end", "start"], ["south", "start", "end"]]), w: 0.5 }],
+    police: [{ p: P([...lockToWolf, ["south", "start", WP.pingtom]]), w: 0.4 }, { p: P(back([...lockToWolf, ["south", "start", WP.pingtom]])), w: 0.3 },
+             { p: P([...lockToWolf, ["north_low", "start", "end"], ["goose_e", "start", "end"]]), w: 0.3 }],
+  };
+  WK.routes.cruiser = WK.routes.power;
+  return WK.routes; }
+
+// ---- when: Chicago's calendar and clock, the season and hour profile of each kind of boat (trips started per hour)
+const CHI = new Intl.DateTimeFormat("en-US", { timeZone: TZ, year: "numeric", month: "numeric", day: "numeric", hour: "numeric", hour12: false, weekday: "short" });
+const CHI_C = new Map();
+function chi(tMs) { const k = Math.floor(tMs / 3600e3); if (CHI_C.has(k)) return CHI_C.get(k); const o = {};
+  for (const p of CHI.formatToParts(new Date(k * 3600e3))) o[p.type] = p.value;
+  const r = { y: +o.year, m: +o.month, d: +o.day, h: (+o.hour) % 24, wd: o.weekday, we: o.weekday === "Sat" || o.weekday === "Sun" }; r.md = r.m * 100 + r.d;
+  if (CHI_C.size > 5000) CHI_C.clear(); CHI_C.set(k, r); return r; }
+// trips per hour (all operators) starting in Chicago's hour c, by kind
+function wakeRates(c) { const h = c.h, md = c.md, we = c.we, R = {};
+  // tours: Mar 15 - Dec 20; 10-5 in the cold months, 9:30-7 in spring and fall, to 9:30 pm in summer (estimates from the operators' 2026 pages)
+  const tourOn = md >= 315 && md <= 1220, summer = c.m >= 6 && c.m <= 8, shoulder = c.m === 4 || c.m === 5 || c.m === 9 || c.m === 10;
+  const tH = summer ? [9, 22] : shoulder ? [9, 19] : [10, 17];
+  R.tour = tourOn && h >= tH[0] && h < tH[1] ? (summer ? (we ? 10 : 7) : shoulder ? (we ? 6 : 4) : (we ? 3 : 2)) : 0;
+  R.taxi = tourOn && h >= (we ? 11 : 10) && h < (summer ? 21 : 19) ? (summer ? 5 : 2.5) : 0;
+  // private boats: through the lock Apr 15 - Nov 15; the summer weekend's hour profile from the 1998 lock counts (Volpe 2000:
+  // ~60 an hour at midafternoon, out in the morning, back in the afternoon), weekdays ~30% of that, the shoulder months less
+  const lockOn = md >= 415 && md < 1115, prof = [0, 0, 0, 0, 0, 0, 2, 4, 8, 15, 25, 35, 50, 55, 58, 58, 55, 48, 35, 25, 15, 8, 4, 1][h];
+  const monthK = { 4: 0.1, 5: 0.45, 6: 0.85, 7: 1, 8: 1, 9: 0.5, 10: 0.22, 11: 0.08 }[c.m] || 0;
+  const rec = lockOn ? prof * monthK * (we ? 1 : 0.3) : 0; R.power = rec * 0.75; R.cruiser = rec * 0.25;
+  // the spring and fall boat runs: convoys between the yards up the South Branch and the lake, Sat 8 / Wed 9:30 in spring,
+  // Sat 9 / Wed 9:30 in the fall (Waterway Guide), ~25 boats over two hours
+  const spring = md >= 415 && md <= 615, fall = md >= 915 && md <= 1107;
+  if ((spring || fall) && ((c.wd === "Sat" && h >= (spring ? 8 : 9) && h < (spring ? 10 : 11)) || (c.wd === "Wed" && h >= 9 && h < 11))) { R.cruiser += 12; R.convoy = spring ? "out" : "in"; }
+  // tugs and barges any day, 5 am - 10 pm (the North Branch's aggregate yards, the South Branch); police and fire patrols
+  R.tug = h >= 5 && h < 22 ? 0.35 : 0;
+  R.police = h >= 9 && h < 22 ? (c.m >= 5 && c.m <= 9 ? 0.4 : 0.12) : 0;
+  return R; }
+
+// ---- the trips: a seeded realisation of each hour, so scrubbing the timeline replays the same boats
+function wkRng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function wkPoisson(lam, rnd) { if (lam <= 0) return 0; if (lam > 30) return Math.max(0, Math.round(lam + Math.sqrt(lam) * (rnd() + rnd() + rnd() - 1.5) * 2)); let L = Math.exp(-lam), k = 0, p = 1; do { k++; p *= rnd(); } while (p > L); return k - 1; }
+const WK_KINDS = ["tour", "taxi", "power", "cruiser", "tug", "police"];
+function wkHourTrips(H) { const R = wkRoutes(); if (!R) return []; const c = chi(H * 3600e3 + 1800e3), rate = wakeRates(c), out = [], usual = (WK.d && WK.d.usual_kn) || {};
+  WK_KINDS.forEach((k, ki) => { const rnd = wkRng(H * 7919 + ki * 104729 + 17), lam = rate[k] || 0; if (!lam) return;
+    const n = k === "tour" || k === "taxi" ? Math.round(lam) : wkPoisson(lam, rnd);
+    for (let i = 0; i < n; i++) { const regular = k === "tour" || k === "taxi", t0 = H * 3600e3 + (regular ? (i + 0.15 + rnd() * 0.5) / n : rnd()) * 3600e3;
+      let r = rnd(), route = R[k][0]; for (const q of R[k]) { if (r < q.w) { route = q; break; } r -= q.w; }
+      if (rate.convoy && k === "cruiser" && i >= n - 12) route = R.power[rate.convoy === "in" ? 0 : 1];
+      let v = rnd(), V = BOAT[k].V[0][0]; for (const [sp, w] of BOAT[k].V) { if (v < w) { V = sp; break; } v -= w; }
+      if (usual[k] && BOAT[k].V.length === 1) V = usual[k] * 0.5144;
+      const lane = (rnd() - 0.5) * 0.12;
+      out.push({ k, t0, V, path: route.p, lane, id: `${H}:${k}:${i}` }); } });
+  return out; }
+// the trips under way at a time (modelled), with the AIS boats near the snapshot in place of the modelled AIS carriers
+function wkTrips(tMs) { const H = Math.floor(tMs / 3600e3), key = String(H); if (WK.tripsKey !== key) { WK.tripsKey = key; WK.trips = [];
+    for (let h = H - 3; h <= H + 1; h++) WK.trips.push(...wkHourTrips(h)); }
+  const ais = wkAisTrips(tMs), carried = new Set(ais.length ? ["tour", "taxi", "tug", "police"] : []);
+  return WK.trips.filter((q) => !carried.has(q.k)).concat(ais); }
+// AIS: within 20 minutes of the listen, each boat heard moving on the river sails on from its last fix along the reach
+// it was on, at its measured speed; boats tied up stay where they are
+function wkAisTrips(tMs) { const D = WK.d; if (!D || !D.window || !wakeNet()) return [];
+  const w0 = Date.parse(D.window.t0), w1 = Date.parse(D.window.t1); if (tMs < w0 - 20 * 60e3 || tMs > w1 + 20 * 60e3) return [];
+  if (WK.aisTrips) return WK.aisTrips; const out = [];
+  for (const v of D.vessels || []) { const fx = v.track[v.track.length - 1]; if (!fx || fx[2] > -87.6085) continue;   // on the river
+    const [x, y] = ll(fx[1], fx[2]).map((q) => q * 1000); let best = null;
+    for (const [id, R] of Object.entries(WK.net.reaches)) R.forEach((p, i) => { const d = Math.hypot(p[0] - x, p[1] - y); if (d < 90 && (!best || d < best.d)) best = { id, i, d }; });   // a boat at a dock sits up to ~40 m off mid-channel
+    if (!best) continue; const R = WK.net.reaches[best.id], sog = fx[3] || 0, cog = fx[4];
+    const a = R[Math.max(0, best.i - 1)], b = R[Math.min(R.length - 1, best.i + 1)], th = Math.atan2(b[0] - a[0], b[1] - a[1]) * 180 / Math.PI;
+    const fwd = cog == null ? true : Math.abs(angd(cog, (th + 360) % 360)) < 90, pts = fwd ? R.slice(best.i) : R.slice(0, best.i + 1).reverse();
+    const s = [0]; for (let i = 1; i < pts.length; i++) s.push(s[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const k = BOAT[v.cls] ? v.cls : "other", V = sog >= 0.5 ? sog * 0.5144 : 0;
+    out.push({ k, t0: fx[0] * 1000, V, path: { pts, s, len: s[s.length - 1] || 0 }, lane: 0, id: `ais:${v.mmsi}`, ais: v, L: v.len_m || null }); }
+  WK.aisTrips = out; return out; }
+function setAis(d) { WK.d = d && d.vessels ? d : null; WK.aisTrips = null; WK.tripsKey = ""; }
+
+// ---- the reading at a point: the wakes that reach it, how often, how long the water takes to settle
+// The spot's place in the channel: the nearest mid-channel point of any reach, the width there, how far off the middle.
+function wkSpot(xk, yk) { const N = wakeNet(); if (!N) return null; const x = xk * 1000, y = yk * 1000; let best = null;
+  for (const [id, R] of Object.entries(N.reaches)) R.forEach((p, i) => { const d = Math.hypot(p[0] - x, p[1] - y); if (d < 200 && (!best || d < best.d)) best = { id, i, d, p }; });
+  if (!best) return null; const R = N.reaches[best.id], a = R[Math.max(0, best.i - 1)], b = R[Math.min(R.length - 1, best.i + 1)], dl = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  const off = ((x - best.p[0]) * -(b[1] - a[1]) + (y - best.p[1]) * (b[0] - a[0])) / dl, W = best.p[2];
+  return { id: best.id, W, off: clamp(off, -W / 2, W / 2), wall: Math.max(0, W / 2 - Math.abs(off)), x: best.p[0], y: best.p[1] }; }
+// the wake one boat sends to the spot: the height of the first arrival (the reflection stacking near a wall), the period
+function wkPass(q, sp, depth) { const b = BOAT[q.k] || BOAT.other, V = q.V; if (V < 0.3) return null;
+  const y = Math.max(3, Math.abs(sp.off - q.lane * sp.W)), T = wakeT(V), lam = 9.81 * T * T / (2 * Math.PI);
+  const H = Math.min(wakeH(q.k, V, y, depth) * (1 + WAKE_KR * Math.exp(-sp.wall / Math.max(lam, 1))), 0.08 * (q.L || b.L));
+  return { H, T, tau: wakeTau(V, sp.W) }; }
+// when a trip passes the spot (ms), each time its path comes by (out and back)
+function wkPassTimes(q, sp) { const P = q.path, out = []; if (!P.pts.length || q.V < 0.3) return out; let inR = false, bestI = -1, bestD = 1e9;
+  for (let i = 0; i < P.pts.length; i++) { const d = Math.hypot(P.pts[i][0] - sp.x, P.pts[i][1] - sp.y), near = d < 30;
+    if (near) { if (!inR || d < bestD) { bestD = d; bestI = i; } inR = true; } else if (inR) { out.push(q.t0 + P.s[bestI] / q.V * 1000); inR = false; bestD = 1e9; } }
+  if (inR) out.push(q.t0 + P.s[bestI] / q.V * 1000); return out; }
+function riverWakes(tMs, xk, yk, depth) {
+  // the boats sail mid-channel: their wakes form in the channel's depth there, not the spot's (a ledge by the wall)
+  const sp = wkSpot(xk, yk); if (!sp) return null; const h = riverDepthAt(sp.x / 1000, sp.y / 1000) || Math.max(depth || 0, 6), trips = wkTrips(tMs);
+  const c = chi(tMs), rate = wakeRates(c), R = wkRoutes();
+  // the hour's mix: how many of each kind pass the spot (the routes that come by, out and back), and the wake each makes
+  const kinds = [];
+  for (const k of WK_KINDS) { const lam = rate[k] || 0; if (!lam) continue; let per = 0;
+    for (const r of R[k]) per += r.w * wkPassTimes({ path: r.p, t0: 0, V: 1 }, sp).length;
+    const n = lam * per; if (n < 0.05) continue;
+    const V = BOAT[k].V.reduce((a, [v, w]) => Math.max(a, v), 0), Vn = BOAT[k].V[0][0];
+    const typ = wkPass({ k, V: Vn, lane: 0 }, sp, h), big = wkPass({ k, V, lane: 0 }, sp, h);
+    kinds.push({ k, n, H: typ ? typ.H : 0, Hbig: big ? big.H : 0, nBig: n * (BOAT[k].V.length > 1 ? BOAT[k].V[BOAT[k].V.length - 1][1] : 1), T: typ ? typ.T : 0 }); }
+  const perH = kinds.reduce((a, q) => a + q.n, 0);
+  // the passes around now, modelled (and heard): the water's state is what is left of each train
+  let now2 = 0, last = null, next = null, biggest = null;
+  for (const q of trips) { const ps = wkPass(q, sp, h); if (!ps) continue;
+    for (const t of wkPassTimes(q, sp)) { const dt = (tMs - t) / 1000;
+      if (dt >= 0 && dt < 1200) { const a = ps.H * Math.exp(-dt / ps.tau); now2 += a * a; if (!last || t > last.t) last = { t, q, H: ps.H }; }
+      if (dt < 0 && dt > -3600 && (!next || t < next.t)) next = { t, q, H: ps.H };
+      if (Math.abs(dt) < 1800 && (!biggest || ps.H > biggest.H)) biggest = { t, q, H: ps.H }; } }
+  const sea = Math.sqrt(now2);
+  // how long the water takes to settle under 1/2 inch after a typical pass, against the gap between boats
+  const main = kinds.slice().sort((a, b) => b.n * b.H - a.n * a.H)[0];
+  const settle = main && main.H > 0.013 ? wakeTau(BOAT[main.k].V[0][0], sp.W) * Math.log(main.H / 0.013) : 0;
+  const gap = perH > 0 ? 3600 / perH : Infinity;
+  // the hour's biggest regular wake (a kind passing at least once an hour), and the occasional big one
+  const reg = kinds.filter((q) => q.n >= 1).sort((a, b) => b.H - a.H)[0] || null;
+  const occ = kinds.filter((q) => q.nBig >= 0.2).sort((a, b) => b.Hbig - a.Hbig)[0] || null;
+  const ais = WK.d && WK.d.window && Math.abs(tMs - Date.parse(WK.d.window.t1)) < 20 * 60e3 ? (WK.d.vessels || []).filter((v) => v.track.some((r) => r[2] <= -87.6085)) : null;
+  return { sp, kinds, perH, sea, last, next, biggest, settle, gap, reg, occ, ais, convoy: rate.convoy || null }; }
+
+// ---- the wakes drawn: the boats near the view on their routes, the Kelvin wedge's crests behind them folded back at the
+// walls (each bounce a little weaker), the white water right behind the hull. The wedge is steady in the boat's frame,
+// so the crests are placed from the boat's own track a few seconds back.
+function wakeStep() {
+  const hide = () => { if (WK.mesh) WK.mesh.visible = false; if (WK.boats) WK.boats.visible = false; };
+  if (!RIVER.ok || !WK.on || !wakeNet()) return hide();
+  const v = viewState(), D = v.dist, cx = controls.target.x * 1000, cy = -controls.target.z * 1000;
+  if (D > 5 || !riverReachAt(cx / 1000, cy / 1000) && !nearestRiverWater(cx / 1000, cy / 1000, 600)) return hide();
+  if (!WK.mesh) { const n = WK.cap, g = new THREE.BufferGeometry(), idx = new Uint32Array(n * 6);
+    for (let i = 0; i < n; i++) idx.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 1, i * 4 + 3, i * 4 + 2], i * 6);
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 12), 3).setUsage(THREE.DynamicDrawUsage)); g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 16), 4).setUsage(THREE.DynamicDrawUsage)); g.setIndex(new THREE.BufferAttribute(idx, 1));
+    WK.mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false })); WK.mesh.frustumCulled = false; WK.mesh.renderOrder = 5; scene.add(WK.mesh);
+    const box = new THREE.BoxGeometry(1, 1, 1).toNonIndexed(); box.translate(0, 0.5, 0);
+    const bn = box.attributes.normal.array, bc = new Float32Array(bn.length);   // shade the faces: the top in full light, the sides darker
+    for (let i = 0; i < bn.length; i += 3) { const sh = bn[i + 1] > 0.5 ? 1 : bn[i + 1] < -0.5 ? 0.4 : Math.abs(bn[i]) > 0.5 ? 0.8 : 0.65; bc[i] = bc[i + 1] = bc[i + 2] = sh; }
+    box.setAttribute("color", new THREE.BufferAttribute(bc, 3));
+    WK.boats = new THREE.InstancedMesh(box, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }), 240); WK.boats.instanceMatrix.setUsage(THREE.DynamicDrawUsage); WK.boats.frustumCulled = false; scene.add(WK.boats); }
+  const tMs = S.t, R = clamp(D * 1100, 600, 4500), trips = wkTrips(tMs), pos = WK.mesh.geometry.attributes.position.array, col = WK.mesh.geometry.attributes.color.array;
+  const y0 = 0.0007; let nq = 0, nb = 0; const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Vs = new THREE.Vector3(), Ps = new THREE.Vector3(), Cc = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
+  // a soft streak centred at (x, y) along the unit direction (ux, uy): len long, 2 hw wide (metres)
+  const quad = (x, y, ux, uy, len, hw, a, rgb = [1, 1, 1]) => { if (nq >= WK.cap || a < 0.02) return; const nx = -uy * hw, ny = ux * hw, o = nq * 12, l = len / 2, ax = ux, ay = uy;
+    const X = [x - ax * l + nx, x - ax * l - nx, x + ax * l + nx, x + ax * l - nx], Y = [y - ay * l + ny, y - ay * l - ny, y + ay * l + ny, y + ay * l - ny];
+    for (let j = 0; j < 4; j++) { pos[o + j * 3] = X[j] / 1000; pos[o + j * 3 + 1] = y0; pos[o + j * 3 + 2] = -Y[j] / 1000; const ci = (nq * 4 + j) * 4; col[ci] = rgb[0]; col[ci + 1] = rgb[1]; col[ci + 2] = rgb[2]; col[ci + 3] = a * (j % 2 ? 0.55 : 1); }
+    nq++; };
+  const placeBox = (x, y, ux, uy, L, B, Hh, z, color) => { if (nb >= 240) return; Q.setFromAxisAngle(up, Math.atan2(uy, ux)); Ps.set(x / 1000, z / 1000, -y / 1000); Vs.set(L / 1000, Hh / 1000, B / 1000);
+    M.compose(Ps, Q, Vs); WK.boats.setMatrixAt(nb, M); WK.boats.setColorAt(nb, Cc.setHex(color)); nb++; };
+  for (const q of trips) { const s0 = (tMs - q.t0) / 1000 * q.V; if (q.V > 0.3 && (s0 < 0 || s0 > q.path.len)) continue; if (q.V <= 0.3 && tMs < q.t0 - 60e3) continue;
+    const B0 = wkAt(q.path, Math.max(0, s0)); if (!B0 || Math.hypot(B0.x - cx, B0.y - cy) > R) continue;
+    const b = BOAT[q.k] || BOAT.other, L = q.L || b.L, nx = -B0.uy, ny = B0.ux, lane = q.lane * B0.w, bx = B0.x + nx * lane, by = B0.y + ny * lane;
+    // the hull, the cabin, a barge ahead of a tug
+    placeBox(bx, by, B0.ux, B0.uy, L, b.B, b.fb, 0, b.col);
+    if (b.deck) placeBox(bx - B0.ux * L * 0.08, by - B0.uy * L * 0.08, B0.ux, B0.uy, L * 0.6, b.B * 0.8, b.deck, b.fb, b.top);
+    if (b.barge) placeBox(bx + B0.ux * (L / 2 + b.barge / 2 + 1), by + B0.uy * (L / 2 + b.barge / 2 + 1), B0.ux, B0.uy, b.barge, 10.5, 1.0, 0, 0x6b5b45);
+    if (q.V <= 0.3) continue;
+    const V = q.V, T = wakeT(V), lt = 2 * Math.PI * V * V / 9.81, ld = lt * Math.cos(35.26 * Math.PI / 180) ** 2, dTau = Math.max(lt / V * 0.5, 0.6), tau = wakeTau(V, B0.w), h = riverDepthAt(bx / 1000, by / 1000) || 6;
+    // the white water astern
+    for (let k = 1; k <= 6; k++) { const E = wkAt(q.path, s0 - L / 2 - k * L * 0.35); if (!E) break; quad(E.x + nx * lane, E.y + ny * lane, E.ux, E.uy, L * 0.4, b.B * 0.22 * (1 - k / 8), clamp(V / 4, 0.2, 0.6) * 0.5 * (1 - k / 7)); }
+    // the wedge: crests emitted τ seconds ago lie ℓ = V τ tan 19.47° to each side of where the boat was
+    const kMax = Math.min(140, Math.floor(Math.min(s0, 600) / (V * dTau)));
+    for (let k = 1; k <= kMax; k++) { const ta = k * dTau, E = wkAt(q.path, s0 - V * ta - L * 0.3); if (!E) break; const enx = -E.uy, eny = E.ux, w2 = E.w / 2, ell = V * ta * 0.3536;
+      const a0 = wakeH(q.k, V, ell, h) * Math.exp(-ta / WAKE_TAU); if (a0 < 0.0015) break;
+      for (const sg of [1, -1]) { let yl = q.lane * E.w + sg * ell, nr = 0, dir = sg;
+        while (Math.abs(yl) > w2 && nr < 12) { yl = Math.sign(yl) * 2 * w2 - yl; dir = -dir; nr++; }       // the walls fold the crest back
+        const a = a0 * WAKE_KR ** nr, px = E.x + enx * yl, py = E.y + eny * yl;
+        if (maskAt(px / 1000, py / 1000) !== RIVER_CLS) continue;
+        // the divergent crest runs at 54.7° to the track, swept back
+        const c1 = Math.cos(54.7 * Math.PI / 180), s1 = Math.sin(54.7 * Math.PI / 180), ax = -E.ux * c1 + enx * dir * s1, ay = -E.uy * c1 + eny * dir * s1;
+        const al = clamp(a / 0.025, 0, 1) * 0.7, len = Math.max(ld * 1.4, 1.5);
+        quad(px, py, ax, ay, len, clamp(a * 6, 0.15, 0.5), al, nr ? [0.85, 0.95, 1] : [1, 1, 1]); }
+      // the transverse crests close behind the boat
+      if (k % 2 === 0 && ta < 40) quad(E.x + enx * q.lane * E.w, E.y + eny * q.lane * E.w, enx, eny, Math.min(ell * 1.6, E.w * 0.9), 0.2, clamp(a0 / 0.025, 0, 1) * 0.25); } }
+  for (let i = nq; i < Math.min(WK.lastN || 0, WK.cap); i++) for (let j = 0; j < 4; j++) col[(i * 4 + j) * 4 + 3] = 0;
+  WK.lastN = nq; WK.mesh.geometry.attributes.position.needsUpdate = true; WK.mesh.geometry.attributes.color.needsUpdate = true; WK.mesh.geometry.setDrawRange(0, nq * 6); WK.mesh.visible = nq > 0;
+  WK.boats.count = nb; WK.boats.instanceMatrix.needsUpdate = true; if (WK.boats.instanceColor) WK.boats.instanceColor.needsUpdate = true; WK.boats.visible = nb > 0;
 }
 function conditions(tMs, xk, yk, pure) {   // pure: no side effects on the SWAN texture/uniforms (launch ratings)
   const c = { wind: 0, dir: 0, gust: null, airC: null, sky: 0, pop: 0, systems: [], dRef: 1000, waterC: null, src: [] };
@@ -4135,6 +4420,7 @@ $("#buoys").checked = BUOY.on; $("#buoys").onchange = (e) => { BUOY.on = e.targe
 $("#course").checked = COURSE.on; $("#course").onchange = (e) => setCourse(e.target.checked);
 $("#windbtn").onclick = () => setWindOn(!WL.on);
 $("#rflow").onchange = (e) => { RF.on = e.target.checked; };
+$("#rwake").onchange = (e) => { WK.on = e.target.checked; };
 $("#rdrone").onchange = (e) => { DRONE.on = e.target.checked; };
 $("#toggle").onclick = () => { const c = $("#controls"); c.dataset.open = c.hidden ? "1" : "0"; applyPanel(); };
 function applyPanel() { const narrow = matchMedia("(max-width: 760px)").matches, c = $("#controls"), open = c.dataset.open ? c.dataset.open === "1" : false; c.hidden = !open; $("#toggle").setAttribute("aria-expanded", String(open)); $("#toggle").textContent = open ? "Hide settings" : "Settings"; }
@@ -4365,7 +4651,7 @@ function tick() {
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
   navStep(dt);
-  windStep(dt); riverFlowStep(dt);
+  windStep(dt); riverFlowStep(dt); wakeStep();
   if (JET.on && JET.d && MM.base && now - (JET.last || 0) > 30) drawJetMap();
   // board: on the track at this time (history or replay), else under the camera target
   if (S.rideOwn && S.playing && DATA.track) { const t0 = new Date(DATA.track.start).getTime(), L = DATA.track.pts[DATA.track.pts.length - 1][0] * 1000;
@@ -4509,6 +4795,7 @@ const PADDLE = {
   cold: [10.0, 40 * 5 / 9 - 160 / 9],   // °C: water under 50 °F = caution (dress for immersion), under 40 °F = stay off (the user's call, 2026-10-31)
   rain: [0.5, 8.0],         // mm/h at the spot from radar: rain = caution; 8+ (~40 dBZ, a thunderstorm core) = stay off
   pop: 50,                  // % chance of showers or storms in the forecast hour: caution
+  wake: [0.09, 0.2, 2],     // m, the river's boat wakes (a kind that passes at least hourly): 0.3 ft caution; 0.65 ft passing 2+ an hour, stay off (proposed)
 };
 const PADDLE_TXT = ["Go", "Caution", "Stay off"];
 function paddleStatus(C, rr) {
@@ -4528,6 +4815,10 @@ function paddleStatus(C, rr) {
   if (C.river) { const r = C.river;
     if (r.cso.state === "open") add(2, `sewer overflow on this reach now (MWRD)`); else if (r.cso.state === "recent") add(2, `sewer overflow ended ${Math.round((S.t - r.cso.ended) / 3600e3)} h ago: off limits 48 h`);
     if (r.reversal) add(2, r.reach && r.reach.id === "lock" ? "storm reversal: the lock is open to the lake, the river runs out" : "storm reversal: the river runs to the lake");
+    const wk = r.wakes; if (wk) { const nb = `${Math.round(wk.perH)} boats an hour${wk.gap < wk.settle ? ": the water never settles" : ""}`;
+      if (wk.reg) add(wk.reg.H >= PADDLE.wake[1] && wk.reg.n >= PADDLE.wake[2] ? 2 : wk.reg.H >= PADDLE.wake[0] ? 1 : 0, `boat wakes ${ft(wk.reg.H)} ft, ${nb}`);
+      if (wk.occ && wk.occ.nBig >= 1 && wk.occ.Hbig >= PADDLE.wake[1]) add(1, `a ${BOAT[wk.occ.k].name.toLowerCase()} at speed every ~${Math.round(60 / wk.occ.nBig)} min: ${ft(wk.occ.Hbig)} ft wakes`);
+      if (wk.sea >= PADDLE.wake[0]) add(1, `confused water: ${ft(wk.sea)} ft of wakes bouncing off the walls`); }
     if (r.current && r.current.spd >= CURRENT_CAUTION) add(1, `current ${(r.current.spd * MPH).toFixed(1)} mph → ${compass(r.current.toDeg)}`);
     if (r.reach && r.reach.id === "lock" && r.lockOpen === false) add(1, "the lock is closed for the season (Nov 15 - Apr 15): no way to the lake");
     if (C.pop >= 70 && r.cso.state === "none") add(1, `${C.pop}% chance of rain: overflow risk after heavy rain`); }
@@ -4649,7 +4940,8 @@ function updateHud(rr, tp) {
   if (live && spc && spc.cat && (!spc.expire || new Date(spc.expire).getTime() > tRef) && (!spc.valid || new Date(spc.valid).getTime() < tRef + 24 * 3600e3))
     wl += pill("", spc.cat === "TSTM" ? "Thunder possible" : `Severe: ${spc.label.replace(/ risk$/i, "")} ${spc.level}/5`, "spc", `background:${spc.color || "#f6f67f"}`);
   if (C.river) { const r = C.river;   // the river's pills: stage, chop, and the two red flags
-    ww = (r.stage_ft != null ? pill("", `<i>Stage</i> ${sgnFt(r.stage_ft)} ft CCD`) : "") + pill("", hs > 0.01 ? `<i>Chop</i> ${ft(hs)} ft · ${tpk.toFixed(1)} s` : "<i>Chop</i> none") + ww;
+    ww = (r.stage_ft != null ? pill("", `<i>Stage</i> ${sgnFt(r.stage_ft)} ft CCD`) : "") + pill("", hs > 0.01 ? `<i>Chop</i> ${ft(hs)} ft · ${tpk.toFixed(1)} s` : "<i>Chop</i> none") +
+      (r.wakes && r.wakes.reg ? pill("", `<i>Wakes</i> ${ft(r.wakes.reg.H)} ft · ~${Math.round(r.wakes.perH)}/h`) : "") + ww;
     if (r.cso.state === "open") ww += pill("", "Sewer overflow now", "spc", "background:#f2584a;color:#fff"); else if (r.cso.state === "recent") ww += pill("", `Overflow ended ${Math.round((S.t - r.cso.ended) / 3600e3)} h ago`, "spc", "background:#f2584a;color:#fff");
     if (r.reversal) ww += pill("", "Storm reversal", "spc", "background:#ffb347;color:#3a2400"); }
   $("#wx-air").innerHTML = wl; $("#wx-water").innerHTML = ww;
@@ -4687,6 +4979,13 @@ function updateHud(rr, tp) {
     if (r.stage_ft != null) water.push(["Stage", `${sgnFt(r.stage_ft)} ft CCD${tr != null ? ` · ${sgnFt(tr)} ft / 24 h` : ""}`]);
     if (cur) water.push(["Current", `${(cur.spd * MPH).toFixed(2)} mph → ${compass(cur.toDeg)}${cur.reversal ? " · reversal" : ""}`]);
     water.push(["Chop", hs > 0.01 ? `${ft(hs)} ft ${compass(C.dir)} · ${tpk.toFixed(1)} s` : "none"]);
+    const wk = r.wakes; if (wk) { const nm = (q) => BOAT[q.k].name.toLowerCase(), mins = (s) => s >= 90 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`;
+      water.push(["Wakes", wk.reg ? `${ft(wk.reg.H)} ft ${nm(wk.reg)}s${wk.occ && wk.occ.Hbig > wk.reg.H * 1.3 ? ` · ${ft(wk.occ.Hbig)} ft ${wk.occ.k === "police" ? "patrol" : nm(wk.occ)} at speed` : ""}` : wk.perH > 0.05 ? `rare · ${wk.occ ? `${ft(wk.occ.Hbig)} ft ${nm(wk.occ)}` : "small"}` : "no boats now"]);
+      water.push(["Boats", wk.perH >= 0.5 ? `~${Math.round(wk.perH)} an hour · ${wk.gap < wk.settle ? "never settles" : `settles in ${mins(wk.settle)}`}` : wk.perH > 0.05 ? "under 1 an hour" : "none expected"]);
+      if (wk.sea > 0.006 || wk.last) water.push(["Wake now", `${wk.sea > 0.006 ? `${ft(wk.sea)} ft left` : "settled"}${wk.last ? ` · ${BOAT[wk.last.q.k].name.toLowerCase()}${wk.last.q.ais ? ` ${wk.last.q.ais.name || ""}` : ""} ${Math.max(1, Math.round((S.t - wk.last.t) / 60e3))} min ago` : ""}`]);
+      if (wk.next) water.push(["Next boat", `~${fmtHM.format(new Date(wk.next.t))} · ${BOAT[wk.next.q.k].name.toLowerCase()}${wk.next.q.ais ? ` ${wk.next.q.ais.name || ""} (AIS)` : " (model)"}`]);
+      if (wk.ais) water.push(["AIS", wk.ais.length ? `${wk.ais.length} on the river · ${wk.ais.slice(0, 3).map((v) => v.name || v.mmsi).join(", ")}` : "none heard on the river"]);
+      if (wk.convoy) water.push(["Boat run", wk.convoy === "in" ? "the fall run up to the yards today" : "the spring run out to the lake today"]); }
     water.push(["Fetch", `${r.fetchM >= 1000 ? `${(r.fetchM / 1000).toFixed(1)} km` : `${Math.round(r.fetchM)} m`} up the ${compass(C.dir)} wind`]);
     wind.push(["Open water", `${mph(r.openWind)} mph ${compass(C.dir)}`]);
     wind.push(["Canyon", `×${r.k.toFixed(2)}${r.ang != null ? ` · wind ${Math.round(r.ang)}° off the reach` : ""}`]); }
@@ -4701,7 +5000,7 @@ function updateHud(rr, tp) {
   const RI = { Temp: "M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0zM12 9v8", Depth: "M4 4v16M4 20h16M8 20v-4M12 20v-7M16 20v-10", Energy: "M13 2L4 14h7l-1 8 9-12h-7z", Offshore: "M3 17c3 0 3-2 6-2s3 2 6 2 3-2 6-2M3 11c3 0 3-2 6-2s3 2 6 2 3-2 6-2", Clarity: "M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM12 9v3l2 2", "Usual": "M4 18V8M8 18v-5M12 18V6M16 18v-8M20 18v-3" };
   const rows = (rs) => rs.map(([k, v]) => `<dt${k === "Usual" ? ' title="ERA5 reanalysis, this time of year"' : ""}>${RI[k] ? `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${RI[k]}"/></svg> ` : ""}${k}</dt><dd>${v}</dd>`).join("");
   // the card faces: Water shows energy, temperature, depth, clarity and the usual; Air the models and the usual (stations under "more")
-  const TOPW = C.river ? ["Stage", "Current", "Chop", "Fetch", "Depth"] : ["Energy", "Temp", "Depth", "Clarity", "Usual"], TOPA = C.river ? ["Open water", "Canyon", "GFS"] : ["GFS", "WeatherNext", "Usual"];
+  const TOPW = C.river ? ["Current", "Wakes", "Boats", "Chop", "Stage"] : ["Energy", "Temp", "Depth", "Clarity", "Usual"], TOPA = C.river ? ["Open water", "Canyon", "GFS"] : ["GFS", "WeatherNext", "Usual"];
   const allW = waves.concat(water), topW = allW.filter(([k]) => TOPW.includes(k)).sort((a, b) => TOPW.indexOf(a[0]) - TOPW.indexOf(b[0])), moreW = allW.filter((r) => !topW.includes(r)), topA = wind.filter(([k]) => TOPA.includes(k)), moreA = wind.filter((r) => !topA.includes(r));
   $("#ro-air-top").innerHTML = rows(topA); $("#ro-air").innerHTML = rows(moreA); $("#ro-water-top").innerHTML = rows(topW); $("#ro-water").innerHTML = rows(moreW);
   $("#readouts").innerHTML = grp("Your paddle", you); $("#readouts").hidden = !you.length;
@@ -5034,7 +5333,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     { const o = document.createElement("option"); o.id = "hist-wait"; o.disabled = true; o.textContent = "Loading historical periods…"; $("#hist-pick").appendChild(o); }
     const about = () => { $("#about").textContent = `${BATHY.ok ? `Lake bottom: ${BATHY.cov ? `lidar ${Math.round(BATHY.cov.lidar * 100)}%, NOAA ${Math.round(BATHY.cov.ncei * 100)}%` : "loaded"}${BATHY.survey ? `; Diversey Harbor and the lagoon from the ${(BATHY.survey.date || "2023").slice(0, 4)} USGS / Cook County survey` : ""}. ` : ""}${SWAN.domains.length ? `SWAN: ${SWAN.domains.map((d) => `${d.name} ${d.cases.length} cases${d.wind ? ` + ${d.wind.cases.length} wind` : ""}`).join(", ")}. ` : ""}${SRC.live ? `Radar: ${SRC.live.frames.length} KLOT frames. ` : ""}${MAP.ok ? `Map: ${MAP.buildings || 0} buildings${MAP.coarse ? ", simplified shoreline" : ""}. ` : ""}${GRIDS.src ? `Water: ${GRIDS.src}.` : ""} GPU: ${GPU.name || "unknown"}, ${GPU.tex} textures, ${GPU.fvec} uniform vectors.${GPU.errs.length ? ` Shader problem: ${GPU.errs.join(" | ")}` : ""}`; };
     await setBathy(DATA.bathy); await yieldUI();
-    try { DATA.river = parseJSON("river-data") || await split("river-data"); await setRiver(DATA.river); setRiverNow(parseJSON("rivernow-data")); } catch (e) { console.warn("river", e); }
+    try { DATA.river = parseJSON("river-data") || await split("river-data"); await setRiver(DATA.river); setRiverNow(parseJSON("rivernow-data")); setAis(parseJSON("ais-data")); } catch (e) { console.warn("river", e); }
     if (DATA.lake) { await buildMap(DATA.lake); buildContainers(); setLakeGrids(DATA.lake.lake); $("#attr").textContent = DATA.lake.osm_attribution ? `Map ${DATA.lake.osm_attribution}` : ""; }
     mmFit(); buildMinimap(); await yieldUI();
     await setEarth(DATA.earth); await yieldUI();
@@ -5067,6 +5366,6 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     } catch (e) { console.warn("background load", e); }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { RIVER, RN, DRONE, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
+window.__world = { RIVER, RN, DRONE, WK, BOAT, riverWakes, wkTrips, wakeH, wakeNet, wkRoutes, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
 })();
 </script>

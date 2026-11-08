@@ -268,6 +268,13 @@ def write_side(out, rel, obj):
 SPLIT = ("bathy-data", "swan-data", "funwave-data", "history-data", "chopspots-data", "enso-data", "wind-data", "jet-data", "river-data")   # funwave: one file per run
 
 
+def ais_block(d):
+    """app.ais for the page: the vessels heard and the usual speeds; the MMSI registry stays out of the page."""
+    if not d:
+        return None
+    return {k: v for k, v in d.items() if k != "fleet"}
+
+
 def merge_earth(lakefront, earth):
     """The fused satellite water temperature replaces GLSEA as the page's lake grid (it already holds GLSEA where the
     satellites saw nothing recent); the rest of earth.json goes to the page as is."""
@@ -283,7 +290,7 @@ def merge_earth(lakefront, earth):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
-    for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track", "levels", "earth", "wn3", "ortho", "enso", "wind", "jet", "river", "rivernow"):
+    for k in ("scene", "sup", "lakefront", "bathy", "swan", "validate", "track", "levels", "earth", "wn3", "ortho", "enso", "wind", "jet", "river", "rivernow", "ais"):
         ap.add_argument("--" + k)
     ap.add_argument("--learn", help="correction.json from the learn branch (experimental learned wave correction)")
     ap.add_argument("--scorecard", help="scorecard.json from the learn branch (forecast vs buoy by lead time)")
@@ -317,6 +324,7 @@ def main():
         "jet-data": load(a.jet),       # app.jet: GFS 250 hPa for the jet stream map, Chicago's quadrant, the gust study
         "river-data": load(a.river),   # app.river: the Chicago River's bed, walls, bridges, lock, buildings, reaches
         "rivernow-data": load(a.rivernow),   # app.river --now: the gages' week, MWRD overflow events, the lock's season (inline, small)
+        "ais-data": ais_block(load(a.ais)),  # app.ais: the boats heard on the river during the snapshot, and the usual speeds (inline, small)
     }
     generated = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     pages = [(a.out, a.start)] + [(x.split("=", 1)[0], x.split("=", 1)[1]) for x in a.also]
