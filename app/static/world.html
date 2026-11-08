@@ -528,7 +528,7 @@ body.compact #vsbox .vs { grid-template-columns: 92px 1fr; } body.compact #vsbox
     </section>
     <section id="sec-sat">
       <h2>Satellite</h2>
-      <div class="seg" role="group" aria-label="Satellite overlay" id="sat-seg" hidden><button data-ov="natural" aria-pressed="true">None</button><button data-ov="s1" aria-pressed="false">Wind on the water</button><button data-ov="s2" aria-pressed="false">Water clarity</button><button data-ov="ortho" aria-pressed="false" title="Cook County's 2024 aerial photo over Diversey Harbor and the lagoon">Aerial 2024</button></div>
+      <div class="seg" role="group" aria-label="Satellite overlay" id="sat-seg" hidden><button data-ov="natural" aria-pressed="true">None</button><button data-ov="s1" aria-pressed="false">Wind on the water</button><button data-ov="s2" aria-pressed="false">Water clarity</button><button data-ov="ortho" aria-pressed="false" title="Cook County's 2025 aerial photo of the lakefront: Monroe Harbor, and North Ave to Belmont with the lagoons">Aerial 2025</button></div>
       <label class="check" title="Live mode: the cloud field seen by the GOES-19 satellite (within 45 min of its image) drawn beyond the radar's rain. Off: only the radar's clouds and the forecast sky cover."><input type="checkbox" id="goes"> GOES-19 clouds (live)</label>
       <p class="note" id="sat-note">One image at a time: each is a snapshot from that satellite's pass, and today's clouds, rain and lightning are hidden while it is shown.</p>
     </section>
@@ -1208,7 +1208,7 @@ void main(){
     vec3 base;
     float urban;
     if (inMap) { base = pow(texture2D(uMapCol, muv).rgb, vec3(2.2)) * 0.55; urban = 1.0;
-      if (uSatOn > 0.5 && uSatKind > 0.5) { vec2 f = (p - uSatMin) / uSatSize; if (f.x >= 0.0 && f.y >= 0.0 && f.x <= 1.0 && f.y <= 1.0) base = pow(texture2D(uSpotTex, f).rgb, vec3(2.2)) * 0.55; } }
+      if (uSatOn > 0.5 && uSatKind > 0.5) { vec2 f = (p - uSatMin) / uSatSize; if (f.x >= 0.0 && f.y >= 0.0 && f.x <= 1.0 && f.y <= 1.0) { vec4 o = texture2D(uSpotTex, f); if (o.a > 0.5) base = pow(o.rgb, vec3(2.2)) * 0.55; } } }
     else { float n = vnoise(p * 0.9) * 0.6 + vnoise(p * 4.0) * 0.4; base = uLand * (0.75 + 0.5 * n);
       urban = smoothstep(46.0, 18.0, length((p - vec2(-14.0, 2.0)) * vec2(1.0, 0.8)));
       urban = max(urban, smoothstep(14.0, 4.0, length(p - vec2(-16.0, -28.0))) * 0.7) * (0.75 + 0.25 * vnoise(p * 1.7));
@@ -2038,20 +2038,54 @@ async function setEarth(E) {
         const t = new THREE.DataTexture(d, g.nlon, g.nlat, THREE.RedFormat, THREE.UnsignedByteType); t.minFilter = t.magFilter = THREE.LinearFilter; t.needsUpdate = true;
         const [ax, ay] = ll(g.lat0, g.lon0), [bx, by] = ll(g.lat1, g.lon1); EARTH.goes = { tex: t };
         U.uGoesTex.value = t; U.uGoesMin.value.set(ax, ay); U.uGoesSize.value.set(bx - ax, by - ay); } } } catch (e) { console.warn("goes", e); }
-  // the aerial photo (ortho-data: Cook County's orthophoto over the harbour and the lagoon), a JPEG beside the page
-  const O = (parseJSON("ortho-data") || [])[0];
-  if (O && O.src && !EARTH.ortho) { try { const t = await new THREE.TextureLoader().loadAsync(O.src); t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); t.needsUpdate = true;
-      const [ax, ay] = ll(O.lat0, O.lon0), [bx, by] = ll(O.lat1, O.lon1); EARTH.ortho = { tex: t, min: [ax, ay], size: [bx - ax, by - ay], meta: O }; } catch (e) { console.warn("ortho", e); } }
+  orthoInit(parseJSON("ortho-data"));   // the aerial photo: tiles beside the page, loaded only while it is shown
   $("#sat-seg").hidden = !EARTH.s1 && !EARTH.s2 && !EARTH.ortho;
   for (const k of ["s1", "s2", "ortho"]) { const b = document.querySelector(`[data-ov="${k}"]`); if (b) b.disabled = !EARTH[k]; }
   { const parts = []; if (E.s1) parts.push(`${E.s1.label} radar roughness`); if (E.s2) parts.push(`${E.s2.label} clarity`); if (E.goes && E.goes.time) parts.push(`GOES-19 clouds ${E.goes.time.slice(5, 16).replace("T", " ")} UTC`);
-    $("#sat-note").textContent = (parts.length ? `Passes: ${parts.join(" · ")}. ` : "") + (EARTH.ortho ? `Aerial: ${EARTH.ortho.meta.source}. ` : "") + "One image at a time: each is a snapshot from that satellite's pass, and today's clouds, rain and lightning are hidden while it is shown."; }
+    $("#sat-note").textContent = (parts.length ? `Passes: ${parts.join(" · ")}. ` : "") + (EARTH.ortho ? `Aerial: ${EARTH.ortho.meta.source}, around the view. ` : "") + "One image at a time: each is a snapshot from that satellite's pass, and today's clouds, rain and lightning are hidden while it is shown."; }
   setSat();
 }
 const SAT_OVS = ["s1", "s2", "ortho", "enso"];
 function setSat() { const L = SAT_OVS.includes(S.ov) && (S.ov === "enso" ? ENSO.layer() : EARTH[S.ov]); $("#enso-seg").hidden = S.ov !== "enso"; U.uSatOn.value = L ? 1 : 0; U.uSatKind.value = L && S.ov === "ortho" ? 1 : 0;
   U.uSpotTex.value = L ? L.tex : (SPOTS.tex || blank2D);   // the satellite layers share the chop spots' texture slot
-  if (L) { U.uSatMin.value.set(...L.min); U.uSatSize.value.set(...L.size); } }
+  if (L) { U.uSatMin.value.set(...L.min); U.uSatSize.value.set(...L.size); }
+  if (S.ov === "ortho") orthoUpdate(); }
+// the aerial photo (ortho-data: Cook County's orthophoto in 1 km tiles, JPEGs beside the page). Nothing loads until
+// the Aerial overlay is on; then the tiles under a 1.2 km window around the view's centre are drawn into one canvas that
+// the shader drapes like a satellite layer (transparent where no tile is). The window follows the view; tiles that
+// leave it are dropped, so at most ~4 decoded photos are held.
+const ORTHO = { tiles: [], img: new Map(), cv: null, c: null, busy: false, again: false }, ORTHO_WIN = 1.2;   // km
+function orthoInit(list) {
+  ORTHO.tiles = (Array.isArray(list) ? list : []).filter((t) => t && t.src).map((t) => { const [ax, ay] = ll(t.lat0, t.lon0), [bx, by] = ll(t.lat1, t.lon1);
+    return { ...t, x0: ax, y0: ay, x1: bx, y1: by }; });
+  if (!ORTHO.tiles.length || EARTH.ortho) return;
+  const n = (matchMedia("(pointer: coarse)").matches || renderer.capabilities.maxTextureSize < 8192) ? 2048 : 4096;   // ~0.6 m / ~0.3 m
+  const cv = document.createElement("canvas"); cv.width = cv.height = n; ORTHO.cv = cv;
+  const tex = new THREE.CanvasTexture(cv); tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const M = ORTHO.tiles[0]; EARTH.ortho = { tex, min: [0, 0], size: [ORTHO_WIN, ORTHO_WIN], meta: { source: M.source, year: M.year, n: ORTHO.tiles.length, px: n } };
+  setInterval(() => { if (S.ov === "ortho") orthoUpdate(); }, 1000);
+}
+async function orthoUpdate(force) {
+  const L = EARTH.ortho; if (!L || S.ov !== "ortho") return;
+  if (ORTHO.busy) { ORTHO.again = true; return; }
+  const t = controls.target, fx = t.x, fy = -t.z, c = ORTHO.c, q = ORTHO_WIN * 0.2;
+  if (!force && c && Math.abs(fx - c[0]) < q && Math.abs(fy - c[1]) < q) return;
+  ORTHO.busy = true;
+  try {
+    const h = ORTHO_WIN / 2, x0 = fx - h, y0 = fy - h, x1 = fx + h, y1 = fy + h;
+    const need = ORTHO.tiles.filter((m) => m.x1 > x0 && m.x0 < x1 && m.y1 > y0 && m.y0 < y1);
+    for (const k of [...ORTHO.img.keys()]) if (!need.some((m) => m.src === k)) ORTHO.img.delete(k);
+    await Promise.all(need.map(async (m) => { if (ORTHO.img.has(m.src)) return; const im = new Image(); im.src = m.src;
+      try { await im.decode(); ORTHO.img.set(m.src, im); } catch (e) { console.warn("ortho", m.src, e); } }));
+    const cv = ORTHO.cv, g = cv.getContext("2d"), n = cv.width, s = n / ORTHO_WIN;
+    g.clearRect(0, 0, n, n); g.imageSmoothingQuality = "high";
+    for (const m of need) { const im = ORTHO.img.get(m.src); if (im) g.drawImage(im, (m.x0 - x0) * s, (y1 - m.y1) * s, (m.x1 - m.x0) * s, (m.y1 - m.y0) * s); }
+    L.min = [x0, y0]; L.size = [ORTHO_WIN, ORTHO_WIN]; L.tex.needsUpdate = true; ORTHO.c = [fx, fy];
+    if (S.ov === "ortho") { U.uSatMin.value.set(x0, y0); U.uSatSize.value.set(ORTHO_WIN, ORTHO_WIN); }
+  } finally { ORTHO.busy = false; }
+  if (ORTHO.again) { ORTHO.again = false; orthoUpdate(); }
+}
 function satAt(L, xk, yk) { if (!L) return null; const g = L.g, fx = (xk - L.min[0]) / L.size[0] * (g.nlon - 1), fy = (yk - L.min[1]) / L.size[1] * (g.nlat - 1);
   const i = Math.round(fx), j = Math.round(fy); if (i < 0 || j < 0 || i >= g.nlon || j >= g.nlat) return null;
   // nearest valid cell within ~150 m (the shore cells are masked)
@@ -4522,7 +4556,7 @@ function renderLegend() {
       <div class="tk">${ice ? "<span>20 pts less</span><span></span><span>as usual</span><span></span><span>20 pts more</span>" : "<span>0.5 °C colder</span><span></span><span>as usual</span><span></span><span>0.5 °C warmer</span>"}</div>
       <span class="lead">${ice ? `Mean Jan-Mar ice cover in ${k === "strong" ? "strong El Niño winters (1982-83, 1991-92, 1997-98, 2015-16, 2023-24)" : "El Niño winters"} minus all winters ${C ? `${C.first}-${C.last + 1}` : ""}, in percentage points: orange = less ice than usual (open water, waves all winter), white = more. Off Chicago the strong events ran about 17 points below a usual 24%.` : "December lake surface temperature in El Niño winters minus all winters (GLSEA, 1995-2023): red = warmer."}</span>
       <span>GLERL gridded ice (1.4 km) and GLSEA, weekly samples; ${ENSO.d && ENSO.d.indices ? `now: ${ENSO.d.indices.status}` : ""}. The weather of the moment is hidden while it is shown.</span>`; }
-  else if (S.ov === "ortho") { const M = EARTH.ortho && EARTH.ortho.meta; h = `<b>Aerial photo</b><span class="lead">${M ? `${M.source} (${M.year}, 6 in / 0.15 m), drawn over Diversey Harbor, the Fullerton channel and the South Lagoon at about 0.55 m per pixel.` : "No aerial photo in this page."}</span><span>The photo is one day's snapshot: today's clouds, rain and lightning are hidden while it is shown; the water's surface is still drawn live over it.</span>`; }
+  else if (S.ov === "ortho") { const M = EARTH.ortho && EARTH.ortho.meta; h = `<b>Aerial photo</b><span class="lead">${M ? `${M.source} (${M.year}, 6 in / 0.15 m), in ${M.n} tiles over Monroe Harbor and the shore from North Ave to Belmont with the lagoons, drawn ${ORTHO_WIN} km around the view at about ${(ORTHO_WIN * 1000 / M.px).toFixed(1)} m per pixel. Pan to move it.` : "No aerial photo in this page."}</span><span>The photo is one day's snapshot: today's clouds, rain and lightning are hidden while it is shown; the water's surface is still drawn live over it.</span>`; }
   else if (S.ov === "radar") { h = `<b>Radar reflectivity</b><div class="bar" style="background:linear-gradient(90deg,${DBZ_STOPS.slice(0, 13).map(([, c]) => c).join(",")})"></div><div class="tk"><span>5</span><span>35</span><span>65 dBZ</span></div>`; }
   if (WL.on) h += (h ? '<i class="lsep"></i>' : "") + windLegend();
   if (!el.dataset.init) { el.dataset.init = "1"; el.classList.add("min"); let tiny = false; try { tiny = localStorage.getItem("lakeview-legend") === "tiny"; } catch (e) {} el.classList.toggle("tiny", tiny);
@@ -5366,6 +5400,6 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     } catch (e) { console.warn("background load", e); }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { RIVER, RN, DRONE, WK, BOAT, riverWakes, wkTrips, wakeH, wakeNet, wkRoutes, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES };
+window.__world = { RIVER, RN, DRONE, WK, BOAT, riverWakes, wkTrips, wakeH, wakeNet, wkRoutes, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES, ORTHO, EARTH };
 })();
 </script>

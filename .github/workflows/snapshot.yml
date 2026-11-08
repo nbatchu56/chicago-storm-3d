@@ -130,16 +130,17 @@ jobs:
           pip install -q websockets
           git show origin/snapshot:ais.json > "$RUNNER_TEMP/prev_ais.json" 2>/dev/null || rm -f "$RUNNER_TEMP/prev_ais.json"
           python -m app.ais --out "$OUT/ais.json" --seconds 240 --prev "$RUNNER_TEMP/prev_ais.json"
-      - name: Aerial photo of Diversey Harbor and the lagoon (Cook County's orthophoto; the last snapshot's copy is reused for a month)
+      - name: Aerial photo tiles of the lakefront (Cook County's 2025 orthophoto; the last snapshot's tiles are reused for a month)
         continue-on-error: true
-        timeout-minutes: 6
+        timeout-minutes: 15
         env:
           OUT: ${{ runner.temp }}/storm
         run: |
           git fetch -q --depth 1 origin snapshot 2>/dev/null || true
           git show origin/snapshot:ortho.json > "$RUNNER_TEMP/prev_ortho.json" 2>/dev/null || true
-          git show origin/snapshot:data/ortho/diversey.jpg > "$RUNNER_TEMP/prev_ortho.jpg" 2>/dev/null || true
-          python -m app.ortho --out "$OUT/data/ortho/diversey.jpg" --meta "$OUT/ortho.json" --prev "$RUNNER_TEMP/prev_ortho.json" --prev-image "$RUNNER_TEMP/prev_ortho.jpg"
+          mkdir -p "$RUNNER_TEMP/prev_ortho"
+          for p in $(git ls-tree -r --name-only origin/snapshot data/ortho/ 2>/dev/null); do git show "origin/snapshot:$p" > "$RUNNER_TEMP/prev_ortho/$(basename "$p")"; done
+          python -m app.ortho --out-dir "$OUT/data/ortho" --meta "$OUT/ortho.json" --prev "$RUNNER_TEMP/prev_ortho.json" --prev-dir "$RUNNER_TEMP/prev_ortho"
       - name: Build the LakeView page
         continue-on-error: true
         env:
