@@ -3874,6 +3874,7 @@ const KEYMAP = { KeyW: "fwd", ArrowUp: "fwd", KeyS: "back", ArrowDown: "back", K
 const typing = (e) => /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || "") && e.target.type !== "range" && e.target.type !== "checkbox";
 window.addEventListener("keydown", (e) => {
   if (S.kiosk && e.code === "Space" && !typing(e)) { e.preventDefault(); setPlaying(!S.playing); return; }   // the kiosk: space plays / pauses
+  if (S.kiosk && e.code === "KeyV" && !typing(e)) { autoSet(!AUTO.on); return; }   // V: the auto view or the fixed one
   if (S.kiosk || typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
   const a = KEYMAP[e.code];
   if (a) { NAV.keys.add(a); NAV.shift = e.shiftKey; e.preventDefault(); hideHint(); return; }
@@ -3936,7 +3937,7 @@ function navStep(dt) {
     P.x = clamp(P.x, LB.x0 - 2, LB.x1 + 3); P.y = clamp(P.y, LB.y0 - 2, LB.y1 + 2);
     return;
   }
-  if (camera.fov !== 50) { camera.fov = 50; camera.updateProjectionMatrix(); }
+  if (!AUTO.on && camera.fov !== 50) { camera.fov = 50; camera.updateProjectionMatrix(); }
   if (!K.size) return;
   camTween = null; if (S.view === "ride") S.view = "free";
   const v = viewState(), t = controls.target, c = camera.position, sp = Math.max(0.03, v.dist * 0.7) * fast * dt, h = v.hdg * Math.PI / 180;
@@ -4586,7 +4587,8 @@ function kioskPerf(dt, el, total) {
   KPERF.since += dt; const t = performance.now();
   if (KPERF.since > 2 && KPERF.avg > 24 && KPERF.pr > 0.6 && t - KPERF.last > 3000) { KPERF.pr = Math.max(0.6, KPERF.pr * 0.8); KPERF.last = t; KPERF.since = 0;
     renderer.setPixelRatio(KPERF.pr); resize(); }
-  const f = $("#kfade"); if (f) { const edge = Math.min(el, total - el), o = clamp(1 - edge / 450, 0, 1); if (Math.abs(o - (+f.dataset.o || 0)) > 0.01) { f.style.opacity = o.toFixed(2); f.dataset.o = o; } }
+  const f = $("#kfade"); if (f) { let edge = Math.min(el, total - el); if (AUTO.on && AUTO.shot) { const e = performance.now() - AUTO.start; edge = Math.min(edge, e * 1.6, AUTO.shot.dur - e); }
+    const o = clamp(1 - edge / 450, 0, 1); if (Math.abs(o - (+f.dataset.o || 0)) > 0.01) { f.style.opacity = o.toFixed(2); f.dataset.o = o; } }
 }
 // ---------------------------------------------------------------- the kiosk's smooth clip: the light follows the clock every
 // frame and the scene's weather uniforms ease toward each new reading (~0.3 s) instead of stepping a few times a second
@@ -4689,7 +4691,7 @@ function tick() {
   if (EXPORT) S.t = EXPORT.t0 + (EXPORT.t1 - EXPORT.t0) * Math.min(EXPORT.i / Math.max(EXPORT.n - 1, 1), 1);   // the export holds the clock: a frame at a time, however long each takes
   S.t = clamp(S.t, t0, t1);
   if (camTween) { const k = Math.min((now - camTween.s) / camTween.d, 1), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; camera.position.lerpVectors(camTween.p0, camTween.p1, e); controls.target.lerpVectors(camTween.t0, camTween.t1, e); if (k >= 1) camTween = null; }
-  navStep(dt);
+  navStep(dt); if (AUTO.on) autoStep(now);
   windStep(dt); riverFlowStep(dt); wakeStep();
   if (JET.on && JET.d && MM.base && now - (JET.last || 0) > 30) drawJetMap();
   // board: on the track at this time (history or replay), else under the camera target
@@ -4713,7 +4715,7 @@ function tick() {
   if (paddle) {    // first person on the board: eye ~1.7 m above the moving water
     const h0 = WAVES.ready ? heightAtM((bx - WAVES.origin[0]) * 1000, -(by - WAVES.origin[1]) * 1000) / 1000 : 0, yr = NAV.pad.yaw * Math.PI / 180, pr = NAV.pad.pitch * Math.PI / 180;
     camera.position.set(bx, h0 + 0.0017, -by); camera.lookAt(bx + Math.sin(yr) * Math.cos(pr), h0 + 0.0017 + Math.sin(pr), -(by + Math.cos(yr) * Math.cos(pr)));
-  } else { controls.update(); droneStep(dt); clampView(); }
+  } else if (!AUTO.on) { controls.update(); droneStep(dt); clampView(); }   // the auto view placed the camera itself
   // conditions (a few times a second)
   if (now - lastCond > (S.kiosk ? 120 : 250)) { lastCond = now; const keep = S.kiosk && KS.ready ? ksSnap() : null;
     const cx = paddle ? bx : camera.position.y < 0.6 ? camera.position.x : tgt.x, cy = paddle ? by : camera.position.y < 0.6 ? -camera.position.z : -tgt.z;
@@ -5264,6 +5266,115 @@ function kiosk(k) {
 // the fixed view was set up for a landscape screen: a portrait phone sees a narrower slice, so it stands further back
 function kioskView(v) { const [la, lo, d, h, p] = v, [x, y] = ll(la, lo), asp = innerWidth / Math.max(innerHeight, 1);
   flyTo(x, y, d * (asp < 1 ? Math.min(2.2, 0.8 / asp) : 1), h, p, true); }
+// ---------------------------------------------------------------- the Outlook's auto view: a camera director for the water
+// Each loop is cut into shots picked from the conditions at that moment, to show the water as a stand-up paddler meets it:
+//   eye    a paddler's eye, 1.75 m over the board (its nose in frame), gliding ~1 m/s with a slow look around
+//   low    a drone ~12 m up, sliding sideways: crest lines, chop, the wall's reflection
+//   high   a drone 40-70 m up, circling slowly: sets of waves, wind lines, the shelter of an offshore wind
+// Where each shot sits (open lake 20-300 m out around the harbor mouth) and where it looks are scored on what makes the
+// water read: facing the incoming waves (crests stack into lines), the sun's glitter just beside a low sun, the water's
+// colour with the sun behind you in a high sun, the band where an offshore wind reaches the water (glassy lee, rough beyond),
+// downtown's lights on the water at night, the skyline in frame; and the near field must be open water.
+// kiosk.auto (start JSON) turns it on; V switches between it and the fixed view.
+const AUTO = { on: false, anchor: null, shot: null, start: 0, n: 0, cand: null };
+const AUTO_DOWNTOWN = [41.8885, -87.6245];
+function autoSpots() {   // open-lake points 20-300 m from shore within ~350 m of the anchor (computed once: the map doesn't move)
+  if (AUTO.cand) return AUTO.cand; const [ax, ay] = AUTO.anchor, out = [];
+  for (let dx = -0.35; dx <= 0.351; dx += 0.035) for (let dy = -0.35; dy <= 0.351; dy += 0.035) {
+    const x = ax + dx, y = ay + dy; if (Math.hypot(dx, dy) > 0.35 || maskAt(x, y) !== 1) continue;
+    const s = nearestShore(x, y); if (s.d < 0.02 || s.d > 0.3) continue; out.push({ x, y, d: s.d }); }
+  if (out.length) AUTO.cand = out; return out; }
+// share of open water along a ray from (x, y) heading hdg, between r0 and r1 km
+function autoWater(x, y, hdg, r0, r1) { const h = hdg * Math.PI / 180, sx = Math.sin(h), sy = Math.cos(h); let n = 0, w = 0;
+  for (let r = r0; r <= r1 + 1e-9; r += (r1 - r0) / 9) { n++; if (maskAt(x + sx * r, y + sy * r) !== 0) w++; } return w / n; }
+function autoScore(kind, p, hdg, C, sun, offshore) {
+  const near = kind === "eye" ? 0.12 : kind === "low" ? 0.2 : 0.35, far = near * 3;
+  const wn = autoWater(p.x, p.y, hdg, 0.005, near); if (wn < 0.95) return { s: -9 };
+  const wf = autoWater(p.x, p.y, hdg, near, far), why = [];
+  let s = 0.6 * wf;
+  const sys = (C.systems || []).slice().sort((a, b) => b.hs - a.hs)[0], hs = Math.sqrt((C.systems || []).reduce((a, q) => a + q.hs * q.hs, 0));
+  if (sys && hs > 0.04) { const a = angd(hdg, sys.dir) * Math.PI / 180, v = (0.7 * Math.max(0, Math.cos(a)) + 0.3 * Math.abs(Math.cos(a))) * Math.min(1, hs / 0.15);
+    s += 1.2 * v; if (v > 0.5) why.push("facing the incoming waves"); }
+  const el = sun ? sun.el : -10, dS = sun ? Math.abs(angd(hdg, sun.az)) : 180;
+  if (el > 0.5 && el < 40) { const g = Math.exp(-(((dS - 22) / 26) ** 2)) * clamp(el / 3, 0, 1) * clamp((40 - el) / 15, 0, 1);
+    s += 0.9 * g; if (g > 0.45) why.push("the sun's glitter on the water"); if (el < 10 && dS < 9) s -= 0.6; }
+  if (el >= 25) { const c = Math.exp(-(((dS - 130) / 40) ** 2)) * (hs < 0.25 ? 1 : 0.5); s += 0.6 * c; if (c > 0.6) why.push("the sun behind you, the water's colour"); }
+  // an offshore wind: the band where it reaches the water, from up high, looking downwind
+  if (offshore && kind !== "eye") { const k = clamp((C.wind - 3.5) / 4, 0, 1) * Math.max(0, Math.cos(angd(hdg, C.dir + 180) * Math.PI / 180));
+    s += 1.3 * k; if (k > 0.5) why.push("where the offshore wind reaches the water"); }
+  const [dx, dy] = ll(...AUTO_DOWNTOWN), dB = Math.abs(angd(hdg, Math.atan2(dx - p.x, dy - p.y) * 180 / Math.PI)), night = el < -4;
+  const town = Math.exp(-((dB / 25) ** 2)); s += (night ? 1.2 : 0.25) * town; if (night && town > 0.5) why.push("downtown's lights on the water");
+  return { s, why }; }
+function autoShotKinds(C) {   // which shots this hour deserves, with their share of the time
+  if (C.sun && C.sun.el < -6) return [["eye", 0.6], ["low", 0.4]];   // at night only low shots: the lights are on the horizon
+  const hs = Math.sqrt((C.systems || []).reduce((a, q) => a + q.hs * q.hs, 0)), offshore = autoOffshore(C);
+  if (hs > 0.6) return [["low", 0.4], ["high", 0.35], ["eye", 0.25]];
+  if (offshore && C.wind > 5) return [["eye", 0.4], ["high", 0.35], ["low", 0.25]];
+  if (hs < 0.12 && C.wind < 4) return [["eye", 0.6], ["low", 0.4]];
+  return [["eye", 0.45], ["low", 0.3], ["high", 0.25]]; }
+// the best place and heading for a shot; with `at` ({x, y, hdg}) only the heading, from that place, kept near the current one
+function autoPick(kind, C, sun, at) {
+  let best = null; const spots = at ? [at] : autoSpots(), offshore = autoOffshore(C);
+  for (const p of spots) { if (!at && kind === "eye" && p.d > 0.15) continue;
+    for (let h = 0; h < 360; h += 6) { const r = autoScore(kind, p, h, C, sun, offshore); if (r.s < -1) continue;
+      const s = r.s - (at ? 0.004 * Math.abs(angd(h, at.hdg)) : (kind === "eye" ? 0.6 * p.d : 0) + (AUTO.shot && AUTO.shot.kind === kind && Math.hypot(AUTO.shot.x - p.x, AUTO.shot.y - p.y) < 0.01 ? 0.3 : 0)
+        + (AUTO.shot ? 0.4 * Math.exp(-((angd(h, AUTO.shot.hdg) / 35) ** 2)) : 0));   // a new place and a new direction each shot
+      if (!best || s > best.s) best = { s, x: p.x, y: p.y, hdg: h, why: r.why }; } }
+  return best; }
+const autoOffshore = (C) => C.wind > 3.5 && rayFetchKm(AUTO.anchor[0], AUTO.anchor[1], C.dir) < 1;   // the wind comes off the land here
+const AUTO_LABEL = { eye: "Paddler's eye", low: "Low drone", high: "Drone" };
+function autoNext(now) {   // the next shot: kinds rotate through this hour's list; each lasts its share of a third of the loop
+  const C = COND; if (!C || !MAP.ok) return;
+  const kinds = autoShotKinds(C), [kind, share] = kinds[AUTO.n % kinds.length]; AUTO.n++;
+  const sun = C.sun || solar(new Date(S.t)), b = autoPick(kind, C, sun); if (!b) return;
+  const loop = (S.kiosk.loopSec || 15) * 1000, dur = clamp(loop * share * 1.2, 6000, 14000);
+  const alt = kind === "eye" ? 0.00175 : kind === "low" ? 0.012 : clamp(0.04 + 0.015 * (C.wind || 0) / 5, 0.04, 0.07);
+  AUTO.shot = { kind, x: b.x, y: b.y, px: b.x, py: b.y, hdg: b.hdg, tgt: b.hdg, alt, dur, side: AUTO.n % 2 ? 1 : -1,
+    pitch: autoPitch(kind, sun), aimAt: now, last: now };
+  AUTO.start = now; autoCaption(b.why);
+}
+// the angle down to what the shot is about: the water close by in daylight, the lights on the horizon at night
+const autoPitch = (kind, sun) => { const night = clamp((-(sun ? sun.el : 0) - 2) / 6, 0, 1);
+  return kind === "eye" ? -10 + 6 * night : kind === "low" ? -9 + 6 * night : -30; };
+function autoCaption(why) { const A = AUTO.shot, w = why[0] || (A.kind === "eye" ? "the water around you" : "the water off the harbor mouth");
+  if (w === A.why) return; A.why = w; const sub = $("#hud .sub"); if (sub) sub.textContent = `${S.kiosk.name} · ${AUTO_LABEL[A.kind]}: ${w}`; }
+// the cards and the timeline cover the bottom of the screen: each shot's subject goes in the middle of what's left, by
+// looking this much further down than the angle to the subject
+function autoLift(fov) { let t = innerHeight;
+  for (const id of ["#bar", "#cards", "#kstrip", "#timeline"]) { const el = $(id); if (!el || el.hidden) continue; const r = el.getBoundingClientRect();
+    if (r.height > 0 && r.top > innerHeight * 0.35 && r.top < t) t = r.top; }
+  const vis = t / Math.max(innerHeight, 1); return Math.atan((0.5 - vis / 2) * 2 * Math.tan(fov * Math.PI / 360)) * 180 / Math.PI; }
+function autoStep(now) {
+  if (!AUTO.shot || now - AUTO.start >= AUTO.shot.dur) autoNext(now);
+  const A = AUTO.shot; if (!A) return;
+  // the clip runs about an hour of forecast a second: the light and the wind change within a shot, so it re-aims every
+  // 0.7 s from where it is and turns toward the new heading at up to 10 deg/s
+  const dts = Math.min((now - A.last) / 1000, 0.1); A.last = now;
+  if (now - A.aimAt > 700 && COND) { A.aimAt = now; const C = COND, r = autoPick(A.kind, C, C.sun || solar(new Date(S.t)), { x: A.px, y: A.py, hdg: A.hdg }); if (r) { A.tgt = r.hdg; autoCaption(r.why); } }
+  { const d = angd(A.tgt, A.hdg), st = (RM ? 360 : A.kind === "eye" ? 10 : 6) * dts; A.hdg = (A.hdg + clamp(d, -st, st) + 360) % 360; }
+  if (COND && COND.sun) { const d = autoPitch(A.kind, COND.sun) - A.pitch, st = (RM ? 90 : 3) * dts; A.pitch += clamp(d, -st, st); }
+  const u = clamp((now - AUTO.start) / A.dur, 0, 1), m = RM ? 0 : 1, por = innerWidth < innerHeight;
+  const fov = (A.kind === "eye" ? 56 : 50) + (por ? 16 : 0); if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  if (A.lift == null || now - (A.liftAt || 0) > 2000) { A.lift = autoLift(fov); A.liftAt = now; }
+  const h = A.hdg * Math.PI / 180, fx = Math.sin(h), fy = Math.cos(h);
+  if (A.kind === "eye") {   // on the board: the paddle branch below places the eye over the moving water
+    const x = A.px + fx * 0.001 * dts * m, y = A.py + fy * 0.001 * dts * m;   // gliding ~1 m/s
+    if (maskAt(x, y) !== 0 && autoWater(x, y, A.hdg, 0.005, 0.03) > 0.99) { A.px = x; A.py = y; }   // never onto the wall
+    NAV.move = "paddle"; Object.assign(NAV.pad, { x: A.px, y: A.py, yaw: (A.hdg + m * 9 * Math.sin(u * Math.PI * 2 * 0.8) * A.side + 360) % 360, pitch: A.pitch - A.lift + m * 2 * Math.sin(u * Math.PI * 1.3) });
+    return; }
+  NAV.move = "fly";
+  if (A.kind === "low") {   // slide sideways ~1.5 m/s, rising a little
+    const s = (u - 0.5) * (A.dur / 1000) * 0.0015 * A.side * m, x = A.x + fy * s, y = A.y - fx * s, z = A.alt * (1 + 0.25 * u * m), pr = (A.pitch - A.lift) * Math.PI / 180;
+    camera.position.set(x, z, -y); camera.lookAt(x + fx * Math.cos(pr), z + Math.sin(pr), -(y + fy * Math.cos(pr))); return; }
+  // high: circle ~25 degrees around the point it looks at
+  const pr = -A.pitch * Math.PI / 180, R = A.alt / Math.tan(pr), cx = A.x + fx * R, cy = A.y + fy * R, a = h + (u - 0.5) * 0.44 * A.side * m;
+  const px = cx - Math.sin(a) * R, py = cy - Math.cos(a) * R, Rl = A.alt / Math.tan(pr + A.lift * Math.PI / 180);   // aim nearer, so the subject sits above the cards
+  camera.position.set(px, A.alt, -py); camera.lookAt(px + Math.sin(a) * Rl, 0, -(py + Math.cos(a) * Rl));
+}
+function autoSet(on) {
+  AUTO.on = !!on && !!S.kiosk; AUTO.shot = null;
+  if (!AUTO.on) { NAV.move = "fly"; if (camera.fov !== 50) { camera.fov = 50; camera.updateProjectionMatrix(); } if (S.kiosk && S.kiosk.view) kioskView(S.kiosk.view);
+    const sub = $("#hud .sub"); if (sub && S.kiosk) sub.textContent = S.kiosk.name; } }
 function kioskRefresh() {   // the build is old: ask for a new one, once per build (this only works for the page's owner, signed in to claude.ai)
   if (!REFRESH.fire || !DATA.generated) return;
   const gen = new Date(DATA.generated).getTime(), age = Date.now() - gen; let last = 0; try { last = +(localStorage.getItem("lakelocal-refresh") || 0); } catch (e) {}
@@ -5394,7 +5505,7 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     else if (st) { const i = SRC.hist.findIndex((h) => h.raw.label === st.label || (h.raw.window && h.raw.window.start.startsWith(st.label || "~")));
       if (i >= 0) { S.histIdx = i; $("#hist-pick").value = String(i); await ensureHist(i); setMode("history"); if (st.t) S.t = new Date(st.t).getTime(); }
       if (st.view) { const [la, lo, d, h, p] = st.view, [x, y] = ll(la, lo); flyTo(x, y, d, h, p, true); } }
-    if (st && st.kiosk) { kiosk(st.kiosk); if (st.view) kioskView(st.view); if (REFRESH.fire) kioskRefresh(); }
+    if (st && st.kiosk) { kiosk(st.kiosk); if (st.view) { kioskView(st.view); S.kiosk.view = st.view; AUTO.anchor = ll(st.view[0], st.view[1]); autoSet(st.kiosk.auto); } if (REFRESH.fire) kioskRefresh(); }
     // second stage, in the background
     try {
       try { DATA.jet = parseJSON("jet-data") || await split("jet-data"); setJet(DATA.jet); } catch (e) { console.warn("jet", e); }
@@ -5406,6 +5517,6 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     } catch (e) { console.warn("background load", e); }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { RIVER, RN, DRONE, WK, BOAT, riverWakes, wkTrips, wakeH, wakeNet, wkRoutes, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES, ORTHO, EARTH };
+window.__world = { RIVER, RN, DRONE, WK, BOAT, riverWakes, wkTrips, wakeH, wakeNet, wkRoutes, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES, ORTHO, EARTH, AUTO, autoSet, autoPick, autoShotKinds };
 })();
 </script>
