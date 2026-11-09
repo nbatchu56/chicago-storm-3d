@@ -2040,9 +2040,14 @@ async function setEarth(E) {
         U.uGoesTex.value = t; U.uGoesMin.value.set(ax, ay); U.uGoesSize.value.set(bx - ax, by - ay); } } } catch (e) { console.warn("goes", e); }
   orthoInit(parseJSON("ortho-data"));   // the aerial photo: tiles beside the page, loaded only while it is shown
   $("#sat-seg").hidden = !EARTH.s1 && !EARTH.s2 && !EARTH.ortho;
-  for (const k of ["s1", "s2", "ortho"]) { const b = document.querySelector(`[data-ov="${k}"]`); if (b) b.disabled = !EARTH[k]; }
-  { const parts = []; if (E.s1) parts.push(`${E.s1.label} radar roughness`); if (E.s2) parts.push(`${E.s2.label} clarity`); if (E.goes && E.goes.time) parts.push(`GOES-19 clouds ${E.goes.time.slice(5, 16).replace("T", " ")} UTC`);
-    $("#sat-note").textContent = (parts.length ? `Passes: ${parts.join(" · ")}. ` : "") + (EARTH.ortho ? `Aerial: ${EARTH.ortho.meta.source}, around the view. ` : "") + "One image at a time: each is a snapshot from that satellite's pass, and today's clouds, rain and lightning are hidden while it is shown."; }
+  // why an overlay is off: the snapshot's note for it (e.g. "s2: no clear Sentinel-2 water pixels in 30 days ...")
+  const why = (k) => { const n = (E.notes || []).find((x) => x.startsWith(k + ":")); return n ? n.slice(k.length + 1).trim() : "no data in this snapshot"; };
+  const OVN = { s1: "Wind on the water", s2: "Water clarity", ortho: "Aerial 2025" };
+  for (const k of ["s1", "s2", "ortho"]) { const b = document.querySelector(`[data-ov="${k}"]`); if (!b) continue; b.disabled = !EARTH[k];
+    if (k !== "ortho") b.title = EARTH[k] ? (E[k].label || "") : `${OVN[k]} unavailable: ${why(k)}`; }
+  { const parts = [], off = []; if (E.s1) parts.push(`${E.s1.label} radar roughness`); if (E.s2) parts.push(`${E.s2.label} clarity`);
+    for (const k of ["s1", "s2"]) if (!EARTH[k]) off.push(`${OVN[k]} is off: ${why(k)}.`); if (E.goes && E.goes.time) parts.push(`GOES-19 clouds ${E.goes.time.slice(5, 16).replace("T", " ")} UTC`);
+    $("#sat-note").textContent = (parts.length ? `Passes: ${parts.join(" · ")}. ` : "") + (off.length ? off.join(" ") + " " : "") + (EARTH.ortho ? `Aerial: ${EARTH.ortho.meta.source}, around the view. ` : "") + "One image at a time: each is a snapshot from that satellite's pass, and today's clouds, rain and lightning are hidden while it is shown."; }
   setSat();
 }
 const SAT_OVS = ["s1", "s2", "ortho", "enso"];
@@ -5026,7 +5031,8 @@ function updateHud(rr, tp) {
   if (C.waterC != null) { const d = live && NM.lake && NM.lake.mean_c != null ? (C.waterC - NM.lake.mean_c) * 1.8 : null;
     water.push(["Temp", `${Math.round(cToF(C.waterC))}°${d != null && Math.abs(d) >= 3 ? ` · ${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))}° usual` : ""}`]); }
   if (C.depth != null) water.push(["Depth", C.depth > 0 ? `${(C.depth * FT).toFixed(C.depth * FT < 10 ? 1 : 0)} ft` : "dry"]);
-  { const fnu = satAt(EARTH.s2, C.xk, C.yk); if (fnu != null && live) water.push(["Clarity", `${fnu.toFixed(1)} FNU · ${fnuWord(fnu).replace("slightly cloudy", "sl. cloudy")}`]); }
+  { const fnu = satAt(EARTH.s2, C.xk, C.yk); if (fnu != null && live) water.push(["Clarity", `${fnu.toFixed(1)} FNU · ${fnuWord(fnu).replace("slightly cloudy", "sl. cloudy")}`]);
+    else if (!EARTH.s2 && live) water.push(["Clarity", "— no clear satellite view lately"]); }
   if (tp && tp.inside) you.push(["Speed", `${(tp.v * MPH).toFixed(1)} mph ${compass(tp.hd)}${tp.hr ? ` · ${tp.hr} bpm` : ""}`]);
   // presentation rules for all of the above: speeds "N mph DIR · G N"; waves "N.N ft DIR · N.N s"; temperatures "N°" (F);
   // ranges "N–N"; a middle dot separates the parts of one reading

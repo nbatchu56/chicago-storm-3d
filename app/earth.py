@@ -332,17 +332,20 @@ def build_s1(ee, now, days=12):
     return out
 
 
-def build_s2(ee, now, days=10):
+def build_s2(ee, now, days=30):
+    # No scene-wide cloud cutoff: a granule is ~110 km across, so in a grey November it is often 80%+ cloudy while the
+    # lakefront is clear. Clouds are masked per pixel instead (scene class "water" and a low cloud probability), and the
+    # newest clear water pixel wins in each cell, so a mostly cloudy pass still updates whatever it saw.
     pt = ee.Geometry.Point([NORTH_AVE[1], NORTH_AVE[0]])
-    col = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED").filterBounds(pt).filterDate((now - dt.timedelta(days=days)).isoformat(), now.isoformat()) \
-        .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 80))
+    col = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED").filterBounds(pt).filterDate((now - dt.timedelta(days=days)).isoformat(), now.isoformat())
 
     def f(img):
         h = ee.Image.constant(ee.Number(img.date().millis()).divide(3.6e6)).toFloat()
         # water leaves almost nothing at 1.6 um: what the SWIR band still sees over water is glint/haze the
         # atmospheric correction left, taken off the red band too
         r = img.select("B4").subtract(img.select("B11")).divide(10000).max(0)
-        return r.rename("r").addBands(h.rename("h")).updateMask(img.select("SCL").eq(6)).toFloat()
+        clear = img.select("SCL").eq(6).And(img.select("MSK_CLDPRB").lt(20))
+        return r.rename("r").addBands(h.rename("h")).updateMask(clear).toFloat()
 
     n = col.size().getInfo()
     if not n:
@@ -353,11 +356,13 @@ def build_s2(ee, now, days=10):
     ok = (g["r"] >= 0) & (g["h"] > 1e5)
     fnu = np.where(ok, nechad_fnu(g["r"]), np.nan)
     if not np.isfinite(fnu).any():
-        raise RuntimeError("no clear Sentinel-2 water pixels")
+        raise RuntimeError(f"no clear Sentinel-2 water pixels in {days} days ({n} passes, all cloudy)")
     hh = g["h"][ok]
     t = dt.datetime.fromtimestamp(float(np.max(hh)) * 3600, UTC).isoformat(timespec="minutes")
+    t0 = dt.datetime.fromtimestamp(float(np.min(hh)) * 3600, UTC).isoformat(timespec="minutes")
     out = byte_grid(lats, lons, fnu, 0.0, 60.0, log_scale=True)
-    out.update(time=t, label=f"Sentinel-2 {t[5:10]}", median_fnu=round(float(np.nanmedian(fnu)), 1),
+    label = f"Sentinel-2 {t[5:10]}" + (f" (parts from {t0[5:10]})" if t0[:10] != t[:10] else "")
+    out.update(time=t, time_oldest=t0, passes=n, label=label, median_fnu=round(float(np.nanmedian(fnu)), 1),
                launches={k: _near(lats, lons, fnu, la, lo, 400) for k, (la, lo) in LAUNCHES.items()})
     return out
 
