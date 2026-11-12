@@ -10,7 +10,8 @@ that makes, breaking on the shoal. The walls are not idealized: the revetment st
     mpirun -np 4 funwave input.txt  (in fw)
     python -m app.funwave_case collect --run fw --out funwave_diversey_storm.json
 
-The model x axis points west (onshore), so the internal wavemaker sits near the offshore (east) edge.
+The model x axis points west (onshore), so the internal wavemaker sits near the offshore (east) edge. A tile whose
+sea comes down the lake instead (Montrose Beach) sets "face": "north": x points south, the wavemaker is on the north edge.
 """
 
 import argparse
@@ -40,6 +41,15 @@ TILES = {
     # Easterly breakwater ~35 m behind the band would send its reflection back through it
     "monroe": {"x_east": 1850.0, "x_west": 880.0, "y_south": -1450.0, "y_north": -250.0, "dx": 1.5, "x_wall": 950.0, "label": "Monroe Harbor",
                "norm_y": (-800.0, -550.0), "fill_holes": True},
+    # Montrose Beach, the surf break: the beach faces NE inside the hook pier (tip ~x -300, y 9600) and its swell
+    # comes down the lake from the north, so this tile is driven from its NORTH edge ("face": the model x axis points
+    # south, y east) instead of the east one. 2 m cells (a 7.5 s wave is still ~16 cells long in 2 m of water) keep a
+    # 1.7 x 1.6 km run inside a runner's time. The wavemaker line (y 10725) crosses 4-8 m of water, and a 3 m sea
+    # would break on the source itself at the shallow end: wk_flat deepens the first 150 m to the wavemaker depth and
+    # eases back to the surveyed bottom over the next 300 m, ~1 km up-wave of the beach. East of the hook the south
+    # edge is open lake: sponge_far absorbs what runs out there. The offshore band is measured over the 7-8 m water.
+    "montrose": {"x_east": 300.0, "x_west": -1400.0, "y_south": 9200.0, "y_north": 10800.0, "dx": 2.0, "face": "north", "y_wall": 9400.0,
+                 "label": "Montrose Beach", "norm_x": (-600.0, 150.0), "wk_flat": 150.0, "sponge_far": 60.0, "total": 540.0, "steady": 330.0},
 }
 DOMAIN = TILES["diversey"]
 CASES = {
@@ -54,9 +64,32 @@ CASES = {
     # dominant period of such mornings at 2.3-2.4 s (90% under 2.8 s): ~9 m waves, 6 cells at 1.5 m, below what the
     # model resolves. 4 s is the long, faint end of that leftover swell (the "long low undulations" of Oct 21), the
     # part that rebounds off the walls; the 2.4 s texture is the page's spectral short-wave layer.
+    # Nov 12, 2026, a Montrose surf day: NNW gale (CHII2 14 m/s gusting 18, 340-350 backing N by evening) down the
+    # length of the lake. NWS wave grid: 3.0-3.35 m on the open lake at the 2-5 PM peak, 2.7 m off Montrose; the
+    # page's fetch model with its learned correction puts the period at 7-7.7 s. Both buoys are out for the season,
+    # so this is the forecast, not a measurement. Height is what arrives at the tile's offshore edge (7.5 m of water).
+    "nov12": {"hs": 3.0, "tp": 7.5, "dir": 0.0, "label": "Nov 12, 2026 north gale, forecast peak: 10 ft at 7.5 s from the N"},
     "glass": {"hs": 0.15, "tp": 4.0, "dir": 120.0, "label": "Glass mornings, Oct 21 & 28, 2026: the long leftover undulations, 0.5 ft at 4 s from the ESE (the 2.4 s ripple is drawn, not modelled)"},
 }
-TOTAL, STEADY, SNAP = 420.0, 240.0, 0.5         # s: run time, start of averaging, snapshot interval
+TOTAL, STEADY, SNAP = 420.0, 240.0, 0.5         # s: run time, start of averaging, snapshot interval (a tile may set total/steady)
+WK_X = 75.0                                      # m: the wavemaker line, inside the offshore edge
+
+
+def face(d):
+    """Which edge of the tile the waves enter by: "east" (model x -> west, y -> north) or "north" (x -> south, y -> east)."""
+    return (d or {}).get("face", "east")
+
+
+def theta_model(d, wave_dir):
+    """Nautical "from" direction -> direction of travel relative to the model +x axis (FUNWAVE's ThetaPeak, toward +y)."""
+    if face(d) == "north":
+        return 0.0 - ((wave_dir + 180.0) % 360.0 - 180.0)    # from the N: 0; from the NNW (travelling SSE, toward +y = east): > 0
+    return wave_dir - 90.0
+
+
+def to_world(a, d):
+    """A model field [j, i] as the page reads it: rows south -> north, columns west -> east."""
+    return a.T[::-1, :] if face(d) == "north" else a[:, ::-1]
 
 
 def source_grid(bathy, d):
@@ -73,20 +106,28 @@ def source_grid(bathy, d):
 
 
 def depth_grid(bathy, d=None):
-    """Still-water depth on the model grid (model i -> west, j -> north), from the finest bottom grid covering the tile."""
+    """Still-water depth on the model grid [j, i], from the finest bottom grid covering the tile. Model i runs onshore
+    from the offshore edge: west from the east edge with j north, or (face north) south from the north edge with j east."""
     d = d or DOMAIN
     _, gr = source_grid(bathy, d)
     z, src = bm.unpack(gr)
     level = bathy["level"]["m_igld85"]
     dep = level - z
-    xs = d["x_east"] - np.arange(0, d["x_east"] - d["x_west"] + 1e-6, d["dx"])        # model i=0 at the east edge
-    ys = d["y_south"] + np.arange(0, d["y_north"] - d["y_south"] + 1e-6, d["dx"])
+    north = face(d) == "north"
+    if north:
+        xs = d["x_west"] + np.arange(0, d["x_east"] - d["x_west"] + 1e-6, d["dx"])
+        ys = d["y_north"] - np.arange(0, d["y_north"] - d["y_south"] + 1e-6, d["dx"])    # model i=0 at the north edge
+    else:
+        xs = d["x_east"] - np.arange(0, d["x_east"] - d["x_west"] + 1e-6, d["dx"])    # model i=0 at the east edge
+        ys = d["y_south"] + np.arange(0, d["y_north"] - d["y_south"] + 1e-6, d["dx"])
     fx = (xs - gr["x0"]) / gr["dx"]; fy = (ys - gr["y0"]) / gr["dx"]
     i0 = np.clip(np.floor(fx).astype(int), 0, gr["nx"] - 2); j0 = np.clip(np.floor(fy).astype(int), 0, gr["ny"] - 2)
     tx = (fx - i0)[None, :]; ty = (fy - j0)[:, None]
     J0, I0 = np.meshgrid(j0, i0, indexing="ij")
     D = (dep[J0, I0] * (1 - tx) + dep[J0, I0 + 1] * tx) * (1 - ty) + (dep[J0 + 1, I0] * (1 - tx) + dep[J0 + 1, I0 + 1] * tx) * ty
     S = src[J0, I0]
+    if north:
+        D, S = D.T, S.T                                                               # [x (j), y from the north edge (i)]
     if d.get("fill_holes"):
         D = fill_holes(D, S)
     return xs, ys, D.astype(np.float32), S
@@ -121,7 +162,8 @@ def fill_holes(D, S, iters=4000):
 def input_txt(m, n, case, dep_wk, d=None, tile="diversey", px=2, py=2):
     d = d or DOMAIN
     c = CASES[case]
-    theta = c["dir"] - 90.0                   # nautical "from" -> direction of travel relative to model +x (west)
+    theta = theta_model(d, c["dir"])
+    total, steady = d.get("total", TOTAL), d.get("steady", STEADY)
     return f"""TITLE = {tile}_{case}
 PX = {px}
 PY = {py}
@@ -130,8 +172,8 @@ DEPTH_FILE = depth.txt
 RESULT_FOLDER = output/
 Mglob = {m}
 Nglob = {n}
-TOTAL_TIME = {TOTAL}
-PLOT_START_TIME = {TOTAL - 20.0}
+TOTAL_TIME = {total}
+PLOT_START_TIME = {total - 20.0}
 PLOT_INTV = {SNAP}
 PLOT_INTV_STATION = 1.0
 SCREEN_INTV = 20.0
@@ -139,7 +181,7 @@ DX = {d['dx']}
 DY = {d['dx']}
 WAVEMAKER = WK_IRR
 DEP_WK = {dep_wk:.2f}
-Xc_WK = 75.0
+Xc_WK = {WK_X}
 Yc_WK = {n * d['dx'] / 2:.1f}
 Ywidth_WK = {n * d['dx'] * 0.9:.1f}
 FreqPeak = {1.0 / c['tp']:.4f}
@@ -158,7 +200,7 @@ DIRECT_SPONGE = T
 Csp = 0.0
 CDsponge = 1.0
 Sponge_west_width = 45.0
-Sponge_east_width = 0.0
+Sponge_east_width = {d.get('sponge_far', 0.0)}
 Sponge_south_width = 45.0
 Sponge_north_width = 45.0
 Cd = 0.002
@@ -168,8 +210,8 @@ MinDepth = 0.02
 VISCOSITY_BREAKING = T
 Cbrk1 = 0.65
 Cbrk2 = 0.35
-T_INTV_mean = {TOTAL - STEADY}
-STEADY_TIME = {STEADY}
+T_INTV_mean = {total - steady}
+STEADY_TIME = {steady}
 NumberStations = 0
 FIELD_IO_TYPE = ASCII
 DEPTH_OUT = F
@@ -188,6 +230,14 @@ def run_domain(tile, case):
     """The tile, extended up-wave for an oblique sea: waves from the wavemaker travel at an angle, so without
     this the walls near the up-wave edge sit in a false shadow (half height at Theater on the Lake for NE seas)."""
     core = TILES[tile]; d = dict(core)
+    if face(core) == "north":
+        th = theta_model(core, CASES[case]["dir"]); ang = math.radians(abs(th))
+        ext = round(max(0.0, (core["y_north"] - WK_X - core["y_wall"]) * math.tan(ang)) + 30.0, -1) if ang > 0.05 else 0.0
+        if th > 0:
+            d["x_west"] = core["x_west"] - ext     # from west of north: rays run to the SE
+        else:
+            d["x_east"] = core["x_east"] + ext
+        return d, core
     ang = math.radians(abs(90.0 - CASES[case]["dir"]))
     ext = round(max(0.0, (core["x_east"] - 75.0 - core["x_wall"]) * math.tan(ang)) + 30.0, -1) if ang > 0.05 else 0.0
     if CASES[case]["dir"] < 90:
@@ -203,11 +253,16 @@ def prepare(bathy_path, case, out, tile="diversey", procs=4):
     xs, ys, D, S = depth_grid(bathy, d)
     os.makedirs(os.path.join(out, "output"), exist_ok=True)
     # wavemaker depth: median depth along the wavemaker line (model x = 75 m); it must be open water
-    iw = int(75.0 / d["dx"])
+    iw = int(WK_X / d["dx"])
     wet = D[:, iw] > 0.5
     if wet.mean() < 0.8:
-        raise SystemExit(f"{tile}: wavemaker line only {wet.mean():.0%} wet; move the east edge offshore")
+        raise SystemExit(f"{tile}: wavemaker line only {wet.mean():.0%} wet; move the {face(d)} edge offshore")
     dep_wk = float(np.median(D[:, iw][wet]))
+    if d.get("wk_flat"):
+        # no shoal under the source: at least the wavemaker depth for wk_flat metres, eased back to the real bottom over twice that
+        i1 = int(d["wk_flat"] / d["dx"])
+        floor = dep_wk * np.clip(1.5 - np.arange(D.shape[1]) / (2.0 * i1), 0.0, 1.0)[None, :]
+        D = np.where(D > 0.3, np.maximum(D, floor), D).astype(np.float32)
     np.savetxt(os.path.join(out, "depth.txt"), np.where(D > -3, D, -3.0), fmt="%.3f")   # land: negative (dry)
     px, py = (2, procs // 2) if procs >= 2 else (1, 1)
     with open(os.path.join(out, "input.txt"), "w") as fh:
@@ -230,15 +285,16 @@ def collect(run, out_path, step=2):
     eta_files = sorted(glob.glob(os.path.join(run, "output", "eta_*")))
     if not hs_files:
         raise SystemExit("no Hsig output")
+    dom = meta["domain"]; north = face(dom) == "north"
     hs = _read(hs_files[-1], n, m)
-    # world orientation: columns west->east (model i runs east->west), rows south->north
-    hs = hs[:, ::-1]
+    # world orientation: columns west->east, rows south->north (model i runs onshore from the east or north edge)
+    hs = to_world(hs, dom)
     # dry cells carry a placeholder (~12 m) in FUNWAVE's output: zero them, so they don't swamp the 1-byte
     # quantization of the surface on the page
     dep_path = os.path.join(run, "depth.txt")
-    dry = (np.loadtxt(dep_path, dtype=np.float32).reshape(n, m)[:, ::-1] <= 0.0) if os.path.exists(dep_path) else np.zeros((n, m), bool)
+    dry = (to_world(np.loadtxt(dep_path, dtype=np.float32).reshape(n, m), dom) <= 0.0) if os.path.exists(dep_path) else np.zeros(hs.shape, bool)
     hs = np.where(dry, 0.0, hs)
-    frames = [np.where(dry, 0.0, _read(f, n, m)[:, ::-1])[::step, ::step] for f in eta_files[-40:]]
+    frames = [np.where(dry, 0.0, to_world(_read(f, n, m), dom))[::step, ::step] for f in eta_files[-40:]]
     eta = np.stack(frames).astype(np.float16) if frames else np.zeros((0, 1, 1), np.float16)
     # the oblique internal wavemaker in a 600 m wide domain with absorbing sides under-delivers energy:
     # scale the run so the open-water band in front of the wavemaker carries the stated offshore height
@@ -248,13 +304,17 @@ def collect(run, out_path, step=2):
         y0 = meta["domain"]["y_south"]; dxm = meta["domain"]["dx"]
         rows = slice(max(0, int((nb[0] - y0) / dxm)), int((nb[1] - y0) / dxm))
     off = hs[rows, -130:-80]
+    if north:                                 # the same band (120-195 m inside the offshore edge), along the north side
+        dxm = dom["dx"]; nx_ = dom.get("norm_x")
+        cols = slice(max(0, int((nx_[0] - dom["x_west"]) / dxm)), int((nx_[1] - dom["x_west"]) / dxm)) if nx_ else slice(60, -60)
+        off = hs[-int(195.0 / dxm):-int(120.0 / dxm), cols]
     norm = float(meta["hs"] / max(off.mean(), 1e-3))
     hs = hs * norm; eta = (eta.astype(np.float32) * norm).astype(np.float16)
     enc = lambda a: base64.b64encode(gzip.compress(a.tobytes(), 6)).decode()
     d = meta["domain"]
     out = {"version": 3, "model": "FUNWAVE-TVD", "scaled_by": round(norm, 3), "tile": meta.get("tile", "diversey"), "tile_label": meta.get("tile_label", "Diversey Harbor"),
            **{k: meta[k] for k in ("case", "hs", "tp", "dir", "label", "lidar_frac")},
-           "grid": {"x0": d["x_west"], "y0": d["y_south"], "dx": d["dx"], "nx": m, "ny": n},
+           "grid": {"x0": d["x_west"], "y0": d["y_south"], "dx": d["dx"], "nx": int(hs.shape[1]), "ny": int(hs.shape[0])},
            # the tile proper (the run domain may extend up-wave of it): the page shows a tile there
            "core": {k: (meta.get("core") or d)[k] for k in ("x_west", "x_east", "y_south", "y_north")},
            "hsig": enc(np.clip(np.round(hs * 100), 0, 65535).astype("<u2")), "hsig_units": "cm",

@@ -67,6 +67,35 @@ def test_funwave_domain(tmp_path):
     assert meta["bottom"] == "route" and fc.TILES["diversey"]["y_south"] == 4750.0            # to the Fullerton sill
 
 
+def test_funwave_north_facing_tile(tmp_path):
+    """Montrose is driven from its north edge: model i runs south, j east; results come back south->north, west->east."""
+    b = {"level": {"m_igld85": 176.5}, "models": {}}
+    t = fc.TILES["montrose"]
+    g = {"x0": t["x_west"] - 20, "y0": t["y_south"] - 20, "dx": 4.0, "nx": int((t["x_east"] - t["x_west"] + 40) / 4) + 1, "ny": int((t["y_north"] - t["y_south"] + 40) / 4) + 1}
+    y = g["y0"] + np.arange(g["ny"]) * 4.0; x = g["x0"] + np.arange(g["nx"]) * 4.0
+    depth = np.clip((y[:, None] - 9400.0) * 0.006, -3, 10) + 0 * x[None, :]          # beach at y 9400, deepening north
+    depth[:, x > 200] += 1.0                                                           # a marker: deeper on the east side
+    b["models"]["corridor"] = bm.pack(g, (176.5 - depth).astype(np.float32), np.ones(depth.shape, np.uint8))
+    p = tmp_path / "bathy.json"; p.write_text(json.dumps(b))
+    meta = fc.prepare(str(p), "nov12", str(tmp_path / "fw"), "montrose")
+    d = np.loadtxt(tmp_path / "fw" / "depth.txt")
+    assert d.shape == (meta["n"], meta["m"]) and meta["domain"] == meta["core"]       # from due north: no up-wave extension
+    assert d[:, 0].mean() > d[:, -1].mean() and d[-1, 300] > d[0, 300] + 0.9           # i=0 offshore (north); j runs east
+    txt = (tmp_path / "fw" / "input.txt").read_text()
+    assert "ThetaPeak = 0.0" in txt and "TOTAL_TIME = 540.0" in txt and "Sponge_east_width = 60.0" in txt
+    assert fc.theta_model(t, 350.0) == 10.0 and fc.theta_model(t, 20.0) == -20.0 and fc.theta_model(fc.TILES["diversey"], 45.0) == -45.0
+    hs = np.where(d > 0, 2.0, 12.0); hs[-40:, :] = np.where(d[-40:, :] > 0, 4.0, 12.0)     # higher along the east side
+    np.savetxt(tmp_path / "fw" / "output" / "Hsig_00001", hs, fmt="%.2f")
+    eta = np.zeros_like(d); eta[-20:, :20] = 1.0                                       # a bump in the NE corner
+    np.savetxt(tmp_path / "fw" / "output" / "eta_00001", eta, fmt="%.2f")
+    o = fc.collect(str(tmp_path / "fw"), str(tmp_path / "o.json"))
+    gr = o["grid"]; assert (gr["nx"], gr["ny"], gr["x0"], gr["y0"]) == (meta["n"], meta["m"], t["x_west"], t["y_south"])
+    H = np.frombuffer(gzip.decompress(base64.b64decode(o["hsig"])), "<u2").reshape(gr["ny"], gr["nx"]) / 100
+    assert abs(o["scaled_by"] - 1.5) < 0.01 and abs(H[-80, 300] - 3.0) < 0.02 and abs(H[-80, -5] - 6.0) < 0.02 and H[5, 300] == 0   # scaled to 3 m offshore; beach dry
+    e = np.frombuffer(gzip.decompress(base64.b64decode(o["eta"]["data"])), "<f2").reshape(o["eta"]["frames"], o["eta"]["ny"], o["eta"]["nx"])
+    assert e[0, -3, -3] > 1 and e[0, 2, 2] == 0 and e[0, -3, 2] == 0
+
+
 def test_funwave_prefers_the_finest_covering_grid():
     b = fake_bathy()
     t = fc.TILES["diversey"]

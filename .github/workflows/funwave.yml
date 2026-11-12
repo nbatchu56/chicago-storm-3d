@@ -3,10 +3,10 @@ on:
   workflow_dispatch:
     inputs:
       tiles:
-        description: "Tiles (comma list): diversey, belmont, northave, fullerton, monroe"
+        description: "Tiles (comma list): diversey, belmont, northave, fullerton, monroe, montrose (Montrose Beach, driven from the north: run it with nov12)"
         default: "diversey,belmont,northave,fullerton"
       cases:
-        description: "Cases (comma list): rough, storm, east, race (Monroe race day), glass (Oct 21/28 glass mornings)"
+        description: "Cases (comma list): rough, storm, east, race (Monroe race day), glass (Oct 21/28 glass mornings), nov12 (Nov 12 north gale, for montrose)"
         default: "rough,storm,east"
 permissions:
   contents: write
