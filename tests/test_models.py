@@ -82,7 +82,7 @@ def test_funwave_north_facing_tile(tmp_path):
     assert d.shape == (meta["n"], meta["m"]) and meta["domain"] == meta["core"]       # from due north: no up-wave extension
     assert d[:, 0].mean() > d[:, -1].mean() and d[-1, 300] > d[0, 300] + 0.9           # i=0 offshore (north); j runs east
     txt = (tmp_path / "fw" / "input.txt").read_text()
-    assert "ThetaPeak = 0.0" in txt and "TOTAL_TIME = 540.0" in txt and "Sponge_east_width = 60.0" in txt
+    assert "ThetaPeak = 0.0" in txt and "TOTAL_TIME = 510.0" in txt and "Hmo = 4.11" in txt and "DEP_WK = 12.00" in txt and abs(d[400, 10] - 12.0) < 1e-3 and "Sponge_east_width = 60.0" in txt
     assert fc.theta_model(t, 350.0) == 10.0 and fc.theta_model(t, 20.0) == -20.0 and fc.theta_model(fc.TILES["diversey"], 45.0) == -45.0
     hs = np.where(d > 0, 2.0, 12.0); hs[-40:, :] = np.where(d[-40:, :] > 0, 4.0, 12.0)     # higher along the east side
     np.savetxt(tmp_path / "fw" / "output" / "Hsig_00001", hs, fmt="%.2f")

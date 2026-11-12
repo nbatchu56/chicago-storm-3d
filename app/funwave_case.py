@@ -48,8 +48,14 @@ TILES = {
     # would break on the source itself at the shallow end: wk_flat deepens the first 150 m to the wavemaker depth and
     # eases back to the surveyed bottom over the next 300 m, ~1 km up-wave of the beach. East of the hook the south
     # edge is open lake: sponge_far absorbs what runs out there. The offshore band is measured over the 7-8 m water.
+    # First run (Hmo 3.0 on a 7.4 m source): the source delivered 73% (2.2 m in the band, as on the wall tiles, whose
+    # runs are scaled by 1.4-1.5), its largest waves broke on the spot, and scaling the result by 1.37 could not put back
+    # what breaking had taken: 1.5-2 m over the 7 m water off the beach. So the source now stands in wk_depth = 12 m (a
+    # 3 m sea doesn't break there) and is driven wk_gain harder, to deliver the stated height itself; the sea then
+    # shoals up the ramp onto the real bottom and breaks where the depth makes it.
     "montrose": {"x_east": 300.0, "x_west": -1400.0, "y_south": 9200.0, "y_north": 10800.0, "dx": 2.0, "face": "north", "y_wall": 9400.0,
-                 "label": "Montrose Beach", "norm_x": (-600.0, 150.0), "wk_flat": 150.0, "sponge_far": 60.0, "total": 540.0, "steady": 330.0},
+                 "label": "Montrose Beach", "norm_x": (-600.0, 150.0), "wk_flat": 150.0, "wk_depth": 12.0, "wk_gain": 1.37,
+                 "sponge_far": 60.0, "total": 510.0, "steady": 310.0},
 }
 DOMAIN = TILES["diversey"]
 CASES = {
@@ -67,7 +73,7 @@ CASES = {
     # Nov 12, 2026, a Montrose surf day: NNW gale (CHII2 14 m/s gusting 18, 340-350 backing N by evening) down the
     # length of the lake. NWS wave grid: 3.0-3.35 m on the open lake at the 2-5 PM peak, 2.7 m off Montrose; the
     # page's fetch model with its learned correction puts the period at 7-7.7 s. Both buoys are out for the season,
-    # so this is the forecast, not a measurement. Height is what arrives at the tile's offshore edge (7.5 m of water).
+    # so this is the forecast, not a measurement. Height is what the tile's offshore edge is driven to (see the montrose tile).
     "nov12": {"hs": 3.0, "tp": 7.5, "dir": 0.0, "label": "Nov 12, 2026 north gale, forecast peak: 10 ft at 7.5 s from the N"},
     "glass": {"hs": 0.15, "tp": 4.0, "dir": 120.0, "label": "Glass mornings, Oct 21 & 28, 2026: the long leftover undulations, 0.5 ft at 4 s from the ESE (the 2.4 s ripple is drawn, not modelled)"},
 }
@@ -187,7 +193,7 @@ Ywidth_WK = {n * d['dx'] * 0.9:.1f}
 FreqPeak = {1.0 / c['tp']:.4f}
 FreqMin = {0.6 / c['tp']:.4f}
 FreqMax = {2.5 / c['tp']:.4f}
-Hmo = {c['hs']}
+Hmo = {round(c['hs'] * d.get('wk_gain', 1.0), 3)}
 GammaTMA = 3.3
 ThetaPeak = {theta:.1f}
 Sigma_Theta = 15.0
@@ -257,7 +263,7 @@ def prepare(bathy_path, case, out, tile="diversey", procs=4):
     wet = D[:, iw] > 0.5
     if wet.mean() < 0.8:
         raise SystemExit(f"{tile}: wavemaker line only {wet.mean():.0%} wet; move the {face(d)} edge offshore")
-    dep_wk = float(np.median(D[:, iw][wet]))
+    dep_wk = max(float(np.median(D[:, iw][wet])), d.get("wk_depth", 0.0))
     if d.get("wk_flat"):
         # no shoal under the source: at least the wavemaker depth for wk_flat metres, eased back to the real bottom over twice that
         i1 = int(d["wk_flat"] / d["dx"])
