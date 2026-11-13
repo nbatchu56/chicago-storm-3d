@@ -4302,21 +4302,24 @@ function setCourse(on) { COURSE.on = on; if (COURSE.group) COURSE.group.visible 
 const BEACHES = [["Montrose Beach", 41.9665, -87.6362], ["North Avenue Beach", 41.9150, -87.6240], ["Oak Street Beach", 41.9030, -87.6232], ["Ohio Street Beach", 41.8935, -87.6135]];
 const BRK = { key: "", rows: [], sites: null };
 function brkQ(b) { if (!(b > 0)) return 0; if (b >= 1) return 1; let q = 0; const k = 1 / (b * b); for (let i = 0; i < 60; i++) q = Math.exp(-(1 - q) * k); return q; }
-function brkHere(xk, yk) {   // { d: depth m, hs: m, q: share breaking } or null on land / off the survey
+function brkHere(xk, yk, hsLast) {   // { d: depth m, hs: m, q: share breaking, sw: SWAN had a value } or null on land / off the survey
   const d0 = depthAtKm(xk, yk); if (d0 == null || maskAt(xk, yk) !== 1) return null; const d = d0 + U.uBrkLvl.value; if (d < 0.05) return null;
-  const kr = swanRatioKm(xk, yk), hs = kr != null ? U.uHsOff.value * kr : U.uHs.value; return { d, hs, q: brkQ(hs / (1.0324 * d)) }; }
+  // SWAN's height for this offshore sea at this cell, from whichever domain holds it (the texture the view has bound covers
+  // one domain); in the last cells before the sand, where its grid is land, the height of the last wet cell offshore
+  const p = BRK.off ? swanPointAt(xk, yk, BRK.off) : null, hs = p ? p.ratio * BRK.off.hs : hsLast != null ? hsLast : U.uHs.value;
+  return { d, hs, q: brkQ(hs / (1.0324 * d)), sw: !!p }; }
 function brkSites() {   // per beach: 5 transects (start on the waterline, unit vector toward the lake), 60 m apart along the shore
   return BEACHES.map(([name, la, lo]) => { const [bx, by] = ll(la, lo); let w = null;
     for (let r = 0.04; r <= 0.8 && !w; r += 0.04) for (let a = 0; a < 24; a++) { const x = bx + r * Math.sin(a * Math.PI / 12), y = by + r * Math.cos(a * Math.PI / 12), d = depthAtKm(x, y); if (d != null && d > 1.5 && maskAt(x, y) === 1) { w = [x, y]; break; } }
     if (!w) return { name, tr: [] }; const s0 = nearestShore(w[0], w[1]), tx = -s0.ny, ty = s0.nx, tr = [];
     for (let k = -2; k <= 2; k++) { const x = w[0] + tx * k * 0.06, y = w[1] + ty * k * 0.06, s = nearestShore(x, y); if (s.d > 0.9) continue; tr.push([x + s.nx * s.d, y + s.ny * s.d, -s.nx, -s.ny]); }
     return { name, tr }; }); }
-function breakRows() { if (!BATHY.ok || !MAP.ok) return []; if (!BRK.sites) BRK.sites = brkSites();
+function breakRows() { if (!BATHY.ok || !MAP.ok) return []; BRK.swan = false; if (!BRK.sites) BRK.sites = brkSites();
   return BRK.sites.map(({ name, tr }) => { const out = [];
-    for (const [x0, y0, ux, uy] of tr) { let far = null; for (let s = 2; s <= 700; s += 3) { const h = brkHere(x0 + ux * s / 1000, y0 + uy * s / 1000); if (h && h.q >= 0.01) far = { s, d: h.d, hs: h.hs }; } out.push(far); }
+    for (const [x0, y0, ux, uy] of tr) { let far = null, last = null; for (let s = 701; s >= 2 && !far; s -= 3) { const h = brkHere(x0 + ux * s / 1000, y0 + uy * s / 1000, last); if (!h) continue; if (h.sw) { last = h.hs; BRK.swan = true; } if (h.q >= 0.01) far = { s, d: h.d, hs: h.hs }; } out.push(far); }
     const hit = out.filter(Boolean).sort((a, b) => a.s - b.s); if (!tr.length) return { name, na: true };
     return hit.length * 2 > out.length ? { name, ...hit[hit.length >> 1] } : { name }; }); }
-function breakRefresh() { const key = [U.uHs.value.toFixed(2), U.uHsOff.value.toFixed(2), U.uSwanOn.value, SWAN.cur && SWAN.cur.D && SWAN.cur.D.name, U.uBrkLvl.value.toFixed(2), BATHY.ok, MAP.ok].join("|");
+function breakRefresh() { const o = BRK.off, key = [U.uHs.value.toFixed(2), o ? `${o.hs.toFixed(2)}|${(+o.tp).toFixed(1)}|${Math.round(o.dir / 3)}` : "", SWAN.domains.length, U.uBrkLvl.value.toFixed(2), BATHY.ok, MAP.ok].join("|");
   if (key === BRK.key) return; BRK.key = key; BRK.rows = breakRows(); renderLegend(); }
 // ---------------------------------------------------------------- labels
 const labelsEl = $("#labels"); let labelItems = [];
@@ -4624,10 +4627,10 @@ function renderLegend() {
       : `<b>Chop spots: suspected, how often</b>${bar}<div class="tk"><span>0</span><span>15%</span><span>30%</span><span>45%</span><span>60%+</span></div>
       <span>Share of daylight hours (6 AM-8 PM, May-Oct ${M ? M.seasons : ""}) a spot is Choppy or worse (70+ J/m²): ${M ? M.hours.toLocaleString() : "?"} buoy hours of offshore waves carried in by the SWAN model (sheltering, wall reflection, breaking). Wind chop raised inside the harbours isn't in it.</span>${conf}`; }
   else if (S.ov === "break") { const ft = (m) => Math.round(m * 3.281), R = BRK.rows;
-    const rows = R.map((r) => `<span><b>${r.name}</b>: ${r.na ? "no survey here" : r.s == null ? "no breaking: the waves reach the sand unbroken" : `breaks start ${ft(r.s) >= 100 ? Math.round(ft(r.s) / 10) * 10 : ft(r.s)} ft (${Math.round(r.s)} m) out, in ${(r.d * 3.281).toFixed(1)} ft of water, waves ${(r.hs * 3.281).toFixed(1)} ft there`}</span>`).join("");
+    const rows = R.map((r) => `<span><b>${r.name}</b>: ${r.na ? "no survey here" : r.s == null ? "no surf zone: what waves reach it break at the water's edge" : `breaks start ${ft(r.s) >= 100 ? Math.round(ft(r.s) / 10) * 10 : ft(r.s)} ft (${Math.round(r.s)} m) out, in ${(r.d * 3.281).toFixed(1)} ft of water, waves ${(r.hs * 3.281).toFixed(1)} ft there`}</span>`).join("");
     h = `<b>Wave break</b><div class="bar" style="background:linear-gradient(90deg,#0c1a30,#fff5ad 8%,#ffb44d 45%,#f0469c)"></div><div class="tk"><span>none</span><span>some</span><span>half</span><span>all waves breaking</span></div>
       <span class="lead">White line: the outer edge of the surf zone, where 1 wave in 100 breaks (wave height about half the depth). It moves with the waves and the lake level for the time shown.</span>${rows || "<span>Depth survey not loaded yet.</span>"}
-      <span>Depth: lidar and NCEI surveys${DATA.levels ? ", under the lake level measured for this hour" : ""}. Wave height: ${U.uSwanOn.value > 0.5 ? "SWAN (shoaling, refraction, sheltering)" : "the open-lake estimate, without shoaling"}. Share breaking: Battjes &amp; Janssen 1978, breaker limit 0.73 of the depth. Sandbars move after storms, so the line is a guide, not a survey of today's bottom.</span>`; }
+      <span>Depth: lidar and NCEI surveys${DATA.levels ? ", under the lake level measured for this hour" : ""}. Wave height: ${BRK.swan ? "SWAN for this hour's offshore sea (shoaling, refraction, sheltering, on a 16-20 m grid, so breaks closer in than ~100 ft are only roughly placed)" : "the open-lake estimate, without shoaling"}. Share breaking: Battjes &amp; Janssen 1978, breaker limit 0.73 of the depth. Sandbars move after storms, so the line is a guide, not a survey of today's bottom.</span>`; }
   else if (S.ov === "s1") { const E1 = (DATA.earth || {}).s1, bar = S1_STOPS.map(([f, c]) => `rgb(${c}) ${Math.round(f * 100)}%`).join(",");
     h = `<b>Wind on the water: radar roughness</b><div class="bar" style="background:linear-gradient(90deg,${bar})"></div><div class="tk"><span>calmer</span><span></span><span>usual</span><span></span><span>rougher</span></div>
       <span class="lead"><b style="font:inherit;text-transform:none;letter-spacing:0">Bright</b> = wind is roughening the surface (ripples and chop). <b style="font:inherit;text-transform:none;letter-spacing:0">Dark</b> = calm or sheltered water: wind shadows behind breakwaters and buildings, slicks. It compares spots with each other on that pass; it isn't a wind speed.</span>
@@ -4812,7 +4815,7 @@ function tick() {
     const wa = ((sys[0] ? sys[0].dir : C.dir) + 180) * Math.PI / 180; U.uWaveDir.value.set(Math.sin(wa), Math.cos(wa)); U.uWindSpd.value = C.wind;
     U.uFlowDir.value.copy(U.uWaveDir.value); U.uFlowTp.value = U.uTp.value;
     WU.uWcFetch.value = clamp((rayFetchKm(cx, cy, C.dir) - 0.15) / 2.5, 0.08, 1);
-    { const lv = levelAt(S.t); C.level = lv; WU.uLevelD.value = lv != null && BATHY.ok ? clamp(lv - BATHY.level, -1, 1.5) : 0; U.uBrkLvl.value = WU.uLevelD.value;
+    { const lv = levelAt(S.t); C.level = lv; WU.uLevelD.value = lv != null && BATHY.ok ? clamp(lv - BATHY.level, -1, 1.5) : 0; U.uBrkLvl.value = WU.uLevelD.value; BRK.off = C.off && C.off.hs >= 0.02 ? C.off : null;
       const hs0 = C.off ? C.off.hs : Math.sqrt(sys.reduce((a, q) => a + q.hs * q.hs, 0)); WU.uSetupShore.value = Math.min(0.18 * hs0, 0.9); }
     U.uWhitecap.value = Math.min(3.84e-6 * Math.pow(C.wind, 3.41), 0.3) * WU.uWcFetch.value;
     U.uWaterC.value = C.waterC ?? 15; U.uIceExp.value = S.mode === "exp" ? S.x.ice : 0; U.uFdd.value = S.mode === "exp" ? S.x.fdd : GRIDS.ice ? (GRIDS.fdd ?? 60 + 200 * (GRIDS.iceMax || 0)) : 0; U.uIceMax.value = S.mode !== "exp" && GRIDS.ice ? GRIDS.iceMax || 0 : 0; U.uHasTemp.value = S.mode === "exp" ? 0 : GRIDS.temp ? 1 : 0;
@@ -5602,6 +5605,6 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     } catch (e) { console.warn("background load", e); }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { BRK, breakRows, brkHere, RIVER, RN, DRONE, WK, BOAT, riverWakes, wkTrips, wakeH, wakeNet, wkRoutes, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES, ORTHO, EARTH, AUTO, autoSet, autoPick, autoShotKinds };
+window.__world = { BRK, breakRows, brkHere, breakRefresh, RIVER, RN, DRONE, WK, BOAT, riverWakes, wkTrips, wakeH, wakeNet, wkRoutes, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES, ORTHO, EARTH, AUTO, autoSet, autoPick, autoShotKinds };
 })();
 </script>
