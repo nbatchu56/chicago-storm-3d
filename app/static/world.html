@@ -513,7 +513,7 @@ body.compact #vsbox .vs { grid-template-columns: 92px 1fr; } body.compact #vsbox
     <section>
       <h2>View</h2>
       <div class="seg" role="group" aria-label="Overlay"><button data-ov="natural" aria-pressed="true">Natural</button><button data-ov="temp" aria-pressed="false">Water temp</button><button data-ov="radar" aria-pressed="false">Radar</button></div>
-      <div class="seg" role="group" aria-label="Lake overlay"><button data-ov="depth" aria-pressed="false">Depth</button><button data-ov="hs" aria-pressed="false">Wave height</button><button data-ov="chop" aria-pressed="false">Chop</button><button data-ov="flow" aria-pressed="false" title="Wave energy, with streaks moving the way it travels">Energy flow</button><button data-ov="spots" aria-pressed="false">Chop spots</button><button data-ov="enso" aria-pressed="false" title="How El Niño winters differ from all winters on southern Lake Michigan (ice cover or December water temperature)" hidden>El Niño</button></div>
+      <div class="seg" role="group" aria-label="Lake overlay"><button data-ov="depth" aria-pressed="false">Depth</button><button data-ov="hs" aria-pressed="false">Wave height</button><button data-ov="chop" aria-pressed="false">Chop</button><button data-ov="flow" aria-pressed="false" title="Wave energy, with streaks moving the way it travels">Energy flow</button><button data-ov="spots" aria-pressed="false">Chop spots</button><button data-ov="break" aria-pressed="false" title="Where the waves break for the time shown: the surf zone from the surveyed depths, the lake level and the wave height at each spot">Wave break</button><button data-ov="enso" aria-pressed="false" title="How El Niño winters differ from all winters on southern Lake Michigan (ice cover or December water temperature)" hidden>El Niño</button></div>
       <div class="seg" role="group" aria-label="Wind layer"><button id="windbtn" aria-pressed="false" title="Wind and gusts: streaks flow with the wind and brighten in gusts">Wind &amp; gusts</button></div>
       <div class="seg" role="group" aria-label="El Niño layer" id="enso-seg" hidden><button data-enso="strong" aria-pressed="true">Ice, strong El Niño</button><button data-enso="ice" aria-pressed="false">Ice, any El Niño</button><button data-enso="sst" aria-pressed="false">Water, Dec</button></div>
       <div class="seg" role="group" aria-label="Chop spots" id="spots-seg" hidden><button data-spots="usual" aria-pressed="true">Usual</button><button data-spots="now" aria-pressed="false">Right now</button></div>
@@ -849,6 +849,7 @@ const U = {
   uDepthOn: { value: 0 }, uHsOn: { value: 0 },
   // chop overlay: wave energy everywhere; inside a bound FUNWAVE tile also its crossing/rebound index (tex R = Hs m, G = crossing 0..1)
   uSatOn: { value: 0 }, uSatMin: { value: new THREE.Vector2() }, uSatSize: { value: new THREE.Vector2(1, 1) }, uSatKind: { value: 0 },   // kind 1: an aerial photo (drawn over land too)
+  uBreakOn: { value: 0 }, uBrkLvl: { value: 0 },
   uSpotsOn: { value: 0 }, uSpotHas: { value: 0 }, uSpotTex: { value: blank2D }, uSpotMin: { value: new THREE.Vector2() }, uSpotSize: { value: new THREE.Vector2(1, 1) },
   uDrone: { value: 0 }, uChopOn: { value: 0 }, uFlowOn: { value: 0 }, uFlowDir: { value: new THREE.Vector2(0, 1) }, uFlowTp: { value: 3 }, uChopTex: { value: blank2D }, uChopMin: { value: new THREE.Vector2() }, uChopSize: { value: new THREE.Vector2(1, 1) }, uChopCore: { value: new THREE.Vector4(1e6, 1e6, -1e6, -1e6) }, uChopHas: { value: 0 },
   uFw: { value: null }, uFwHs: { value: blank2D }, uFwMin: { value: new THREE.Vector2() }, uFwSize: { value: new THREE.Vector2(1, 1) }, uFwOn: { value: 0 }, uFwT: { value: 0 },
@@ -978,6 +979,17 @@ vec3 chopTint(vec2 hc, vec2 pk, float w) { vec3 c = chopColor(hc.x);
   float line = 1.0 - smoothstep(0.22 - w, 0.22 + w, abs(fract(s) - 0.5)), far = smoothstep(0.15, 0.45, w);
   vec3 mag = pow(vec3(0.95, 0.25, 0.85), vec3(2.2));
   return mix(c, mag, x * mix(line * 0.9, 0.45, far)); }
+// where waves break: the share of waves breaking at a spot (Battjes & Janssen 1978, the depth limit SWAN uses, Hmax = 0.73 d)
+// from the wave height there and the surveyed depth under this hour's lake level. b = Hrms / Hmax = (Hs / 1.414) / (0.73 d);
+// the white line is where 1 wave in 100 breaks (b = 0.464, Hs = 0.48 d): the outer edge of the surf zone.
+uniform float uBreakOn, uBrkLvl;
+float brkB(float hs, float d) { return hs / (1.0324 * max(d, 0.02)); }
+float brkQ(float b) { if (b >= 1.0) return 1.0; float q = 0.0, k = 1.0 / max(b * b, 1e-3); for (int i = 0; i < 8; i++) q = exp(-(1.0 - q) * k); return q; }
+vec3 breakTint(float hs, float d, float w) { if (d < 0.02 || hs < 0.05) return vec3(0.012, 0.035, 0.075);
+  float b = brkB(hs, d), q = brkQ(b), t = sqrt(q);
+  vec3 c = mix(vec3(1.0, 0.92, 0.45), vec3(1.0, 0.5, 0.12), smoothstep(0.1, 0.45, t)); c = pow(mix(c, vec3(0.88, 0.12, 0.38), smoothstep(0.45, 0.9, t)), vec3(2.2));
+  c = mix(vec3(0.012, 0.035, 0.075), c, smoothstep(0.004, 0.012, q));
+  return mix(c, vec3(1.6), w < 0.25 ? 1.0 - smoothstep(0.8 * w, 1.8 * w, abs(b - 0.4637)) : 0.0); }
 // chop spots heat map: usual = how often a spot is Choppy or worse (paddling-season daylight hours, buoy climate x SWAN);
 // right now = this hour's wave energy from Light chop (25 J/m2) up to Very rough (350+), rebound hatched as in Chop
 uniform sampler2D uSpotTex; uniform vec2 uSpotMin, uSpotSize; uniform float uSpotsOn, uSpotHas;
@@ -1177,22 +1189,23 @@ void main(){
     if (uChopOn > 0.5) bodyTint = chopTint(chopAt(p, kr >= 0.0 ? uHsOff * kr : uHs), p, fwidth((p.x + p.y) * 1000.0 / 12.0)) * 0.5;
     if (uFlowOn > 0.5) bodyTint = flowTint(chopAt(p, kr >= 0.0 ? uHsOff * kr : uHs).x, p, fwidth((p.x + p.y) * 1000.0 / 30.0)) * 0.5;
     if (uSpotsOn > 0.5) bodyTint = spotsTint(p, chopAt(p, kr >= 0.0 ? uHsOff * kr : uHs), fwidth((p.x + p.y) * 1000.0 / 12.0)) * 0.5;
+    if (uBreakOn > 0.5) { float hb = chopAt(p, kr >= 0.0 ? uHsOff * kr : uHs).x * calm * shel, db = inBathy(p) ? dep + uBrkLvl : 9.0; bodyTint = breakTint(hb, db, fwidth(brkB(hb, db))) * 0.5; }
     if (uSatOn > 0.5) bodyTint = satTint(p) * 0.5;
     // little light gets into the water with the sun low (most of it glances off): at sunrise the lake reads dark slate and
     // green under the sky's reflection, not lit teal
-    vec3 body = bodyTint * (sunL + amb * 2.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uSatOn > 0.5 ? 1.0 : mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y))) + vec3(0.0, 0.01, 0.012) * uCity;
+    vec3 body = bodyTint * (sunL + amb * 2.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uBreakOn + uSatOn > 0.5 ? 1.0 : mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y))) + vec3(0.0, 0.01, 0.012) * uCity;
     // light in the water comes through the surface: facets turned to the sun are brighter, those turned away darker, and a
     // low sun shines through the thin wave tops toward you (what makes waves read in daylight seen from above)
-    { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uSatOn;
+    { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uBreakOn + uSatOn;
       body *= mix(clamp(1.0 + dot(N.xz, normalize(sl.xz + 1e-4)) * 3.2, 0.55, 1.6), 1.0, step(0.5, ov));
       body += vec3(0.008, 0.038, 0.040) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - N.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
     vec3 H = normalize(uSunDir + V); float spec = pow(max(dot(N, H), 0.0), 2.0 / (rough * rough + 0.002)) / (rough * rough * 30.0 + 0.3);
     // with a data overlay on (depth, wave height, chop, energy flow, chop spots, satellite) the sun glint goes and the sky and moon reflection is kept faint, so the colours read true
-    float ovOn = step(0.5, uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uSatOn);
+    float ovOn = step(0.5, uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uBreakOn + uSatOn);
     col = mix(body, refl, (uTempOn > 0.5 ? F * 0.45 : F) * (1.0 - 0.85 * ovOn)) + uSunCol * spec * shadow * sunUp * 0.6 * (1.0 - ice) * (1.0 - ovOn);
     // light through the thin tops of the waves: a lighter green-blue on the crests, stronger as the waves grow
     float hsLook = (kr >= 0.0 ? uHsOff * kr : uHs) * calm * shel;
-    col += vec3(0.012, 0.040, 0.044) * (sunL + amb * 2.0) * smoothstep(0.9, 3.2, crest) * clamp(hsLook * 2.5, 0.15, 1.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uSatOn > 0.5 ? 0.0 : 1.0);
+    col += vec3(0.012, 0.040, 0.044) * (sunL + amb * 2.0) * smoothstep(0.9, 3.2, crest) * clamp(hsLook * 2.5, 0.15, 1.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uBreakOn + uSatOn > 0.5 ? 0.0 : 1.0);
     float hsHere = (kr >= 0.0 ? uHsOff * kr : uHs) * calm * shel, brk = inBathy(p) && cls < 1.5 ? smoothstep(0.6, 1.0, hsHere / max(dep, 0.05)) * step(0.08, hsHere) : 0.0;
     float wc = vnoise(p * 900.0 + uTime * 0.6) * vnoise(p * 310.0 - uTime * 0.3), cover = max(clamp(uWhitecap, 0.0, 0.3) * calm, brk * 0.3 * (0.4 + 0.6 * vnoise(p * 400.0 - uTime * 0.4)));
     float foam = mix(smoothstep(1.0 - cover * 4.0, 1.0 - cover * 3.0, wc), cover, clamp(foot * 60.0, 0.0, 1.0));
@@ -2600,14 +2613,15 @@ const patchMat = new THREE.ShaderMaterial({ uniforms: WU, transparent: true, ext
       if (uHsOn > 0.5) tint = hsColor(vFw > 0.0 ? mix(uHsB * vGain, texture2D(uFwHs, clamp((pk - uFwMin) / uFwSize, 0.0, 1.0)).r, vFw) : uHsB * vGain) * 0.5;
       if (uChopOn > 0.5) tint = chopTint(chopAt(pk, uHsB * vGain), pk, fwidth((pk.x + pk.y) * 1000.0 / 12.0)) * 0.5;
       if (uSpotsOn > 0.5) tint = spotsTint(pk, chopAt(pk, uHsB * vGain), fwidth((pk.x + pk.y) * 1000.0 / 12.0)) * 0.5;
+      if (uBreakOn > 0.5) { float hb = chopAt(pk, uHsB * vGain).x; tint = breakTint(hb, depth, fwidth(brkB(hb, depth))) * 0.5; }
       if (uSatOn > 0.5) tint = satTint(pk) * 0.5;
-      vec3 body = tint * (sunL + amb * 2.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uSatOn > 0.5 ? 1.0 : mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y))) + vec3(0.0, 0.01, 0.012) * uCity;
+      vec3 body = tint * (sunL + amb * 2.0) * (uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uBreakOn + uSatOn > 0.5 ? 1.0 : mix(0.3, 1.0, smoothstep(-0.03, 0.3, uSunTrue.y))) + vec3(0.0, 0.01, 0.012) * uCity;
       // light in the water comes through the surface: facets turned to the sun are brighter, those turned away darker, and a
       // low sun shines through the thin wave tops toward you (what makes waves read in daylight seen from above)
-      { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uSatOn;
+      { vec3 sl = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.12), uSunDir.z)); float ov = uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uBreakOn + uSatOn;
         body *= mix(clamp(1.0 + dot(Nn.xz, normalize(sl.xz + 1e-4)) * 3.2, 0.55, 1.6), 1.0, step(0.5, ov));
         body += vec3(0.008, 0.038, 0.040) * uSunCol * pow(clamp(dot(-V, vec3(sl.x, 0.0, sl.z)) * 0.5 + 0.5, 0.0, 1.0), 6.0) * clamp(1.0 - Nn.y + 0.02, 0.0, 1.0) * 14.0 * (1.0 - step(0.5, ov)) * smoothstep(-0.02, 0.1, uSunDir.y); }
-      float ovOn = step(0.5, uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uSatOn);   // overlay on: no glint, faint sky and moon reflection
+      float ovOn = step(0.5, uTempOn + uDepthOn + uHsOn + uChopOn + uFlowOn + uSpotsOn + uBreakOn + uSatOn);   // overlay on: no glint, faint sky and moon reflection
       vec3 c = mix(body, skyColor(R, false), (uTempOn > 0.5 ? F * 0.45 : F) * (1.0 - 0.85 * ovOn));
       vec3 Hv = normalize(uSunDir + V); float rough = sqrt(max(unres + 0.0025, (0.003 + 0.00512 * uWindSpd) * 0.55)) + 0.01;   // Cox & Munk floor
       c += uSunCol * pow(max(dot(Nn, Hv), 0.0), 2.0 / (rough * rough)) / (1.0 + rough * 20.0) * sunUp * (1.0 - 0.8 * uOvercast) * 0.6 * (1.0 - ovOn);
@@ -4243,6 +4257,29 @@ function buildCourse() {
 }
 function setCourse(on) { COURSE.on = on; if (COURSE.group) COURSE.group.visible = on; try { localStorage.setItem("lakelocal-course", on ? "1" : "0"); } catch (e) {} buildLabels(); }
 
+// ---------------------------------------------------------------- wave break: where the surf zone starts off each beach
+// The same test as the overlay's shader (brkQ): the share of waves breaking from the wave height at a spot (SWAN's where
+// modelled, the open-lake height elsewhere) and the surveyed depth under this hour's lake level. Per beach, transects run
+// out from the waterline; the break point is the farthest spot where 1 wave in 100 breaks.
+const BEACHES = [["Montrose Beach", 41.9665, -87.6362], ["North Avenue Beach", 41.9150, -87.6240], ["Oak Street Beach", 41.9030, -87.6232], ["Ohio Street Beach", 41.8935, -87.6135]];
+const BRK = { key: "", rows: [], sites: null };
+function brkQ(b) { if (!(b > 0)) return 0; if (b >= 1) return 1; let q = 0; const k = 1 / (b * b); for (let i = 0; i < 60; i++) q = Math.exp(-(1 - q) * k); return q; }
+function brkHere(xk, yk) {   // { d: depth m, hs: m, q: share breaking } or null on land / off the survey
+  const d0 = depthAtKm(xk, yk); if (d0 == null || maskAt(xk, yk) !== 1) return null; const d = d0 + U.uBrkLvl.value; if (d < 0.05) return null;
+  const kr = swanRatioKm(xk, yk), hs = kr != null ? U.uHsOff.value * kr : U.uHs.value; return { d, hs, q: brkQ(hs / (1.0324 * d)) }; }
+function brkSites() {   // per beach: 5 transects (start on the waterline, unit vector toward the lake), 60 m apart along the shore
+  return BEACHES.map(([name, la, lo]) => { const [bx, by] = ll(la, lo); let w = null;
+    for (let r = 0.04; r <= 0.8 && !w; r += 0.04) for (let a = 0; a < 24; a++) { const x = bx + r * Math.sin(a * Math.PI / 12), y = by + r * Math.cos(a * Math.PI / 12), d = depthAtKm(x, y); if (d != null && d > 1.5 && maskAt(x, y) === 1) { w = [x, y]; break; } }
+    if (!w) return { name, tr: [] }; const s0 = nearestShore(w[0], w[1]), tx = -s0.ny, ty = s0.nx, tr = [];
+    for (let k = -2; k <= 2; k++) { const x = w[0] + tx * k * 0.06, y = w[1] + ty * k * 0.06, s = nearestShore(x, y); if (s.d > 0.9) continue; tr.push([x + s.nx * s.d, y + s.ny * s.d, -s.nx, -s.ny]); }
+    return { name, tr }; }); }
+function breakRows() { if (!BATHY.ok || !MAP.ok) return []; if (!BRK.sites) BRK.sites = brkSites();
+  return BRK.sites.map(({ name, tr }) => { const out = [];
+    for (const [x0, y0, ux, uy] of tr) { let far = null; for (let s = 2; s <= 700; s += 3) { const h = brkHere(x0 + ux * s / 1000, y0 + uy * s / 1000); if (h && h.q >= 0.01) far = { s, d: h.d, hs: h.hs }; } out.push(far); }
+    const hit = out.filter(Boolean).sort((a, b) => a.s - b.s); if (!tr.length) return { name, na: true };
+    return hit.length * 2 > out.length ? { name, ...hit[hit.length >> 1] } : { name }; }); }
+function breakRefresh() { const key = [U.uHs.value.toFixed(2), U.uHsOff.value.toFixed(2), U.uSwanOn.value, SWAN.cur && SWAN.cur.D && SWAN.cur.D.name, U.uBrkLvl.value.toFixed(2), BATHY.ok, MAP.ok].join("|");
+  if (key === BRK.key) return; BRK.key = key; BRK.rows = breakRows(); renderLegend(); }
 // ---------------------------------------------------------------- labels
 const labelsEl = $("#labels"); let labelItems = [];
 function buildLabels() { labelsEl.innerHTML = ""; labelItems = [];
@@ -4293,7 +4330,7 @@ function setMode(m) { S.mode = m; const expish = m !== "live"; if (expish) S.xmo
   buildTicks(); WAVES.key = null; histNote(); applyLakeGrids(); }
 document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode === "exp" ? (S.xmode || "exp") : "live"));
 document.querySelectorAll("[data-ov]").forEach((b) => b.onclick = () => { S.ov = b.dataset.ov; document.querySelectorAll("[data-ov]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.ov === S.ov)));
-  U.uMode.value = S.ov === "radar" ? 1 : 0; U.uTempOn.value = S.ov === "temp" ? 1 : 0; U.uDepthOn.value = S.ov === "depth" ? 1 : 0; U.uHsOn.value = S.ov === "hs" ? 1 : 0; U.uChopOn.value = S.ov === "chop" ? 1 : 0; U.uFlowOn.value = S.ov === "flow" ? 1 : 0; setSat(); setSpots(); renderLegend(); });
+  U.uMode.value = S.ov === "radar" ? 1 : 0; U.uTempOn.value = S.ov === "temp" ? 1 : 0; U.uDepthOn.value = S.ov === "depth" ? 1 : 0; U.uHsOn.value = S.ov === "hs" ? 1 : 0; U.uChopOn.value = S.ov === "chop" ? 1 : 0; U.uFlowOn.value = S.ov === "flow" ? 1 : 0; U.uBreakOn.value = S.ov === "break" ? 1 : 0; BRK.key = ""; setSat(); setSpots(); renderLegend(); });
 document.querySelectorAll("[data-spots]").forEach((b) => b.onclick = () => { S.spotsNow = b.dataset.spots === "now"; document.querySelectorAll("[data-spots]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); setSpots(); renderLegend(); });
 document.querySelectorAll("[data-cam]").forEach((b) => b.onclick = () => goCam(b.dataset.cam));
 document.querySelectorAll("[data-q]").forEach((b) => b.onclick = () => { S.quality = +b.dataset.q; document.querySelectorAll("[data-q]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); try { localStorage.setItem("lakeworld-q", String(S.quality)); } catch (e) {} resize(); });
@@ -4548,6 +4585,11 @@ function renderLegend() {
       <span><i style="display:inline-block;width:22px;height:9px;vertical-align:-1px;background:repeating-linear-gradient(135deg,#f240d9 0 3px,transparent 3px 7px)"></i> rebound off walls, trains crossing (wall tiles, with a Walls condition picked)</span>${conf}`
       : `<b>Chop spots: suspected, how often</b>${bar}<div class="tk"><span>0</span><span>15%</span><span>30%</span><span>45%</span><span>60%+</span></div>
       <span>Share of daylight hours (6 AM-8 PM, May-Oct ${M ? M.seasons : ""}) a spot is Choppy or worse (70+ J/m²): ${M ? M.hours.toLocaleString() : "?"} buoy hours of offshore waves carried in by the SWAN model (sheltering, wall reflection, breaking). Wind chop raised inside the harbours isn't in it.</span>${conf}`; }
+  else if (S.ov === "break") { const ft = (m) => Math.round(m * 3.281), R = BRK.rows;
+    const rows = R.map((r) => `<span><b>${r.name}</b>: ${r.na ? "no survey here" : r.s == null ? "no breaking: the waves reach the sand unbroken" : `breaks start ${ft(r.s) >= 100 ? Math.round(ft(r.s) / 10) * 10 : ft(r.s)} ft (${Math.round(r.s)} m) out, in ${(r.d * 3.281).toFixed(1)} ft of water, waves ${(r.hs * 3.281).toFixed(1)} ft there`}</span>`).join("");
+    h = `<b>Wave break</b><div class="bar" style="background:linear-gradient(90deg,#0c1a30,#fff5ad 8%,#ffb44d 45%,#f0469c)"></div><div class="tk"><span>none</span><span>some</span><span>half</span><span>all waves breaking</span></div>
+      <span class="lead">White line: the outer edge of the surf zone, where 1 wave in 100 breaks (wave height about half the depth). It moves with the waves and the lake level for the time shown.</span>${rows || "<span>Depth survey not loaded yet.</span>"}
+      <span>Depth: lidar and NCEI surveys${DATA.levels ? ", under the lake level measured for this hour" : ""}. Wave height: ${U.uSwanOn.value > 0.5 ? "SWAN (shoaling, refraction, sheltering)" : "the open-lake estimate, without shoaling"}. Share breaking: Battjes &amp; Janssen 1978, breaker limit 0.73 of the depth. Sandbars move after storms, so the line is a guide, not a survey of today's bottom.</span>`; }
   else if (S.ov === "s1") { const E1 = (DATA.earth || {}).s1, bar = S1_STOPS.map(([f, c]) => `rgb(${c}) ${Math.round(f * 100)}%`).join(",");
     h = `<b>Wind on the water: radar roughness</b><div class="bar" style="background:linear-gradient(90deg,${bar})"></div><div class="tk"><span>calmer</span><span></span><span>usual</span><span></span><span>rougher</span></div>
       <span class="lead"><b style="font:inherit;text-transform:none;letter-spacing:0">Bright</b> = wind is roughening the surface (ripples and chop). <b style="font:inherit;text-transform:none;letter-spacing:0">Dark</b> = calm or sheltered water: wind shadows behind breakwaters and buildings, slicks. It compares spots with each other on that pass; it isn't a wind speed.</span>
@@ -4680,6 +4722,7 @@ function tick() {
   if (FW.cur) { const n = FW.cur.eta.frames, L = n * FW.cur.eta.dt; U.uFwT.value = ((U.uTime.value % L) / L) * (n - 1) / n + 0.5 / n; }
   if (S.mode === "live" && S.follow) S.t = Date.now();
   if (S.ov === "spots") buildConfirmed();
+  if (S.ov === "break") breakRefresh();
   const [t0, t1] = range();
   if (S.playing && !(S.mode === "live" && S.follow)) { S.t += dt * 1000 * S.speed; if (S.t > t1) S.t = t0; }   // one steady rate: S.speed seconds of the timeline per real second
   // the kiosk's clock runs on wall time, not frame time: one loop takes exactly loopSec real seconds however the frames come
@@ -4727,7 +4770,7 @@ function tick() {
     const wa = ((sys[0] ? sys[0].dir : C.dir) + 180) * Math.PI / 180; U.uWaveDir.value.set(Math.sin(wa), Math.cos(wa)); U.uWindSpd.value = C.wind;
     U.uFlowDir.value.copy(U.uWaveDir.value); U.uFlowTp.value = U.uTp.value;
     WU.uWcFetch.value = clamp((rayFetchKm(cx, cy, C.dir) - 0.15) / 2.5, 0.08, 1);
-    { const lv = levelAt(S.t); C.level = lv; WU.uLevelD.value = lv != null && BATHY.ok ? clamp(lv - BATHY.level, -1, 1.5) : 0;
+    { const lv = levelAt(S.t); C.level = lv; WU.uLevelD.value = lv != null && BATHY.ok ? clamp(lv - BATHY.level, -1, 1.5) : 0; U.uBrkLvl.value = WU.uLevelD.value;
       const hs0 = C.off ? C.off.hs : Math.sqrt(sys.reduce((a, q) => a + q.hs * q.hs, 0)); WU.uSetupShore.value = Math.min(0.18 * hs0, 0.9); }
     U.uWhitecap.value = Math.min(3.84e-6 * Math.pow(C.wind, 3.41), 0.3) * WU.uWcFetch.value;
     U.uWaterC.value = C.waterC ?? 15; U.uIceExp.value = S.mode === "exp" ? S.x.ice : 0; U.uFdd.value = S.mode === "exp" ? S.x.fdd : GRIDS.ice ? (GRIDS.fdd ?? 60 + 200 * (GRIDS.iceMax || 0)) : 0; U.uIceMax.value = S.mode !== "exp" && GRIDS.ice ? GRIDS.iceMax || 0 : 0; U.uHasTemp.value = S.mode === "exp" ? 0 : GRIDS.temp ? 1 : 0;
@@ -5517,6 +5560,6 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     } catch (e) { console.warn("background load", e); }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { RIVER, RN, DRONE, WK, BOAT, riverWakes, wkTrips, wakeH, wakeNet, wkRoutes, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES, ORTHO, EARTH, AUTO, autoSet, autoPick, autoShotKinds };
+window.__world = { BRK, breakRows, brkHere, RIVER, RN, DRONE, WK, BOAT, riverWakes, wkTrips, wakeH, wakeNet, wkRoutes, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES, ORTHO, EARTH, AUTO, autoSet, autoPick, autoShotKinds };
 })();
 </script>
