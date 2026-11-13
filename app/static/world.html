@@ -2253,7 +2253,7 @@ function swanBlend(D, hs, tp, dir, only, count) {   // only: one cell index -> 1
 // the library texture for one offshore condition (and harbour wind), built in slices of cells: a generator that yields after
 // each slice, so the kiosk can spread it over frames (swanStep); SWAN.cur / SWAN.key change only when it is complete
 function* swanBuild(D, off, wind, windy, hsRef, key) {
-  const lakeOn = off.hs >= 0.02 && D.cases.length, CH = 8192;
+  const lakeOn = off.hs >= 0.02 && D.cases.length, CH = 4096;
   const ratio = new Float32Array(D.n), dir = new Float32Array(D.n * 2), half = new Uint16Array(D.n * 4), hf = THREE.DataUtils.toHalfFloat, one = hf(1);
   let hm = null;
   for (let k0 = 0; k0 < D.n; k0 += CH) { const n = Math.min(CH, D.n - k0);
@@ -2276,8 +2276,9 @@ function* swanBuild(D, off, wind, windy, hsRef, key) {
   else { if (SWAN.tex) SWAN.tex.dispose(); SWAN.tex = new THREE.DataTexture(half, D.g.nx, D.g.ny, THREE.RGBAFormat, THREE.HalfFloatType); SWAN.tex.minFilter = SWAN.tex.magFilter = THREE.LinearFilter; SWAN.tex.needsUpdate = true; }
   U.uSwan.value = SWAN.tex; U.uSwanMin.value.set(D.x0, D.y0); U.uSwanSize.value.set(D.w, D.h); SWAN.cur = { D, ratio, dir, ok: true, hsRef }; SWAN.key = key;
 }
-// (at least minSteps slices a frame, so a slow device still finishes a rebuild within ~15 frames)
-function swanStep(budgetMs, minSteps = 3) { const t = performance.now(); let n = 0;
+// (at least minSteps slices a frame, so a slow device still finishes a rebuild; one 4096-cell slice is a couple of ms, where
+// three slices of 8192 ran 10-15 ms: a long frame, often twice a second, through the whole clip)
+function swanStep(budgetMs, minSteps = 1) { const t = performance.now(); let n = 0;
   while (SWAN.job && (n++ < minSteps || performance.now() - t < budgetMs)) if (SWAN.job.it.next().done) SWAN.job = null; }
 function swanUpdate(xk, yk, off, wind) {   // off: {hs, tp, dir} offshore, wind: {u10, dir}; returns local {ratio, dir} at (xk, yk) or null
   const D = swanDomainAt(xk, yk), windy = D && D.wind && wind && wind.u10 > 0.3;
@@ -2397,9 +2398,10 @@ function funwaveHsKm(xk, yk) { const r = FW.cur; if (!r || !r.hsArr || !fwIn(r, 
 // 32x32 (2 m cells) for the geometry and 128x128 (0.5 m) for slopes and crest foam.
 // makeOcean(L, NF, NC, kMin): one tile; the fine tile (8 m, 6 cm texels) holds only wavenumbers above kMin, so the two don't
 // double-count: it gives the near water its centimetre ripples and sharp sun glints
-const makeOcean = (L, NF, NC, kMin = 0) => {
-  const g = 9.81, dk = 2 * Math.PI / L;
-  const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+// The FFT (oceanKernel) is plain code with no page state, so it runs in a worker: the page only swaps in the finished
+// textures, and the small waves move every frame instead of 30 times a second (a step the moving camera made visible, and
+// the largest steady cost of a frame). Where a worker can't start, the same code runs here, each update split over two frames.
+function oceanKernel() {
   function fftPlan(n) { const bits = Math.log2(n), rev = new Uint32Array(n), cs = new Float32Array(n / 2), sn = new Float32Array(n / 2);
     for (let i = 0; i < n; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); rev[i] = r; }
     for (let i = 0; i < n / 2; i++) { cs[i] = Math.cos(2 * Math.PI * i / n); sn[i] = Math.sin(2 * Math.PI * i / n); } return { n, rev, cs, sn }; }
@@ -2414,37 +2416,11 @@ const makeOcean = (L, NF, NC, kMin = 0) => {
   const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
   const toHalf = (v) => { f32[0] = v; const x = u32[0], s = (x >>> 16) & 0x8000, e = ((x >>> 23) & 0xff) - 112, m = x & 0x7fffff;
     if (e <= 0) return s; if (e >= 31) return s | 0x7bff; return s | (e << 10) | (m >>> 13); };
-  function grid(n) { const P = fftPlan(n), N2 = n * n;
-    return { n, P, h0r: new Float32Array(N2), h0i: new Float32Array(N2), w: new Float32Array(N2), kx: new Float32Array(N2), kz: new Float32Array(N2),
-      bufs: [0, 1, 2, 3].map(() => [new Float32Array(N2), new Float32Array(N2)]) }; }
-  const F = grid(NF), C = grid(NC);
-  const mk = (n) => { const t = new THREE.DataTexture(new Uint16Array(n * n * 4), n, n, THREE.RGBAFormat, THREE.HalfFloatType);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.minFilter = t.magFilter = THREE.LinearFilter; t.needsUpdate = true; return t; };
-  const texC = mk(NC), texF = mk(NF), heightC = new Float32Array(NC * NC);
-  const st = { on: false, t: -1, varLo: 0, varHi: 0, rmsH: 0, key: "" };
-  let seed = 1; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const gauss = () => { const u = Math.max(rnd(), 1e-9), v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
-  // wind-wave spectrum (Pierson-Moskowitz shape for this wind, cos^2 spreading about the wind) above omegaCut, tapered in
-  function setSea(wind, windTo, wpMain) {
-    // coarse key: rebuilding both spectra costs a frame or more, and a played forecast nudges the wind every few frames
-    const k = S.kiosk ? 4 : 1, U = Math.max(wind, 0), q = (v, st) => (Math.round(v / st) * st).toFixed(2), key = [q(U, 0.5 * k), q(windTo[0], 0.05 * k), q(windTo[1], 0.05 * k), q(wpMain, 0.1 * k)].join();
-    if (key === st.key) return; st.key = key;
-    const wWind = 0.877 * g / Math.max(U, 0.3), wCut = 2.3 * wpMain, gate = clamp((U - 0.4) / 2.6, 0, 1), alpha = 0.0081;
-    const spec = (kx, kz) => { const k = Math.hypot(kx, kz); if (k < 1e-6) return 0; const w = Math.sqrt(g * k);
-      const S = alpha * g * g / Math.pow(w, 5) * Math.exp(-1.25 * Math.pow(wWind / w, 4)) * smooth(0.85 * wCut, 1.15 * wCut, w);
-      const c = (kx * windTo[0] + kz * windTo[1]) / k, D = c > 0 ? (2 / Math.PI) * c * c * 0.92 + 0.08 / (2 * Math.PI) : 0.08 / (2 * Math.PI);
-      return S * D * (g / (2 * w)) / k * gate * (kMin > 0 ? smooth(kMin * 0.75, kMin, k) : 1); };   // E(kx, kz) = S(w) D(theta) (dw/dk) / k
-    let vLo = 0, vHi = 0; seed = 1;
-    for (const G of [F, C]) { const n = G.n;
-      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const q = j * n + i, mi = i < n / 2 ? i : i - n, mj = j < n / 2 ? j : j - n;
-        const kx = mi * dk, kz = mj * dk, E = spec(kx, kz), amp = Math.sqrt(E * dk * dk) / 2;
-        G.kx[q] = kx; G.kz[q] = kz; G.w[q] = Math.sqrt(g * Math.hypot(kx, kz)); G.h0r[q] = gauss() * amp; G.h0i[q] = gauss() * amp;
-        if (G === F) { const kk = kx * kx + kz * kz; if (Math.abs(mi) < NC / 2 && Math.abs(mj) < NC / 2) vLo += E * dk * dk * kk; else vHi += E * dk * dk * kk; } } }
-    // the coarse grid uses the same modes as the fine one (same random draws for |k| inside it), so near and far agree
-    for (let j = 0; j < NC; j++) for (let i = 0; i < NC; i++) { const mi = i < NC / 2 ? i : i - NC, mj = j < NC / 2 ? j : j - NC, qf = ((mj + NF) % NF) * NF + ((mi + NF) % NF), qc = j * NC + i;
-      C.h0r[qc] = F.h0r[qf]; C.h0i[qc] = F.h0i[qf]; }
-    st.varLo = vLo; st.varHi = vHi; st.on = gate > 0;
-  }
+  // a grid's wavenumbers and frequencies are fixed by its size: worked out once
+  function grid(n, L) { const P = fftPlan(n), N2 = n * n, dk = 2 * Math.PI / L, kx = new Float32Array(N2), kz = new Float32Array(N2), w = new Float32Array(N2);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const q = j * n + i, mi = i < n / 2 ? i : i - n, mj = j < n / 2 ? j : j - n;
+      kx[q] = mi * dk; kz[q] = mj * dk; w[q] = Math.sqrt(9.81 * Math.hypot(kx[q], kz[q])); }
+    return { n, P, kx, kz, w, h0r: new Float32Array(N2), h0i: new Float32Array(N2), bufs: [0, 1, 2].map(() => [new Float32Array(N2), new Float32Array(N2)]) }; }
   // spectra at time t -> fields; two real fields share one complex IFFT (A + iB): coarse (h, Dx) (Dz, -); fine (Sx, Sz) (Jxx, Jzz) (Jxz, -)
   // multipliers on h(k): -i k/|k| (horizontal displacement), i k (slope), k k/|k| (Jacobian terms)
   // ffts: which of the inverse FFTs to run now (1, 2, 4: the first, second, third field)
@@ -2462,23 +2438,84 @@ const makeOcean = (L, NF, NC, kMin = 0) => {
         const axx = kx * kx * ik, azz = kz * kz * ik, axz = kx * kz * ik;
         b1r[q] = axx * hr - azz * hi; b1i[q] = axx * hi + azz * hr; b2r[q] = axz * hr; b2i[q] = axz * hi; } }
     if (ffts & 1) ifft2(G.P, b0r, b0i); if (ffts & 2) ifft2(G.P, b1r, b1i); if (fine && ffts & 4) ifft2(G.P, b2r, b2i); }
+  function tile(L, NF, NC) { const F = grid(NF, L), C = grid(NC, L);
+    return { F, C,
+      stepA(t) { synth(C, t, false); synth(F, t, true, 1); },   // the coarse grid, and the fine grid's spectra and first FFT
+      stepB() { const b = F.bufs; ifft2(F.P, b[1][0], b[1][1]); ifft2(F.P, b[2][0], b[2][1]); },   // the fine grid's other two
+      packC(d, hC, chop) { const b = C.bufs; let s2 = 0;   // the coarse texture (Dx, h, Dz) and its heights; returns their rms
+        for (let q = 0; q < NC * NC; q++) { const h = b[0][0][q]; hC[q] = h; s2 += h * h;
+          d[4 * q] = toHalf(-chop * b[0][1][q]); d[4 * q + 1] = toHalf(h); d[4 * q + 2] = toHalf(-chop * b[1][0][q]); d[4 * q + 3] = 0; }
+        return Math.sqrt(s2 / (NC * NC)); },
+      packF(d, chop) { const b = F.bufs;   // the fine texture (slopes, Jacobian)
+        for (let q = 0; q < NF * NF; q++) { const jxx = -chop * b[1][0][q], jzz = -chop * b[1][1][q], jxz = -chop * b[2][0][q];
+          d[4 * q] = toHalf(b[0][0][q]); d[4 * q + 1] = toHalf(b[0][1][q]); d[4 * q + 2] = toHalf((1 + jxx) * (1 + jzz) - jxz * jxz); d[4 * q + 3] = 0; } } }; }
+  return { tile };
+}
+// the worker: tiles by id; "h0" sets a tile's spectrum, a time asks for its textures (sent back with the buffers it was lent)
+const OCEAN_W = { w: null, dead: false, ok: false, tiles: [] };
+try { const src = `const K = (${oceanKernel})(), T = [];
+onmessage = (e) => { const m = e.data; if (m.init) { T[m.id] = K.tile(m.L, m.NF, m.NC); return; } const tl = T[m.id];
+  if (m.h0) { tl.F.h0r.set(m.h0[0]); tl.F.h0i.set(m.h0[1]); tl.C.h0r.set(m.h0[2]); tl.C.h0i.set(m.h0[3]); return; }
+  const NC = tl.C.n, NF = tl.F.n, dC = m.dC || new Uint16Array(NC * NC * 4), dF = m.dF || new Uint16Array(NF * NF * 4), hC = m.hC || new Float32Array(NC * NC);
+  tl.stepA(m.t); tl.stepB(); const rms = tl.packC(dC, hC, m.chop); tl.packF(dF, m.chop);
+  postMessage({ id: m.id, dC, dF, hC, rms }, [dC.buffer, dF.buffer, hC.buffer]); };`;
+  OCEAN_W.w = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+  OCEAN_W.w.onmessage = (e) => { const T = OCEAN_W.tiles[e.data.id]; if (T) T(e.data); };
+  OCEAN_W.w.onerror = () => { OCEAN_W.dead = true; };
+} catch (e) { OCEAN_W.dead = true; }
+const OCEAN_K = oceanKernel();
+const makeOcean = (L, NF, NC, kMin = 0) => {
+  const g = 9.81, dk = 2 * Math.PI / L, id = OCEAN_W.tiles.length;
+  const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  const K = OCEAN_K.tile(L, NF, NC), F = K.F, C = K.C;   // here: the spectrum (setSea), and the FFT when there is no worker
+  const mk = (n) => { const t = new THREE.DataTexture(new Uint16Array(n * n * 4), n, n, THREE.RGBAFormat, THREE.HalfFloatType);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.minFilter = t.magFilter = THREE.LinearFilter; t.needsUpdate = true; return t; };
+  const texC = mk(NC), texF = mk(NF); let heightC = new Float32Array(NC * NC);
+  const st = { on: false, t: -1, varLo: 0, varHi: 0, rmsH: 0, key: "", busy: 0 };
+  // the parts of the spectrum that don't change with the wind, per fine-grid mode: the same random draws each time (seed 1,
+  // as before), the direction, alpha g^2 / w^5 * (dw/dk) / k with the kMin taper, w^-4, and whether it is a coarse-grid mode
+  const NF2 = NF * NF, GR = new Float32Array(NF2), GI = new Float32Array(NF2), UX = new Float32Array(NF2), UZ = new Float32Array(NF2), S0 = new Float32Array(NF2), IW4 = new Float32Array(NF2), KK = new Float32Array(NF2), LO = new Uint8Array(NF2), CQ = new Uint32Array(NC * NC);
+  { let seed = 1; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, gauss = () => { const u = Math.max(rnd(), 1e-9), v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+    for (let q = 0; q < NF2; q++) { const kx = F.kx[q], kz = F.kz[q], k = Math.hypot(kx, kz), w = F.w[q], mi = q % NF < NF / 2 ? q % NF : q % NF - NF, mj = ((q / NF) | 0) < NF / 2 ? (q / NF) | 0 : ((q / NF) | 0) - NF;
+      GR[q] = gauss(); GI[q] = gauss(); KK[q] = k * k; LO[q] = Math.abs(mi) < NC / 2 && Math.abs(mj) < NC / 2 ? 1 : 0;
+      if (k < 1e-6) continue; UX[q] = kx / k; UZ[q] = kz / k; IW4[q] = 1 / Math.pow(w, 4);
+      S0[q] = 0.0081 * g * g / Math.pow(w, 5) * (g / (2 * w)) / k * (kMin > 0 ? smooth(kMin * 0.75, kMin, k) : 1); }
+    // the coarse grid uses the same modes as the fine one (same random draws for |k| inside it), so near and far agree
+    for (let j = 0; j < NC; j++) for (let i = 0; i < NC; i++) { const mi = i < NC / 2 ? i : i - NC, mj = j < NC / 2 ? j : j - NC; CQ[j * NC + i] = ((mj + NF) % NF) * NF + ((mi + NF) % NF); } }
+  // wind-wave spectrum (Pierson-Moskowitz shape for this wind, cos^2 spreading about the wind) above omegaCut, tapered in
+  function setSea(wind, windTo, wpMain) {
+    // coarse key: a played forecast nudges the wind every few frames
+    const k = S.kiosk ? 4 : 1, U = Math.max(wind, 0), q = (v, st) => (Math.round(v / st) * st).toFixed(2), key = [q(U, 0.5 * k), q(windTo[0], 0.05 * k), q(windTo[1], 0.05 * k), q(wpMain, 0.1 * k)].join();
+    if (key === st.key) return; st.key = key;
+    const wWind = 0.877 * g / Math.max(U, 0.3), W4 = Math.pow(wWind, 4), wCut = 2.3 * wpMain, gate = clamp((U - 0.4) / 2.6, 0, 1), a = 0.85 * wCut, b = 1.15 * wCut;
+    const d0 = 0.92 * 2 / Math.PI, d1 = 0.08 / (2 * Math.PI), dd = dk * dk;
+    let vLo = 0, vHi = 0;
+    for (let q = 0; q < NF2; q++) { if (!S0[q]) { F.h0r[q] = F.h0i[q] = 0; continue; }
+      const c = UX[q] * windTo[0] + UZ[q] * windTo[1], D = c > 0 ? d0 * c * c + d1 : d1, w = F.w[q];
+      const E = S0[q] * Math.exp(-1.25 * W4 * IW4[q]) * smooth(a, b, w) * D * gate, amp = Math.sqrt(E * dd) / 2;   // E(kx, kz) = S(w) D(theta) (dw/dk) / k
+      F.h0r[q] = GR[q] * amp; F.h0i[q] = GI[q] * amp; if (LO[q]) vLo += E * dd * KK[q]; else vHi += E * dd * KK[q]; }
+    for (let qc = 0; qc < NC * NC; qc++) { C.h0r[qc] = F.h0r[CQ[qc]]; C.h0i[qc] = F.h0i[CQ[qc]]; }
+    st.varLo = vLo; st.varHi = vHi; st.on = gate > 0;
+    if (!OCEAN_W.dead) OCEAN_W.w.postMessage({ id, h0: [F.h0r, F.h0i, C.h0r, C.h0i] });   // copied (not lent): the page keeps its own
+  }
+  // the worker's textures arrive: swap them in, and lend it the ones they replace for the next update
+  let spare = null;
+  OCEAN_W.tiles[id] = (m) => { st.busy = 0; OCEAN_W.ok = true; spare = { dC: texC.image.data, dF: texF.image.data, hC: heightC };
+    texC.image.data = m.dC; texF.image.data = m.dF; heightC = m.hC; st.rmsH = m.rms; texC.needsUpdate = texF.needsUpdate = true; };
+  if (!OCEAN_W.dead) OCEAN_W.w.postMessage({ init: true, id, L, NF, NC });
   function update(t, chop) {
     if (!st.on) return;
-    // 30 updates a second, each spread over two frames at the same time t: the coarse grid and the fine grid's spectra and
-    // first FFT on one, the fine grid's other two FFTs and its texture on the next, so the frames cost about the same instead
-    // of every other one running long (a visible judder)
-    if (st.pend) { st.pend = false; const b = F.bufs; ifft2(F.P, b[1][0], b[1][1]); ifft2(F.P, b[2][0], b[2][1]); writeF(chop); return; }
+    if (!OCEAN_W.dead) {   // one request in flight at a time, at most ~75 a second; a worker that stays silent through
+      // 200 frames (600 once it has answered) is given up on: counted in frames, as the page's own long tasks hold its replies
+      if (st.busy) { if (++st.busy > (OCEAN_W.ok ? 600 : 200)) { OCEAN_W.dead = true; st.busy = 0; } return; }
+      if (Math.abs(t - st.t) < 1 / 75) return; st.t = t; st.busy = 1;
+      const m = { id, t, chop }, tr = []; if (spare) { Object.assign(m, spare); tr.push(spare.dC.buffer, spare.dF.buffer, spare.hC.buffer); spare = null; }
+      OCEAN_W.w.postMessage(m, tr); return; }
+    // here: 30 updates a second, each spread over two frames at the same time t (the coarse grid and the fine grid's spectra
+    // and first FFT on one, the fine grid's other two FFTs and its texture on the next), so the frames cost about the same
+    if (st.pend) { st.pend = false; K.stepB(); K.packF(texF.image.data, chop); texF.needsUpdate = true; return; }
     if (Math.abs(t - st.t) < 1 / 30) return; st.t = t; st.pend = true;
-    synth(C, t, false); synth(F, t, true, 1);
-    { const d = texC.image.data, b = C.bufs; let s2 = 0;
-      for (let q = 0; q < NC * NC; q++) { const h = b[0][0][q]; heightC[q] = h; s2 += h * h;
-        d[4 * q] = toHalf(-chop * b[0][1][q]); d[4 * q + 1] = toHalf(h); d[4 * q + 2] = toHalf(-chop * b[1][0][q]); d[4 * q + 3] = 0; }
-      st.rmsH = Math.sqrt(s2 / (NC * NC)); texC.needsUpdate = true; } }
-  function writeF(chop) {
-    { const d = texF.image.data, b = F.bufs;
-      for (let q = 0; q < NF * NF; q++) { const jxx = -chop * b[1][0][q], jzz = -chop * b[1][1][q], jxz = -chop * b[2][0][q];
-        d[4 * q] = toHalf(b[0][0][q]); d[4 * q + 1] = toHalf(b[0][1][q]); d[4 * q + 2] = toHalf((1 + jxx) * (1 + jzz) - jxz * jxz); d[4 * q + 3] = 0; }
-      texF.needsUpdate = true; } }
+    K.stepA(t); st.rmsH = K.packC(texC.image.data, heightC, chop); texC.needsUpdate = true; }
   // height of the detail sea at (x east, z south) metres, for the board
   function heightAt(x, z) { if (!st.on) return 0; const u = ((x / L) % 1 + 1) % 1 * NC, v = ((z / L) % 1 + 1) % 1 * NC, i0 = Math.floor(u), j0 = Math.floor(v), fu = u - i0, fv = v - j0;
     const at = (i, j) => heightC[(j % NC) * NC + (i % NC)]; return (at(i0, j0) * (1 - fu) + at(i0 + 1, j0) * fu) * (1 - fv) + (at(i0, j0 + 1) * (1 - fu) + at(i0 + 1, j0 + 1) * fu) * fv; }
@@ -4051,8 +4088,9 @@ function compAt(c, grid, x, y) { const fx = (x - grid.x0_km) / grid.dx_km, fy = 
 function stormMotion() {   // km/min (x east, y north) of the echoes on show, or null
   if (S.mode === "exp") { const mv = S.x.mdir * Math.PI / 180; return [Math.sin(mv) * S.x.mspd / 60, Math.cos(mv) * S.x.mspd / 60]; }
   const src = S.mode === "history" ? (SRC.hist[S.histIdx] && SRC.hist[S.histIdx].scene) : SRC.live; return src && src.meta.motion_km_per_min ? src.meta.motion_km_per_min : null; }
+// redrawn as the radar frames blend: in 40 steps, or 8 in the kiosk, whose clip crosses a frame in a fraction of a second
 function mmRadarLayer() { const W = MM.el.width, H = MM.el.height, rs = RS;
-  const key = rs ? [rs.A.t, rs.B.t, Math.round(rs.f * 40), S.mode, S.mode === "exp" ? JSON.stringify(S.x) : ""].join("|") : "none|" + S.mode;
+  const key = rs ? [rs.A.t, rs.B.t, Math.round(rs.f * (S.kiosk ? 8 : 40)), S.mode, S.mode === "exp" ? JSON.stringify(S.x) : ""].join("|") : "none|" + S.mode;
   if (key === MMR.key && MMR.rc) return; MMR.key = key;
   if (!MMR.rc) { MMR.rc = document.createElement("canvas"); MMR.rc.width = W; MMR.rc.height = H; }
   const g = MMR.rc.getContext("2d"); g.clearRect(0, 0, W, H); MMR.track = null; if (!rs) return;
@@ -4578,15 +4616,19 @@ function renderLegend() {
 const clock = new THREE.Clock(); let lastHud = 0, lastCond = 0, COND = null, RS = null, flashT = -1e9, nextStrike = 0, flashPos = [0, 0, 5];
 // the shelter map (SHELTER_GLSL) for the current wave direction: one small render pass when the direction changes
 const SHEL = { dir: null };
-// the kiosk's frame budget: if frames average over ~24 ms for 2 s, drop the pixel ratio a step (at most every 3 s, down
-// to 0.6), so the clip keeps moving evenly instead of stuttering; and a short fade to dark across the loop's seam, where
-// the clock jumps back 24 hours
-const KPERF = { avg: 16, since: 0, last: 0, pr: 1 };
+// the kiosk's frame budget: if over a tenth of the frames in 2 s missed the display's refresh (took 1.5 intervals or more,
+// and over 21 ms, so a steady 60 on a 120 Hz screen is left alone), or they average over ~24 ms, drop the pixel ratio a
+// step (at most every 3 s, down to 0.5), so the clip keeps moving evenly instead of stuttering; and a short fade to dark
+// across the loop's seam, where the clock jumps back 24 hours
+const KPERF = { avg: 16, since: 0, last: 0, pr: 1, ref: 16.7, n: 0, miss: 0 };
 function kioskPerf(dt, el, total) {
-  const ms = dt * 1000; if (ms > 0 && ms < 250) KPERF.avg += (ms - KPERF.avg) * 0.05;
+  const ms = dt * 1000; if (ms > 0 && ms < 250) { KPERF.avg += (ms - KPERF.avg) * 0.05;
+    KPERF.ref = ms < KPERF.ref ? Math.max(4, KPERF.ref + (ms - KPERF.ref) * 0.2) : Math.min(34, KPERF.ref * 1.001);   // the display's interval: the low end of the frames
+    KPERF.n++; if (ms > Math.max(KPERF.ref * 1.5, 21)) KPERF.miss++; }
   KPERF.since += dt; const t = performance.now();
-  if (KPERF.since > 2 && KPERF.avg > 24 && KPERF.pr > 0.6 && t - KPERF.last > 3000) { KPERF.pr = Math.max(0.6, KPERF.pr * 0.8); KPERF.last = t; KPERF.since = 0;
-    renderer.setPixelRatio(KPERF.pr); resize(); }
+  if (KPERF.since > 2) { const jank = KPERF.n > 20 && KPERF.miss / KPERF.n > 0.1;
+    if ((jank || KPERF.avg > 24) && KPERF.pr > 0.5 && t - KPERF.last > 3000 && !document.hidden) { KPERF.pr = Math.max(0.5, KPERF.pr * 0.8); KPERF.last = t; renderer.setPixelRatio(KPERF.pr); resize(); }
+    KPERF.since = 0; KPERF.n = KPERF.miss = 0; }
   const f = $("#kfade"); if (f) { let edge = Math.min(el, total - el); if (AUTO.on && AUTO.shot) { const e = performance.now() - AUTO.start; edge = Math.min(edge, e * 1.6, AUTO.shot.dur - e); }
     const o = clamp(1 - edge / 450, 0, 1); if (Math.abs(o - (+f.dataset.o || 0)) > 0.01) { f.style.opacity = o.toFixed(2); f.dataset.o = o; } }
 }
