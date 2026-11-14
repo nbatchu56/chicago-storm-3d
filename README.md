@@ -152,6 +152,10 @@ in place of the lake's wave model:
   the page's frame. Streaks flow with the wind over whatever you look at, coloured by speed; gust patches drift downwind
   and make the streaks surge and brighten as far as HRRR's gust over its mean wind. Observed hours are nudged to the
   lakefront stations and buoys (each station's miss spread over ~20 km). Outside HRRR's hours the streaks follow the readout.
+- **HRRR radar after the nowcast**: the same HRRR download also takes the simulated composite reflectivity (`refl` in
+  `wind.json`, with the echoes' hour-to-hour motion). Past the end of the radar nowcast (~2 h) the page stands each hour's
+  map up into a volume on the radar scenes' grid and slides one hour into the next, so the clouds, rain and minimap radar
+  run on for HRRR's 18-48 h (`hrrrRadar` in `world.html`). A model's storms: placement and timing are approximate.
 - **Jet stream** (Radar map card → Jet stream): NOAA GFS 1° 250 hPa winds over North America (`app/jet.py now`), every 3 h
   to +48 h: bands shaded by speed with flowing streaks, the nearest jet streak's core speed, and Chicago's quadrant
   (under the core, left/right × entrance/exit). Outline: Natural Earth 1:50m (`tools/na_outline.py`).

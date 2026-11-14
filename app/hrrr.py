@@ -1,7 +1,8 @@
 """
-NOAA HRRR (3 km, hourly) 10 m wind and surface gust around Chicago, for the page's wind layer.
+NOAA HRRR (3 km, hourly) 10 m wind and surface gust around Chicago, for the page's wind layer, and its simulated
+composite reflectivity, which carries the page's radar picture on from the end of the radar nowcast.
 
-Downloads only the three records over the radar map's region through NOMADS' grib filter (no key):
+Downloads only the four records over the radar map's region through NOMADS' grib filter (no key):
 the newest complete cycle (f00-f18, f00-f48 on the 00/06/12/18 runs), hours past f18 from the newest
 00/06/12/18 run, and the 12 hours before the newest cycle from each of those hours' own analysis (f00).
 
@@ -33,7 +34,7 @@ from . import sup_waves as sw
 log = logging.getLogger("hrrr")
 UTC = dt.timezone.utc
 FILTER = os.environ.get("HRRR_FILTER", "https://nomads.ncep.noaa.gov/cgi-bin/filter_hrrr_2d.pl")
-BOX = (41.10, -88.50, 42.80, -86.70)      # south, west, north, east: the radar map's region and a margin
+BOX = (40.93, -88.90, 42.83, -86.36)      # south, west, north, east: the radar scenes' 200 km square (their grid, +-100 km) and a margin
 DX_KM = 3.0
 SCALE = 0.25                              # m/s per step: u, v as int8 (+-31.75 m/s), gust as uint8 (to 63.75 m/s)
 PAST_H = 12
@@ -49,6 +50,7 @@ def url(cyc, fh, box=BOX):
     s, w, n, e = box
     q = {"dir": f"/hrrr.{cyc:%Y%m%d}/conus", "file": f"hrrr.t{cyc:%H}z.wrfsfcf{fh:02d}.grib2",
          "var_UGRD": "on", "var_VGRD": "on", "var_GUST": "on", "lev_10_m_above_ground": "on", "lev_surface": "on",
+         "var_REFC": "on", "lev_entire_atmosphere": "on",
          "subregion": "", "toplat": n, "leftlon": w, "rightlon": e, "bottomlat": s}
     return FILTER + "?" + urllib.parse.urlencode(q)
 
@@ -75,7 +77,7 @@ def is_grib(b):
 
 
 def decode(blob):
-    """grib2 bytes -> {'u','v','gust','lat','lon','rel'} (flat arrays; lon in -180..180)"""
+    """grib2 bytes -> {'u','v','gust','lat','lon','rel'} and 'refc' when the file has it (flat arrays; lon in -180..180)"""
     import eccodes
     out = {}
     with tempfile.NamedTemporaryFile(suffix=".grib2") as tmp:
@@ -86,7 +88,9 @@ def decode(blob):
                 if g is None:
                     break
                 try:
-                    name = {"10u": "u", "10v": "v", "gust": "gust"}.get(eccodes.codes_get(g, "shortName"))
+                    name = {"10u": "u", "10v": "v", "gust": "gust", "refc": "refc"}.get(eccodes.codes_get(g, "shortName"))
+                    if not name and eccodes.codes_get(g, "parameterCategory") == 16 and eccodes.codes_get(g, "parameterNumber") == 196:
+                        name = "refc"                                # composite reflectivity, whatever this eccodes calls it
                     if not name:
                         continue
                     out[name] = np.asarray(eccodes.codes_get_values(g), float)
@@ -143,6 +147,49 @@ def pack(a, signed):
 
 def unpack(s, signed, shape):
     return np.frombuffer(base64.b64decode(s), np.int8 if signed else np.uint8).astype(float).reshape(shape) * SCALE
+
+
+REFL_MIN = 5.0                            # dBZ: below this the page draws no echo (HRRR writes -10 where there is none)
+
+
+def pack_refl(dbz):
+    """dBZ -> the radar scenes' byte: 0 = no echo, else round((dBZ + 10) * 3), so 5..75 dBZ."""
+    d = np.asarray(dbz, float)
+    return base64.b64encode(np.where(d >= REFL_MIN, np.clip(np.round((d + 10) * 3), 1, 255), 0).astype(np.uint8).tobytes()).decode()
+
+
+def unpack_refl(s, shape):
+    b = np.frombuffer(base64.b64decode(s), np.uint8).astype(float).reshape(shape)
+    return np.where(b > 0, b / 3 - 10, np.nan)
+
+
+def echo_motion(a, b, dx_km, minutes=60.0, max_kmh=110.0):
+    """How the echoes moved from field a to field b (dBZ, NaN or < REFL_MIN = none): [east, north] km per minute, the whole-cell
+    shift that best lines a up with b (correlation of the echo above 15 dBZ, over the cells both cover). [0, 0] when
+    either hour has too little echo to tell, or no shift beats standing still by much."""
+    A = np.clip(np.nan_to_num(np.asarray(a, float), nan=0.0) - 15.0, 0, None)
+    B = np.clip(np.nan_to_num(np.asarray(b, float), nan=0.0) - 15.0, 0, None)
+    if (A > 0).sum() < 12 or (B > 0).sum() < 12:
+        return [0.0, 0.0]
+    ny, nx = A.shape
+    m = int(max_kmh * minutes / 60.0 / dx_km)
+    best, at, still = -1.0, (0, 0), 0.0
+    for sj in range(-m, m + 1):
+        for si in range(-m, m + 1):
+            a0 = A[max(0, -sj):ny - max(0, sj), max(0, -si):nx - max(0, si)]
+            b0 = B[max(0, sj):ny - max(0, -sj), max(0, si):nx - max(0, -si)]
+            if a0.size < 0.3 * A.size:
+                continue
+            den = math.sqrt(float((a0 * a0).sum()) * float((b0 * b0).sum()))
+            c = float((a0 * b0).sum()) / den if den > 0 else 0.0
+            c -= 0.002 * math.hypot(si, sj)                          # ties go to the smaller move
+            if (si, sj) == (0, 0):
+                still = c
+            if c > best:
+                best, at = c, (si, sj)
+    if best < 0.15 or best - still < 0.02:
+        return [0.0, 0.0]
+    return [round(at[0] * dx_km / minutes, 4), round(at[1] * dx_km / minutes, 4)]
 
 
 def schedule(newest, synoptic, past=PAST_H):
@@ -202,7 +249,9 @@ def fetch(out_path, now=None, get=http, gap=MIN_INTERVAL, box=BOX):
             log.info("hrrr %s f%02d: %s", c, f, e)
             return t, c, f, None
         u, v = (earth_relative(d["u"], d["v"], d["lon"]) if d.get("rel", True) else (d["u"], d["v"]))
-        return t, c, f, resample(d["lat"], d["lon"], [u, v, d["gust"]], G)
+        refc = d.get("refc")
+        r = resample(d["lat"], d["lon"], [u, v, d["gust"]] + ([np.where(refc > -900, refc, -10.0)] if refc is not None else []), G)
+        return t, c, f, (r[0], r[1], r[2], r[3] if refc is not None else None)
 
     with cf.ThreadPoolExecutor(3) as ex:
         res = sorted((r for r in ex.map(one, plan) if r[3] is not None), key=lambda r: r[0])
@@ -211,7 +260,13 @@ def fetch(out_path, now=None, get=http, gap=MIN_INTERVAL, box=BOX):
     out = {"version": 1, "model": "NOAA HRRR 3 km", "source": FILTER, "cycle": newest.isoformat(),
            "synoptic": syn.isoformat() if syn else None, "generated": dt.datetime.now(UTC).isoformat(timespec="seconds"),
            "grid": G, "scale": SCALE, "t": [], "run": [], "u": [], "v": [], "g": []}
-    for t, c, f, (u, v, g) in res:
+    # simulated composite reflectivity per hour ("" where an hour's file had none) and the echoes' motion to the next hour
+    refl = [r[3][3] for r in res]
+    if any(x is not None for x in refl):
+        out["refl"] = [pack_refl(x) if x is not None else "" for x in refl]
+        out["refl_motion"] = [echo_motion(refl[k], refl[k + 1], G["dx"], (res[k + 1][0] - res[k][0]).total_seconds() / 60)
+                              if k + 1 < len(res) and refl[k] is not None and refl[k + 1] is not None else [0.0, 0.0] for k in range(len(res))]
+    for t, c, f, (u, v, g, _) in res:
         out["t"].append(t.isoformat()); out["run"].append(f"{c:%d%H}z f{f:02d}")
         out["u"].append(pack(u, True)); out["v"].append(pack(v, True)); out["g"].append(pack(np.maximum(g, np.hypot(u, v)), False))
     with open(out_path, "w") as fh:

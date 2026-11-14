@@ -70,3 +70,24 @@ def test_resample_and_sample():
     w = {"grid": G, "u": [hrrr.pack(u, True)], "v": [hrrr.pack(v, True)], "g": [hrrr.pack(g, False)]}
     uu, vv, gg = hrrr.at(w, 0, 20.0, 5.0)
     assert abs(uu - 2.0) < 0.2 and vv == -3.0 and gg == 9.0                  # linear in x: 0.1 m/s per km
+
+
+def test_url_asks_for_composite_reflectivity():
+    q = dict(up.parse_qsl(up.urlparse(hrrr.url(dt.datetime(2026, 10, 30, 6, tzinfo=UTC), 7)).query))
+    assert q["var_REFC"] == "on" and q["lev_entire_atmosphere"] == "on"
+
+
+def test_refl_pack_matches_the_scene_byte():
+    d = np.array([[-10.0, 4.9, 5.0], [30.0, 75.0, 90.0]])
+    s = hrrr.unpack_refl(hrrr.pack_refl(d), d.shape)
+    assert np.isnan(s[0, 0]) and np.isnan(s[0, 1])                    # under 5 dBZ: no echo
+    assert abs(s[0, 2] - 5) < 0.2 and abs(s[1, 0] - 30) < 0.2 and abs(s[1, 1] - 75) < 0.01 and s[1, 2] == 75
+
+
+def test_echo_motion_finds_the_shift():
+    y, x = np.mgrid[0:60, 0:50]
+    blob = lambda cx, cy: np.where((x - cx) ** 2 + (y - cy) ** 2 < 30, 45.0, -10.0) + np.where((x - cx - 9) ** 2 + (y - cy + 6) ** 2 < 14, 20.0, 0.0)
+    m = hrrr.echo_motion(blob(15, 20), blob(22, 14), 3.0, 60)        # 7 cells east, 6 south in an hour
+    assert m == [round(7 * 3 / 60, 4), round(-6 * 3 / 60, 4)]
+    assert hrrr.echo_motion(blob(15, 20), np.full((60, 50), -10.0), 3.0) == [0.0, 0.0]      # nothing to follow
+    assert hrrr.echo_motion(blob(15, 20), blob(15, 20), 3.0) == [0.0, 0.0]

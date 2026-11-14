@@ -3279,10 +3279,50 @@ function radarState(tMs) {   // which frames to show, blend and motion shift
   const src = S.mode === "history" ? (SRC.hist[S.histIdx] && SRC.hist[S.histIdx].scene) : SRC.live; if (!src) return null;
   // live: the latest scans, then the radar nowcast carries the picture forward to the present minute
   const F = S.mode === "live" ? src.frames : src.frames.slice(0, Math.max(src.nObs, 1));
-  if (!F.length) return null; if (tMs > F[F.length - 1].t + 15 * 60e3 || tMs < F[0].t - 30 * 60e3) return null;
+  if (!F.length || tMs < F[0].t - 30 * 60e3) return null;
+  if (S.mode === "live" && tMs > F[F.length - 1].t) { const h = hrrrRadar(tMs, src); if (h) return h; }   // past the nowcast: HRRR's simulated radar
+  if (tMs > F[F.length - 1].t + 15 * 60e3) return null;
   let i = 0; while (i < F.length - 2 && F[i + 1].t <= tMs) i++; const j = Math.min(i + 1, F.length - 1), f = j > i ? clamp((tMs - F[i].t) / (F[j].t - F[i].t), 0, 1) : 0;
   const mot = src.meta.motion_km_per_min || [0, 0], dtm = (F[j].t - F[i].t) / 60000;
   return { A: F[i], B: F[j], f, shiftA: [mot[0] * f * dtm, mot[1] * f * dtm], shiftB: [-mot[0] * (1 - f) * dtm, -mot[1] * (1 - f) * dtm], grid: src.grid, label: src.meta.source, lead: F[f < 0.5 ? i : j].kind === "fc" ? F[f < 0.5 ? i : j].lead : 0 };
+}
+// ---------------------------------------------------------------- HRRR's simulated radar, from the end of the radar nowcast
+// The nowcast carries the last scans ~2 h on. Past it, NOAA HRRR's composite reflectivity (3 km, hourly, 18-48 h: the refl
+// in wind-data, app.hrrr) is the radar picture: each hour's map is stood up into a volume on the radar scenes' grid (the
+// column's strongest echo from the ground to ~45% of an echo top guessed from its strength, fading to the top; cloud from
+// the cloud base to 1 km over it), and between hours the two maps slide along the echoes' motion (HRRR hour to hour, as
+// app.hrrr measured it) while one fades into the other. A model's storms, not observed ones: placement is approximate.
+const HRF = { cache: new Map() };
+function hrrrFrame(k, src, cold) {
+  const key = k + (cold ? "c" : "w"); let fr = HRF.cache.get(key); if (fr) return fr;
+  const g = src.grid, G = WL.G, n2 = g.nx * g.ny, bin = atob(WL.d.refl[k]), C = new Float32Array(n2), top = new Float32Array(n2), dens = new Float32Array(n2);
+  const at = (i, j) => { const b = bin.charCodeAt(j * G.nx + i); return b ? b / 3 - 10 : -5; };
+  for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) { const fx = (g.x0_km + i * g.dx_km - G.x0) / G.dx, fy = (g.y0_km + j * g.dx_km - G.y0) / G.dx, q = j * g.nx + i;
+    if (fx < 0 || fy < 0 || fx > G.nx - 1 || fy > G.ny - 1) { C[q] = -99; continue; } const i0 = Math.min(fx | 0, G.nx - 2), j0 = Math.min(fy | 0, G.ny - 2), a = fx - i0, b = fy - j0;
+    const c = (at(i0, j0) * (1 - a) + at(i0 + 1, j0) * a) * (1 - b) + (at(i0, j0 + 1) * (1 - a) + at(i0 + 1, j0 + 1) * a) * b; C[q] = c >= 5 ? c : -99;
+    // echo top from the echo's strength: showers and storms 15 dBZ -> 3.5 km, 50 dBZ -> 10 km; snow and cold rain stay shallow
+    if (c >= 5) { top[q] = cold ? clamp(1.8 + (c - 10) * 0.08, 1.8, 5) : clamp(2.5 + (c - 10) * 0.19, 2.5, 12.5); dens[q] = clamp((c + 10) / 40, 0.35, 1); } }
+  const n = n2 * g.nz, dbz = new Uint8Array(n), cloud = new Uint8Array(n), kb = Math.max(0, Math.round((src.meta.cloud_base_km ?? 1.2) / g.dz_km - 0.5));
+  for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) { const q = j * g.nx + i, c = C[q];
+    if (c >= 5) { const T = top[q], z0 = 0.45 * T; for (let kz = 0; kz < g.nz; kz++) { const z = (kz + 0.5) * g.dz_km; if (z > T) break; const d = z <= z0 ? c : c * (1 - (z - z0) / (T - z0)); if (d >= 5) dbz[kz * n2 + q] = clamp(Math.round((d + 10) * 3), 1, 255); } }
+    // cloud: the echo's column and its neighbours' (grown one cell, softened), from the cloud base to 1 km over the echo top
+    let ds = 0, tm = 0; for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= g.nx || jj >= g.ny) continue; const qq = jj * g.nx + ii; ds += dens[qq]; if (top[qq] > tm) tm = top[qq]; }
+    if (ds > 0.2) { const v = Math.min(1, ds / 9 * 1.6 + 0.15), kt = Math.min(g.nz - 1, Math.round((tm + 1) / g.dz_km)); for (let kz = kb; kz <= kt; kz++) cloud[kz * n2 + q] = Math.round(255 * v * (kz === kb ? 0.6 : kz === kt ? 0.5 : 1)); } }
+  fr = { t: WL.T[k], kind: "hrrr", lead: 0, cloud, dbz, cand: candidates(dbz, g), tc: tex3(cloud, g), td: tex3(dbz, g), key }; HRF.cache.set(key, fr); return fr;
+}
+function hrrrRadar(tMs, src) {
+  const d = WL.d, R = d && d.refl, T = WL.T; if (!R || !WL.G || !src.grid) return null;
+  const F = src.frames, last = F[F.length - 1], lastObs = F[Math.max(src.nObs, 1) - 1].t;
+  let k0 = 0; while (k0 < T.length && !(R[k0] && T[k0] > last.t + 10 * 60e3)) k0++; if (k0 >= T.length) return null;
+  let k1 = T.length - 1; while (k1 > k0 && !R[k1]) k1--; if (tMs > T[k1] + 30 * 60e3) return null;
+  const cold = !!COND && COND.airC != null && COND.airC < 2;
+  let A, B, tA, tB, mot;
+  if (tMs <= T[k0]) { A = last; B = hrrrFrame(k0, src, cold); tA = last.t; tB = T[k0]; mot = src.meta.motion_km_per_min || [0, 0]; }   // the last nowcast frame fades into HRRR's first hour
+  else { let k = k0; while (k < k1 && T[k + 1] <= tMs) k++; let kn = k; if (k < k1) { kn = k + 1; while (kn < k1 && !R[kn]) kn++; }
+    A = hrrrFrame(k, src, cold); B = kn === k ? A : hrrrFrame(kn, src, cold); tA = T[k]; tB = T[kn]; mot = kn === k + 1 && d.refl_motion ? d.refl_motion[k] : [0, 0]; }
+  for (const [key, fr] of HRF.cache) { if (HRF.cache.size <= 4) break; if (fr !== A && fr !== B) { fr.tc.dispose(); fr.td.dispose(); HRF.cache.delete(key); } }
+  const dtm = (tB - tA) / 60000, f = dtm > 0 ? clamp((tMs - tA) / (tB - tA), 0, 1) : 0;
+  return { A, B, f, shiftA: [mot[0] * f * dtm, mot[1] * f * dtm], shiftB: [-mot[0] * (1 - f) * dtm, -mot[1] * (1 - f) * dtm], grid: src.grid, label: "NOAA HRRR simulated radar (3 km model)", lead: 0, hrrr: Math.max(0, (tMs - lastObs) / 3600e3) };
 }
 // ---------------------------------------------------------------- the river's physics (rivernow-data: app.river --now)
 // West of the lock there are no lake waves. What moves the water: the wind as the street canyon lets it through (along the
@@ -4102,19 +4142,22 @@ function compAt(c, grid, x, y) { const fx = (x - grid.x0_km) / grid.dx_km, fy = 
 function stormMotion() {   // km/min (x east, y north) of the echoes on show, or null
   if (S.mode === "exp") { const mv = S.x.mdir * Math.PI / 180; return [Math.sin(mv) * S.x.mspd / 60, Math.cos(mv) * S.x.mspd / 60]; }
   const src = S.mode === "history" ? (SRC.hist[S.histIdx] && SRC.hist[S.histIdx].scene) : SRC.live; return src && src.meta.motion_km_per_min ? src.meta.motion_km_per_min : null; }
-// redrawn as the radar frames blend: in 40 steps, or 8 in the kiosk, whose clip crosses a frame in a fraction of a second
+// redrawn as the radar frames blend: in 40 steps, or 8 in the kiosk, whose clip crosses a frame in a fraction of a second (4 between HRRR's hours)
 function mmRadarLayer() { const W = MM.el.width, H = MM.el.height, rs = RS;
-  const key = rs ? [rs.A.t, rs.B.t, Math.round(rs.f * (S.kiosk ? 8 : 40)), S.mode, S.mode === "exp" ? JSON.stringify(S.x) : ""].join("|") : "none|" + S.mode;
+  const key = rs ? [rs.A.t, rs.B.t, Math.round(rs.f * (S.kiosk ? (rs.hrrr != null ? 4 : 8) : 40)), S.mode, S.mode === "exp" ? JSON.stringify(S.x) : ""].join("|") : "none|" + S.mode;
   if (key === MMR.key && MMR.rc) return; MMR.key = key;
   if (!MMR.rc) { MMR.rc = document.createElement("canvas"); MMR.rc.width = W; MMR.rc.height = H; }
   const g = MMR.rc.getContext("2d"); g.clearRect(0, 0, W, H); MMR.track = null; if (!rs) return;
   const cA = composite(rs.A, rs.grid), cB = composite(rs.B, rs.grid), img = g.createImageData(W, H), d = img.data;
-  let best = 0, bx = 0, by = 0;
-  for (let py = 0; py < H; py++) { const y = MMR.y1 - (py + 0.5) / H * (MMR.y1 - MMR.y0);
-    for (let px = 0; px < W; px++) { const x = MMR.x0 + (px + 0.5) / W * (MMR.x1 - MMR.x0);
+  // the kiosk draws it in 2 x 2 pixel blocks: a quarter of the samples (a full redraw was ~10 ms, a few times a second all
+  // through the clip now that HRRR's radar follows the nowcast)
+  let best = 0, bx = 0, by = 0; const st = S.kiosk ? 2 : 1;
+  for (let py = 0; py < H; py += st) { const y = MMR.y1 - (py + 0.5 * st) / H * (MMR.y1 - MMR.y0);
+    for (let px = 0; px < W; px += st) { const x = MMR.x0 + (px + 0.5 * st) / W * (MMR.x1 - MMR.x0);
       const a = compAt(cA, rs.grid, x - rs.shiftA[0], y - rs.shiftA[1]), b = compAt(cB, rs.grid, x - rs.shiftB[0], y - rs.shiftB[1]);
       const v = Math.round(a && b ? a + (b - a) * rs.f : rs.f < 0.5 ? a : b); if (v < 45) continue;   // < 5 dBZ: nothing drawn
       const o = (py * W + px) * 4; d[o] = DBZ_LUT[v * 4]; d[o + 1] = DBZ_LUT[v * 4 + 1]; d[o + 2] = DBZ_LUT[v * 4 + 2]; d[o + 3] = DBZ_LUT[v * 4 + 3];
+      if (st > 1) for (const q of [o + 4, o + W * 4, o + W * 4 + 4]) if (q + 3 < d.length && (q !== o + 4 || px + 1 < W) && (q !== o + W * 4 + 4 || px + 1 < W)) { d[q] = d[o]; d[q + 1] = d[o + 1]; d[q + 2] = d[o + 2]; d[q + 3] = d[o + 3]; }
       if (v > best) { best = v; bx = x; by = y; } } }
   g.putImageData(img, 0, 0);
   // the storm track: the strongest echo on the map (20 dBZ or more) and where the motion carries it over the next 2 hours
@@ -4146,6 +4189,7 @@ function drawRadarMap() { const W = MM.el.width, H = MM.el.height, g = MM.el.get
   if (!rs) { st.className = "mmstat"; st.textContent = S.mode === "live" && SRC.live && S.t > SRC.live.frames[SRC.live.frames.length - 1].t ? "Beyond the radar nowcast" : S.mode === "live" ? "Before the radar window" : "No radar for this time"; }
   else if (S.mode === "exp") { st.className = "mmstat exp"; st.textContent = "Your storm"; }
   else if (S.mode === "history") { st.className = "mmstat hist"; st.textContent = `Radar ${fmtHM.format(new Date(rs.f < 0.5 ? rs.A.t : rs.B.t))}`; }
+  else if (rs.hrrr != null) { st.className = "mmstat fc"; st.textContent = `HRRR model radar +${rs.hrrr < 10 ? rs.hrrr.toFixed(1) : Math.round(rs.hrrr)} h`; }
   else if (rs.lead > 0) { st.className = "mmstat fc"; st.textContent = `Nowcast +${rs.lead} min`; }
   else { st.className = "mmstat"; st.textContent = `Radar ${fmtHM.format(new Date(rs.f < 0.5 ? rs.A.t : rs.B.t))}`; }
   $("#mmscale").textContent = T ? `${T.dbz} dBZ → ${compass(Math.atan2(T.m[0], T.m[1]) * 180 / Math.PI)} ${mph(Math.hypot(T.m[0], T.m[1]) * 1000 / 60)} mph` : `${((MMR.x1 - MMR.x0) * 0.621).toFixed(0)} mi across`;
@@ -4821,7 +4865,7 @@ function tick() {
     U.uWaterC.value = C.waterC ?? 15; U.uIceExp.value = S.mode === "exp" ? S.x.ice : 0; U.uFdd.value = S.mode === "exp" ? S.x.fdd : GRIDS.ice ? (GRIDS.fdd ?? 60 + 200 * (GRIDS.iceMax || 0)) : 0; U.uIceMax.value = S.mode !== "exp" && GRIDS.ice ? GRIDS.iceMax || 0 : 0; U.uHasTemp.value = S.mode === "exp" ? 0 : GRIDS.temp ? 1 : 0;
     U.uHasIce.value = S.mode !== "exp" && GRIDS.ice ? 1 : 0; U.uSnowCover.value = C.snow && (C.airC ?? 5) < -1 ? 0.8 : 0; U.uSnow.value = C.snow ? 1 : 0;
     // clouds beyond radar: forecast sky cover, or the chosen fair-weather layer
-    U.uExtra.value = (S.mode === "live" || S.mode === "import") && !RS ? clamp((C.sky - 10) / 90, 0, 1) * 0.95 : S.mode === "exp" && S.x.type === "cumulus" ? 0.55 * S.x.cov : 0;
+    U.uExtra.value = (S.mode === "live" || S.mode === "import") && (!RS || RS.hrrr != null) ? clamp((C.sky - 10) / 90, 0, 1) * 0.95 : S.mode === "exp" && S.x.type === "cumulus" ? 0.55 * S.x.cov : 0;
     // live, with a GOES image within 45 min: the satellite's cloud field (also over radar, which only sees clouds that rain)
     { const G = DATA.earth && DATA.earth.goes, on = S.goes && S.mode === "live" && EARTH.goes && G && Math.abs(new Date(G.time).getTime() - S.t) < 45 * 60e3;
       U.uGoesOn.value = on ? 1 : 0;
@@ -5605,6 +5649,6 @@ setLight(new Date()); resize(); gotoPreset(0, true); buildCourse(); buildLabels(
     } catch (e) { console.warn("background load", e); }
   } catch (e) { fail("Couldn't load the world", e.message); }
 })();
-window.__world = { BRK, breakRows, brkHere, breakRefresh, RIVER, RN, DRONE, WK, BOAT, riverWakes, wkTrips, wakeH, wakeNet, wkRoutes, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES, ORTHO, EARTH, AUTO, autoSet, autoPick, autoShotKinds };
+window.__world = { HRF, hrrrRadar, radarState, BRK, breakRows, brkHere, breakRefresh, RIVER, RN, DRONE, WK, BOAT, riverWakes, wkTrips, wakeH, wakeNet, wkRoutes, riverDepthAt, riverReachAt, riverCurrent, riverCso, riverVelocity, setWaves, kioskSmooth, paddleStatus, get PSTAT() { return PSTAT; }, WL, JET, jetNow, windStep, windField, setWindOn, setJetOn, upsetEvents, upsetSeries, conditions, chopRating, swanWindAt, waterFetchM, NAV, setMove, gotoPreset, viewState, flyTo, ll, BATHY, SWAN, FW, depthAtKm, maskAt, selectFunwave, S, DATA, SRC, setMode, goCam, scene, patch, TRK, U, WU, renderer, rtVol, rtScene, camera, get COND() { return COND; }, MAP, WAVES, ORTHO, EARTH, AUTO, autoSet, autoPick, autoShotKinds };
 })();
 </script>
